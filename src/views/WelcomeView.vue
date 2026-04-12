@@ -37,19 +37,22 @@ const goToHome = () => {
 
       </div>
       <!-- 按钮 -->
-      <button class="enter-btn" @click="goToHome">
-        走进诊所
-      </button>
+      <div class="bottom-section-buttons">
+        <button class="enter-btn" @click="goToHome">
+          走进诊所
+        </button>
 
-      <!-- Logo -->
-      <div class="logo-text">logo</div>
+        <!-- Logo -->
+        <div class="logo-text">logo</div>
+      </div>
     </div>
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .welcome-container {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   background: #FDFDFD;
   display: flex;
   flex-direction: column;
@@ -58,11 +61,11 @@ const goToHome = () => {
 
 /* 顶部区域 */
 .top-section {
-  position: relative;
-  height: 20vh;
+  height: 30%;
   display: flex;
   justify-content: flex-end;
   padding: 20px;
+  padding-top: max(20px, env(safe-area-inset-top));
 }
 
 .mouth-image {
@@ -84,11 +87,20 @@ const goToHome = () => {
   flex: 1;
   background: linear-gradient(180deg, #FFE361 0%, #FFD93D 100%);
   border-radius: 0 240px 0 0;
-  padding: 40px 30px;
+  padding: 30px;
+  padding-bottom: calc(30px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: space-between;
+
+
+  .bottom-section-buttons {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
 }
 
 .small-icon {
@@ -147,44 +159,16 @@ const goToHome = () => {
 }
 
 .logo-text {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
+  margin-top: auto;
+  align-self: center;
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   color: #BCBCBC;
 }
 
-/* 移动端适配 */
 @media (max-width: 480px) {
-  .top-section {
-    height: 18vh;
-  }
-
-  .mouth-image {
-    width: 160px;
-    height: 160px;
-  }
-
   .main-title {
     font-size: 36px;
-  }
-
-  .sub-title {
-    font-size: 16px;
-  }
-
-  .enter-btn {
-    padding: 16px 48px;
-    font-size: 18px;
-  }
-}
-
-/* 安全区域适配 */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .logo-text {
-    bottom: calc(30px + env(safe-area-inset-bottom));
   }
 }
 </style>
