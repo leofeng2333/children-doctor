@@ -11,8 +11,9 @@ const phone = ref('')
 
 const goNext = () => {
   if (name.value.trim() && phone.value.trim()) {
-    router.push('/')
+    router.push('/map')
   }
+  router.push('/map')
 }
 </script>
 
