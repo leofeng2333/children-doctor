@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import PrimaryButton from '../components/PrimaryButton.vue'
+import LogoText from '../components/LogoText.vue'
 
 const router = useRouter()
 
-const goToHome = () => {
-  router.push('/')
+const goToForm = () => {
+  router.push('/form')
 }
 </script>
 
@@ -38,12 +40,10 @@ const goToHome = () => {
       </div>
       <!-- 按钮 -->
       <div class="bottom-section-buttons">
-        <button class="enter-btn" @click="goToHome">
-          走进诊所
-        </button>
+        <PrimaryButton text="走进诊所" color="#fff" @click="goToForm" />
 
         <!-- Logo -->
-        <div class="logo-text">logo</div>
+        <LogoText class="logo" />
       </div>
     </div>
   </div>
@@ -136,39 +136,7 @@ const goToHome = () => {
   margin: 0 0 40px 0;
 }
 
-.enter-btn {
-  width: 90%;
-  margin: 0 auto;
-  background: #FF9900;
-  color: white;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  border: none;
-  border-radius: 50px;
-  padding: 18px 60px;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(255, 153, 0, 0.4);
-  transition: all 0.3s ease;
-  margin-bottom: 20px;
-}
-
-.enter-btn:active {
-  transform: scale(0.98);
-  box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
-}
-
-.logo-text {
-  margin-top: auto;
-  align-self: center;
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  color: #BCBCBC;
-}
-
-@media (max-width: 480px) {
-  .main-title {
-    font-size: 36px;
-  }
+.logo {
+  margin-top: 12px;
 }
 </style>
