@@ -46,6 +46,7 @@
     "postcss-px-to-viewport": "^1.1.1",
     "sass-embedded": "^1.99.0",
     "typescript": "~6.0.0",
+    "unplugin-vue-components": "^32.0.0",
     "vite": "^8.0.3",
     "vite-plugin-vue-devtools": "^8.1.1",
     "vue-tsc": "^3.2.6"

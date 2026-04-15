@@ -9,7 +9,7 @@ const router = useRouter()
 const stepsContainerRef = ref<HTMLElement>()
 
 const goToForm = () => {
-  router.push('/form')
+  router.push('/question')
 }
 
 const drawConnectors = () => {
