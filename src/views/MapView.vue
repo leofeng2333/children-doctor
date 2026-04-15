@@ -213,8 +213,8 @@ onUnmounted(() => {
 
 <style scoped>
 .form-container {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
