@@ -39,7 +39,7 @@ const nextQuestion = () => {
 }
 
 const goNext = () => {
-  router.push('/camera')
+  router.push('/capture-intro')
 }
 </script>
 
@@ -88,7 +88,7 @@ const goNext = () => {
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 36px;
+  padding: 0 30px;
   padding-top: max(42px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
@@ -105,6 +105,7 @@ const goNext = () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-top: 24px;
 
   img {
     width: 100%;

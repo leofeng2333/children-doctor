@@ -4,6 +4,8 @@ import DiagnosisView from '../views/DiagnosisView.vue'
 import FormView from '../views/FormView.vue'
 import MapView from '../views/MapView.vue'
 import QuestionView from '../views/QuestionView.vue'
+import CaptureIntroView from '../views/CaptureIntroView.vue'
+import CaptureView from '../views/CaptureView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -32,6 +34,16 @@ const router = createRouter({
       path: '/question',
       name: 'question',
       component: QuestionView,
+    },
+    {
+      path: '/capture-intro',
+      name: 'capture-intro',
+      component: CaptureIntroView,
+    },
+    {
+      path: '/capture',
+      name: 'capture',
+      component: CaptureView,
     },
   ],
 })

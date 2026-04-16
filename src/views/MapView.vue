@@ -24,9 +24,10 @@ const cityMap: Record<string, { key: string; name: string; center: [number, numb
 }
 
 const goNext = () => {
-  if (!locationList.value.length || cityMap[locationList.value.lastItem.name]) {
+  if (!isOutOfProvince.value && (!locationList.value.length || cityMap[locationList.value.lastItem.name])) {
     Toast.show({
       text: '请选择县市区',
+      position: 'center'
     })
     return;
   }
