@@ -6,6 +6,7 @@ const router = useRouter()
 const goToCapture = () => {
   // TODO: 跳转到拍摄页面
   console.log('开始拍摄')
+  router.push('/capture');
 }
 </script>
 

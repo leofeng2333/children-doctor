@@ -5,6 +5,8 @@ import * as echarts from 'echarts'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
 import { Toast } from '@capacitor/toast'
+import { useUserStore } from '@/stores'
+import { saveUserInfo } from '@/utils/service'
 
 const router = useRouter()
 
@@ -23,7 +25,7 @@ const cityMap: Record<string, { key: string; name: string; center: [number, numb
   '义乌市': { key: '330782', name: '义乌市', center: [120.05, 29.3], zoom: 1.1 },
 }
 
-const goNext = () => {
+const goNext = async () => {
   if (!isOutOfProvince.value && (!locationList.value.length || cityMap[locationList.value.lastItem.name])) {
     Toast.show({
       text: '请选择县市区',
@@ -31,6 +33,17 @@ const goNext = () => {
     })
     return;
   }
+  const { nickname, phone } = useUserStore();
+  const params = {
+    nickname: nickname,
+    phone: phone,
+    province: isOutOfProvince.value ? '浙江省外' : '浙江省',
+  }
+  if (!isOutOfProvince.value) {
+    params.city = locationList.value[0].name;
+    params.district = locationList.value[1]?.name;
+  }
+  await saveUserInfo(params)
   router.push('/diagnosis')
 }
 

@@ -3,17 +3,18 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 
-const name = ref('')
-const phone = ref('')
+const userStore = useUserStore()
 
 const goNext = () => {
-  if (name.value.trim() && phone.value.trim()) {
-    router.push('/map')
+  if (!userStore.nickname.trim() && !userStore.phone.trim()) {
+    return;
   }
   router.push('/map')
+  userStore.update(userStore.nickname.trim(), userStore.phone.trim())
 }
 </script>
 
@@ -33,20 +34,19 @@ const goNext = () => {
       <!-- 名字输入 -->
       <div class="input-group">
         <label class="input-label">我该怎么称呼你呢？</label>
-        <input v-model="name" type="text" class="input-field" placeholder="请输入用户全名/昵称" />
+        <input v-model="userStore.nickname" type="text" class="input-field" placeholder="请输入用户全名/昵称" />
       </div>
-
       <!-- 电话输入 -->
       <div class="input-group">
         <label class="input-label">你的联系方式？</label>
-        <input v-model="phone" type="tel" class="input-field" placeholder="请输入手机号" />
+        <input v-model="userStore.phone" type="tel" class="input-field" placeholder="请输入手机号" />
       </div>
     </div>
 
     <!-- 按钮 -->
     <div class="bottom-section-buttons">
       <!-- 按钮 -->
-      <PrimaryButton text="下一步" :disabled="!name.trim() || !phone.trim()" @click="goNext" />
+      <PrimaryButton text="下一步" @click="goNext" />
 
       <!-- Logo -->
       <LogoText class="logo" />

@@ -2,12 +2,19 @@
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '../components/LogoText.vue'
+import { createSession } from '@/utils/service'
+import { onMounted } from 'vue'
 
 const router = useRouter()
 
 const goToForm = () => {
   router.push('/form')
 }
+
+onMounted(async () => {
+  const sessionInfo = await createSession()
+  console.log('sessionInfo', sessionInfo)
+})
 </script>
 
 <template>

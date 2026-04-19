@@ -1,19 +1,28 @@
 <script lang="ts" setup>
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
+const photos = ref<string[]>([]);
+const hasCaptured = computed(() => photos.value.length > 0);
+
 const hanleCapture = () => {
+}
+
+const hanleStartAnalysis = () => {
+  router.push('/analysing');
 }
 </script>
 
 <template>
   <div class="capture-page">
     <div class="capture-content">
-
+      <div class="title-tip">请正面看向镜头</div>
     </div>
     <div class="bottom-section">
-      <PrimaryButton text="咔嚓！" @click="hanleCapture" />
+      <PrimaryButton v-if="!hasCaptured" text="咔嚓！" @click="hanleCapture" />
+      <PrimaryButton v-else text="开始分析" @click="hanleCapture" />
       <LogoText class="logo" />
     </div>
   </div>
@@ -38,6 +47,23 @@ const hanleCapture = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
+}
+
+.title-tip {
+
+  padding: 12px 24px;
+  color: #000;
+  font-size: 14px;
+  background: #bcbcbc;
+  border-radius: 50px;
+  line-height: 1;
+
+  box-sizing: border-box;
+  min-height: 32px;
+  min-width: 48px;
+
+  font-weight: 700;
 }
 
 .bottom-section {

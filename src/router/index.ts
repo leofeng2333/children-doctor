@@ -5,7 +5,8 @@ import FormView from '../views/FormView.vue'
 import MapView from '../views/MapView.vue'
 import QuestionView from '../views/QuestionView.vue'
 import CaptureIntroView from '../views/CaptureIntroView.vue'
-import CaptureView from '../views/CaptureView.vue'
+import CameraCaptureView from '../views/CameraCaptureView.vue'
+import DetailAnalysisView from '../views/DetailAnalysisView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -43,7 +44,12 @@ const router = createRouter({
     {
       path: '/capture',
       name: 'capture',
-      component: CaptureView,
+      component: CameraCaptureView,
+    },
+    {
+      path: '/detail-analysis',
+      name: 'detail-analysis',
+      component: DetailAnalysisView,
     },
   ],
 })

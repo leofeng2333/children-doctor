@@ -12,17 +12,21 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
     LogoText: typeof import('./components/LogoText.vue')['default']
     PrimaryButton: typeof import('./components/PrimaryButton.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    ScanSubscription: typeof import('./components/ScanSubscription.vue')['default']
   }
 }
 
 // For TSX support
 declare global {
+  const AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
   const LogoText: typeof import('./components/LogoText.vue')['default']
   const PrimaryButton: typeof import('./components/PrimaryButton.vue')['default']
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']
+  const ScanSubscription: typeof import('./components/ScanSubscription.vue')['default']
 }
