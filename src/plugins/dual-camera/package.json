@@ -1,0 +1,31 @@
+{
+  "name": "@children-doctor/dual-camera",
+  "version": "1.0.0",
+  "description": "Dual camera preview and capture plugin for Capacitor Android",
+  "main": "dist/index.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/index.cjs.js"
+    }
+  },
+  "scripts": {
+    "build": "npm run clean && tsc && npm run copy-files",
+    "build:watch": "tsc --watch",
+    "copy-files": "node scripts/copy-files.js",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^8.0.0"
+  },
+  "license": "MIT"
+}

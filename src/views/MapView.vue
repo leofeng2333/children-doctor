@@ -34,7 +34,7 @@ const goNext = async () => {
     return;
   }
   const { nickname, phone } = useUserStore();
-  const params = {
+  const params: Record<string, string> = {
     nickname: nickname,
     phone: phone,
     province: isOutOfProvince.value ? '浙江省外' : '浙江省',
@@ -43,7 +43,7 @@ const goNext = async () => {
     params.city = locationList.value[0].name;
     params.district = locationList.value[1]?.name;
   }
-  await saveUserInfo(params)
+  // await saveUserInfo(params)
   router.push('/diagnosis')
 }
 

@@ -1,28 +1,102 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { Capacitor } from '@capacitor/core';
+import { DualCamera } from '@/plugins/dual-camera/src/index';
+import type { DualCameraPhoto } from '@/plugins/dual-camera/src/definitions';
 
-const router = useRouter()
+const router = useRouter();
 
-const photos = ref<string[]>([]);
+const photos = ref<DualCameraPhoto[]>([]);
 const hasCaptured = computed(() => photos.value.length > 0);
+const isPreviewActive = ref(false);
+const isCapturing = ref(false);
+const errorMsg = ref('');
 
-const hanleCapture = () => {
-}
+onMounted(async () => {
+  errorMsg.value = '';
+  try {
+    const status = await DualCamera.checkPermissions();
+    if (status.camera !== 'granted') {
+      const reqResult = await DualCamera.requestPermissions();
+      if (reqResult.camera !== 'granted') {
+        errorMsg.value = '需要摄像头权限';
+        return;
+      }
+    }
+    await DualCamera.startPreview();
+    isPreviewActive.value = true;
+  } catch (e) {
+    errorMsg.value = (e as Error).message;
+    console.error('[DualCamera] startPreview failed:', e);
+  }
+});
 
-const hanleStartAnalysis = () => {
+onUnmounted(async () => {
+  if (isPreviewActive.value) {
+    try {
+      await DualCamera.stopPreview();
+    } catch (_) { }
+    isPreviewActive.value = false;
+  }
+});
+
+const handleCapture = async () => {
+  if (isCapturing.value) return;
+  isCapturing.value = true;
+  errorMsg.value = '';
+  try {
+    const result = await DualCamera.capture();
+    photos.value.push({
+      ...result,
+      frontCameraUrl: Capacitor.convertFileSrc(result.frontCameraUrl),
+      backCameraUrl: Capacitor.convertFileSrc(result.backCameraUrl),
+    });
+    console.log('[DualCamera] 拍照成功:', result);
+  } catch (e) {
+    errorMsg.value = (e as Error).message;
+    console.error('[DualCamera] capture failed:', e);
+  } finally {
+    isCapturing.value = false;
+  }
+};
+
+const handleStartAnalysis = () => {
   router.push('/analysing');
-}
+};
 </script>
 
 <template>
   <div class="capture-page">
     <div class="capture-content">
-      <div class="title-tip">请正面看向镜头</div>
+      <div class="title-tip">
+        {{ hasCaptured ? `已拍摄 ${photos.length} 组` : isCapturing ? '拍摄中...' : '请正面看向镜头' }}
+      </div>
+
+      <div v-if="errorMsg" class="error-tip">{{ errorMsg }}</div>
+
+      <div v-if="hasCaptured" class="photo-previews">
+        <div v-for="(photo, index) in photos" :key="index" class="photo-pair">
+          <div class="photo-item">
+            <span class="label">前置</span>
+            <img :src="photo.frontCameraUrl" alt="前置" />
+          </div>
+          <div class="photo-item">
+            <span class="label">后置</span>
+            <img :src="photo.backCameraUrl" alt="后置" />
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="waiting-tip">
+        <span>摄像头预览已开启</span>
+        <span class="sub">前置全屏 · 后置小窗</span>
+      </div>
     </div>
+
     <div class="bottom-section">
-      <PrimaryButton v-if="!hasCaptured" text="咔嚓！" @click="hanleCapture" />
-      <PrimaryButton v-else text="开始分析" @click="hanleCapture" />
+      <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
+      <PrimaryButton v-else text="开始分析" @click="handleStartAnalysis" />
       <LogoText class="logo" />
     </div>
   </div>
@@ -51,19 +125,79 @@ const hanleStartAnalysis = () => {
 }
 
 .title-tip {
-
   padding: 12px 24px;
   color: #000;
   font-size: 14px;
   background: #bcbcbc;
   border-radius: 50px;
   line-height: 1;
-
   box-sizing: border-box;
   min-height: 32px;
   min-width: 48px;
-
   font-weight: 700;
+}
+
+.error-tip {
+  margin-top: 16px;
+  padding: 8px 16px;
+  background: #fff2f0;
+  color: #ff4d4f;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.photo-previews {
+  margin-top: 20px;
+  width: 100%;
+  overflow-y: auto;
+  max-height: 50vh;
+}
+
+.photo-pair {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.photo-item {
+  flex: 1;
+  text-align: center;
+
+  .label {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #1890ff;
+    color: #fff;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  img {
+    width: 100%;
+    max-width: 160px;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid #eee;
+  }
+}
+
+.waiting-tip {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #666;
+  font-size: 14px;
+
+  .sub {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #999;
+  }
 }
 
 .bottom-section {

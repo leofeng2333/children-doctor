@@ -21,10 +21,12 @@
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@capacitor/toast": "^8.0.1",
+    "@children-doctor/dual-camera": "file:./src/plugins/dual-camera",
     "echarts": "^6.0.0",
     "install": "^0.13.0",
     "pinia": "^3.0.4",
     "swiper": "^12.0.0",
+    "vconsole": "^3.15.1",
     "vue": "^3.5.31",
     "vue-echarts": "^8.0.1",
     "vue-router": "^5.0.4"
