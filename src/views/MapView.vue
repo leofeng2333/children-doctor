@@ -75,10 +75,7 @@ const handleReturn = () => {
 
 const initMap = async (mapKey: string, mapName: string, center: [number, number], zoom: number) => {
   if (!chartRef.value) return
-  let url = `https://geo.datav.aliyun.com/areas_v3/bound/${mapKey}_full.json`;
-  if (mapKey === '330782') {
-    url = '/330782.json';
-  }
+  const url = `/${mapKey}.json`;
   const response = await fetch(url)
   const geoJson = await response.json()
   console.log('geoJson', geoJson);

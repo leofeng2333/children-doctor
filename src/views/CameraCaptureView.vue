@@ -16,15 +16,7 @@ const errorMsg = ref('');
 onMounted(async () => {
   errorMsg.value = '';
   try {
-    const status = await DualCamera.checkPermissions();
-    if (status.camera !== 'granted') {
-      const reqResult = await DualCamera.requestPermissions();
-      if (reqResult.camera !== 'granted') {
-        errorMsg.value = '需要摄像头权限';
-        return;
-      }
-    }
-    await DualCamera.startPreview();
+    await DualCamera.startPreviewWithPermission();
     isPreviewActive.value = true;
   } catch (e) {
     errorMsg.value = (e as Error).message;
@@ -62,7 +54,7 @@ const handleCapture = async () => {
 };
 
 const handleStartAnalysis = () => {
-  router.push('/analysing');
+  router.push('/detail-analysis');
 };
 </script>
 
@@ -70,27 +62,7 @@ const handleStartAnalysis = () => {
   <div class="capture-page">
     <div class="capture-content">
       <div class="title-tip">
-        {{ hasCaptured ? `已拍摄 ${photos.length} 组` : isCapturing ? '拍摄中...' : '请正面看向镜头' }}
-      </div>
-
-      <div v-if="errorMsg" class="error-tip">{{ errorMsg }}</div>
-
-      <div v-if="hasCaptured" class="photo-previews">
-        <div v-for="(photo, index) in photos" :key="index" class="photo-pair">
-          <div class="photo-item">
-            <span class="label">前置</span>
-            <img :src="photo.frontCameraUrl" alt="前置" />
-          </div>
-          <div class="photo-item">
-            <span class="label">后置</span>
-            <img :src="photo.backCameraUrl" alt="后置" />
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="waiting-tip">
-        <span>摄像头预览已开启</span>
-        <span class="sub">前置全屏 · 后置小窗</span>
+        请正面看向镜头
       </div>
     </div>
 

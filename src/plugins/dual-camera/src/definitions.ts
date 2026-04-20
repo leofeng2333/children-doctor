@@ -27,6 +27,7 @@ export interface DualCameraPlugin {
   checkPermissions(): Promise<DualCameraPermissionStatus>;
   requestPermissions(): Promise<DualCameraPermissionStatus>;
   startPreview(options?: DualCameraOptions): Promise<void>;
+  startPreviewWithPermission(options?: DualCameraOptions): Promise<void>;
   stopPreview(): Promise<void>;
   capture(): Promise<DualCameraPhoto>;
   isPreviewRunning(): Promise<{ running: boolean }>;

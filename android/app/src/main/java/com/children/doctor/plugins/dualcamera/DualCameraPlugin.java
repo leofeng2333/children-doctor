@@ -4,27 +4,25 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
-@CapacitorPlugin(name = "DualCamera")
+@CapacitorPlugin(name = "DualCamera", permissions = {
+    @Permission(alias = "camera", strings = Manifest.permission.CAMERA)
+})
 public class DualCameraPlugin extends Plugin {
 
     private static final String TAG = "DualCameraPlugin";
-    private static final int REQUEST_CAMERA_PERMISSION = 1001;
 
     private DualCameraManager cameraManager;
-    @Nullable
-    private PluginCall pendingPermissionCall;
 
     @Override
     public void load() {
@@ -63,36 +61,36 @@ public class DualCameraPlugin extends Plugin {
             return;
         }
 
-        pendingPermissionCall = call;
-        ActivityCompat.requestPermissions(
-            getActivity(),
-            new String[]{Manifest.permission.CAMERA},
-            REQUEST_CAMERA_PERMISSION
-        );
+        requestAllPermissions(call, "onPermissionResult");
     }
 
-    @Override
-    protected void handleRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.handleRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQUEST_CAMERA_PERMISSION || pendingPermissionCall == null) {
-            return;
-        }
-
+    @PermissionCallback
+    private void onPermissionResult(PluginCall call) {
         JSObject result = new JSObject();
-        boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-        result.put("camera", granted ? "granted" : "denied");
-        pendingPermissionCall.resolve(result);
-        pendingPermissionCall = null;
+        String state = hasNativeCameraPermission() ? "granted" : "denied";
+        result.put("camera", state);
+        call.resolve(result);
     }
 
     @PluginMethod()
-    public void startPreview(PluginCall call) {
-        Log.d(TAG, "startPreview called, native permission check: " + hasNativeCameraPermission());
-        if (!hasNativeCameraPermission()) {
-            call.reject("Camera permission not granted");
-            return;
+    public void startPreviewWithPermission(PluginCall call) {
+        if (hasNativeCameraPermission()) {
+            startPreviewInternal(call);
+        } else {
+            requestAllPermissions(call, "onPreviewPermissionResult");
         }
+    }
 
+    @PermissionCallback
+    private void onPreviewPermissionResult(PluginCall call) {
+        if (hasNativeCameraPermission()) {
+            startPreviewInternal(call);
+        } else {
+            call.reject("Camera permission denied");
+        }
+    }
+
+    private void startPreviewInternal(PluginCall call) {
         if (cameraManager != null) {
             call.reject("Preview is already running");
             return;
@@ -127,6 +125,16 @@ public class DualCameraPlugin extends Plugin {
         );
 
         cameraManager.startPreview(call);
+    }
+
+    @PluginMethod()
+    public void startPreview(PluginCall call) {
+        Log.d(TAG, "startPreview called, native permission check: " + hasNativeCameraPermission());
+        if (!hasNativeCameraPermission()) {
+            call.reject("Camera permission not granted");
+            return;
+        }
+        startPreviewInternal(call);
     }
 
     @PluginMethod()

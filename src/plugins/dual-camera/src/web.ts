@@ -31,4 +31,8 @@ export class DualCameraWeb
   async isPreviewRunning(): Promise<{ running: boolean }> {
     throw this.unavailable('Dual camera preview is only available on Android.');
   }
+
+  async startPreviewWithPermission(_options?: DualCameraOptions): Promise<void> {
+    throw this.unavailable('Dual camera preview is only available on Android.');
+  }
 }
