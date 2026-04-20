@@ -36,9 +36,18 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.google.common.util.concurrent.ListenableFuture;
 
+import java.io.BufferedReader;
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -565,5 +574,107 @@ public class DualCameraManager {
 
     private int dpToPx(int dp) {
         return (int) (dp * context.getResources().getDisplayMetrics().density);
+    }
+
+    public interface UploadCallback {
+        void onSuccess(String response);
+        void onError(String error);
+    }
+
+    public void uploadFiles(
+        String uploadUrl,
+        Map<String, String[]> files,
+        Map<String, String> extraData,
+        UploadCallback callback
+    ) {
+        executor.execute(() -> {
+            HttpURLConnection connection = null;
+            try {
+                String boundary = "----DualCameraUpload" + System.currentTimeMillis();
+                URL url = new URL(uploadUrl);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setDoInput(true);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(30000);
+
+                try (DataOutputStream dos = new DataOutputStream(connection.getOutputStream())) {
+                    if (extraData != null) {
+                        for (Map.Entry<String, String> entry : extraData.entrySet()) {
+                            dos.writeBytes("--" + boundary + "\r\n");
+                            dos.writeBytes("Content-Disposition: form-data; name=\"" + entry.getKey() + "\"\r\n\r\n");
+                            dos.writeBytes(entry.getValue() + "\r\n");
+                        }
+                    }
+
+                    for (Map.Entry<String, String[]> fieldEntry : files.entrySet()) {
+                        String fieldName = fieldEntry.getKey();
+                        for (String filePath : fieldEntry.getValue()) {
+                            File file = new File(filePath);
+                            if (!file.exists()) {
+                                mainHandler.post(() -> callback.onError("File not found: " + filePath));
+                                return;
+                            }
+
+                            String fileName = file.getName();
+                            String mimeType = "image/jpeg";
+                            if (fileName.toLowerCase().endsWith(".png")) {
+                                mimeType = "image/png";
+                            } else if (fileName.toLowerCase().endsWith(".webp")) {
+                                mimeType = "image/webp";
+                            }
+
+                            dos.writeBytes("--" + boundary + "\r\n");
+                            dos.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + fileName + "\"\r\n");
+                            dos.writeBytes("Content-Type: " + mimeType + "\r\n\r\n");
+
+                            try (FileInputStream fis = new FileInputStream(file)) {
+                                byte[] buffer = new byte[8192];
+                                int bytesRead;
+                                while ((bytesRead = fis.read(buffer)) != -1) {
+                                    dos.write(buffer, 0, bytesRead);
+                                }
+                            }
+                            dos.writeBytes("\r\n");
+                        }
+                    }
+
+                    dos.writeBytes("--" + boundary + "--\r\n");
+                    dos.flush();
+                }
+
+                int responseCode = connection.getResponseCode();
+                BufferedReader reader;
+                if (responseCode >= 200 && responseCode < 300) {
+                    reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                } else {
+                    reader = new BufferedReader(new InputStreamReader(connection.getErrorStream()));
+                }
+
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                reader.close();
+
+                String responseBody = response.toString();
+                if (responseCode >= 200 && responseCode < 300) {
+                    mainHandler.post(() -> callback.onSuccess(responseBody));
+                } else {
+                    mainHandler.post(() -> callback.onError("HTTP " + responseCode + ": " + responseBody));
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Upload failed", e);
+                mainHandler.post(() -> callback.onError(e.getMessage()));
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        });
     }
 }

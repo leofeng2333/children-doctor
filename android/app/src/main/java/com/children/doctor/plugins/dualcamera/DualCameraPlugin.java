@@ -3,8 +3,6 @@ package com.children.doctor.plugins.dualcamera;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.util.Log;
-
-import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -14,6 +12,9 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @CapacitorPlugin(name = "DualCamera", permissions = {
     @Permission(alias = "camera", strings = Manifest.permission.CAMERA)
@@ -164,5 +165,75 @@ public class DualCameraPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("running", cameraManager != null);
         call.resolve(result);
+    }
+
+    @PluginMethod()
+    public void uploadPhotos(PluginCall call) {
+        String uploadUrl = call.getString("uploadUrl");
+        if (uploadUrl == null || uploadUrl.isEmpty()) {
+            call.reject("uploadUrl is required");
+            return;
+        }
+
+        JSObject filesObj = call.getObject("files");
+        if (filesObj == null) {
+            call.reject("files is required");
+            return;
+        }
+        Map<String, String[]> files = new HashMap<>();
+        try {
+            java.util.Iterator<String> fieldIt = filesObj.keys();
+            while (fieldIt.hasNext()) {
+                String fieldName = fieldIt.next();
+                org.json.JSONArray pathsArray = (org.json.JSONArray) filesObj.get(fieldName);
+                String[] paths = new String[pathsArray.length()];
+                for (int i = 0; i < pathsArray.length(); i++) {
+                    paths[i] = pathsArray.getString(i);
+                }
+                files.put(fieldName, paths);
+            }
+        } catch (org.json.JSONException e) {
+            call.reject("Invalid files format", e);
+            return;
+        }
+
+        JSObject extraDataObj = call.getObject("extraData");
+        Map<String, String> extraData = new HashMap<>();
+        if (extraDataObj != null) {
+            java.util.Iterator<String> keysIt = extraDataObj.keys();
+            while (keysIt.hasNext()) {
+                String key = keysIt.next();
+                extraData.put(key, extraDataObj.getString(key));
+            }
+        }
+
+        PluginCall uploadCall = call;
+        DualCameraManager.UploadCallback callback = new DualCameraManager.UploadCallback() {
+            @Override
+            public void onSuccess(String response) {
+                JSObject result = new JSObject();
+                result.put("response", response);
+                uploadCall.resolve(result);
+            }
+
+            @Override
+            public void onError(String error) {
+                uploadCall.reject(error);
+            }
+        };
+
+        DualCameraManager uploadManager = new DualCameraManager(
+            getContext(),
+            getActivity(),
+            new DualCameraManager.PreviewCallback() {
+                @Override
+                public void onError(String error) {}
+
+                @Override
+                public void onCaptureComplete(String frontUri, String backUri, String frontPath, String backPath, long frontFileSizeKb, long backFileSizeKb) {}
+            }
+        );
+
+        uploadManager.uploadFiles(uploadUrl, files, extraData, callback);
     }
 }

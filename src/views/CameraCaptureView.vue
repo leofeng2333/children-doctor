@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { Capacitor } from '@capacitor/core';
 import { DualCamera } from '@/plugins/dual-camera/src/index';
 import type { DualCameraPhoto } from '@/plugins/dual-camera/src/definitions';
+import { startAnalysis, uploadPhotos } from '@/utils/service';
 
 const router = useRouter();
 
@@ -11,6 +12,7 @@ const photos = ref<DualCameraPhoto[]>([]);
 const hasCaptured = computed(() => photos.value.length > 0);
 const isPreviewActive = ref(false);
 const isCapturing = ref(false);
+const isUploading = ref(false);
 const errorMsg = ref('');
 
 onMounted(async () => {
@@ -53,8 +55,26 @@ const handleCapture = async () => {
   }
 };
 
-const handleStartAnalysis = () => {
-  router.push('/detail-analysis');
+const handleStartAnalysis = async () => {
+  if (isUploading.value) return;
+  isUploading.value = true;
+  errorMsg.value = '';
+  try {
+    console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
+    const uploadResult = await uploadPhotos(photos.value);
+    console.log('[CameraCapture] 上传结果:', uploadResult);
+    const analysisResult = (await startAnalysis()) as { llmAnalysis: { taskId: string } };
+    console.log('[CameraCapture] 启动分析:', analysisResult);
+    const taskId = analysisResult.llmAnalysis.taskId
+    await router.push({
+      path: '/detail-analysis?taskId=' + taskId,
+    });
+  } catch (e) {
+    errorMsg.value = (e as Error).message;
+    console.error('[CameraCapture] 开始分析失败:', e);
+  } finally {
+    isUploading.value = false;
+  }
 };
 </script>
 
@@ -68,7 +88,7 @@ const handleStartAnalysis = () => {
 
     <div class="bottom-section">
       <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
-      <PrimaryButton v-else text="开始分析" @click="handleStartAnalysis" />
+      <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" />
       <LogoText class="logo" />
     </div>
   </div>

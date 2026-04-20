@@ -3,6 +3,7 @@ import type {
   DualCameraPlugin,
   DualCameraOptions,
   DualCameraPermissionStatus,
+  DualCameraUploadOptions,
 } from './definitions';
 
 export class DualCameraWeb
@@ -34,5 +35,9 @@ export class DualCameraWeb
 
   async startPreviewWithPermission(_options?: DualCameraOptions): Promise<void> {
     throw this.unavailable('Dual camera preview is only available on Android.');
+  }
+
+  async uploadPhotos(_options: DualCameraUploadOptions): Promise<{ response: string }> {
+    throw this.unavailable('Dual camera upload is only available on Android.');
   }
 }

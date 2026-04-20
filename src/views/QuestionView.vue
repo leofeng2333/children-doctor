@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { saveQuestionAnswers } from '@/utils/service';
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -38,7 +39,24 @@ const nextQuestion = () => {
   }
 }
 
-const goNext = () => {
+const goNext = async () => {
+  const tempResponse = await saveQuestionAnswers({
+    "answers": [
+      {
+        "questionNo": "1",
+        "answer": "是"
+      },
+      {
+        "questionNo": "2",
+        "answer": "偶尔疼痛"
+      },
+      {
+        "questionNo": "3",
+        "answer": "有家族史"
+      }
+    ]
+  })
+  console.log('tempResponse', tempResponse);
   router.push('/capture-intro')
 }
 </script>

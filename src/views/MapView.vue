@@ -43,7 +43,8 @@ const goNext = async () => {
     params.city = locationList.value[0].name;
     params.district = locationList.value[1]?.name;
   }
-  // await saveUserInfo(params)
+  const tempResponse = await saveUserInfo(params)
+  console.log('tempResponse', tempResponse);
   router.push('/diagnosis')
 }
 
