@@ -118,7 +118,9 @@ onMounted(async () => {
 <style scoped lang="scss">
 .detail-analysis-page {
   height: 100vh;
-  height: 100dvh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -169,7 +171,9 @@ onMounted(async () => {
 }
 
 .page-content {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   overflow-y: auto;
 
   .analysis-result {

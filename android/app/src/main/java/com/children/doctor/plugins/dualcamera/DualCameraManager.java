@@ -5,6 +5,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
 import android.net.Uri;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -18,6 +20,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.core.CameraInfoUnavailableException;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ConcurrentCamera;
@@ -32,6 +35,7 @@ import androidx.core.content.FileProvider;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -45,8 +49,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -63,32 +69,54 @@ public class DualCameraManager {
     private final PreviewCallback callback;
 
     private ProcessCameraProvider cameraProvider;
-    private ImageCapture frontImageCapture;
-    private ImageCapture backImageCapture;
-    private Preview frontPreview;
-    private Preview backPreview;
-
-    private CameraSelector frontSelector;
-    private CameraSelector backSelector;
+    private CameraSlot[] slots;
 
     private ViewGroup containerView;
-    private FrameLayout frontContainer;
-    private FrameLayout backContainer;
-    private PreviewView frontPreviewView;
-    private PreviewView backPreviewView;
 
     private boolean isCapturing = false;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
-    private String pendingFrontPath;
-    private String pendingBackPath;
     private PluginCall captureCall;
 
     private static final String PHOTO_DIR_NAME = "dual_camera_photos";
 
     public interface PreviewCallback {
         void onError(String error);
-        void onCaptureComplete(String frontUri, String backUri, String frontPath, String backPath, long frontFileSizeKb, long backFileSizeKb);
+        void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb);
+    }
+
+    public static class CameraSlot {
+        final CameraSelector selector;
+        final Preview preview;
+        final ImageCapture imageCapture;
+        final FrameLayout container;
+        final PreviewView previewView;
+        String pendingPath;
+        Uri capturedUri;
+        long capturedFileSizeKb;
+        final Integer lensFacing;
+        final String label;
+        androidx.camera.core.CameraInfo nativeCameraInfo;
+        String cameraId;
+
+        CameraSlot(Context context, CameraSelector selector, String label, Integer lensFacing, androidx.camera.core.CameraInfo info, String cameraId) {
+            this.selector = selector;
+            this.lensFacing = lensFacing;
+            this.label = label;
+            this.nativeCameraInfo = info;
+            this.cameraId = cameraId;
+            this.preview = new Preview.Builder()
+                    .setTargetResolution(new Size(1080, 1440))
+                    .setTargetFrameRate(Range.<Integer>create(10, 15))
+                    .build();
+            this.imageCapture = new ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setTargetResolution(new Size(1080, 1440))
+                    .setJpegQuality(85)
+                    .build();
+            this.container = new FrameLayout(context);
+            this.previewView = new PreviewView(context);
+        }
     }
 
     public DualCameraManager(Context context, FragmentActivity activity, PreviewCallback callback) {
@@ -100,226 +128,215 @@ public class DualCameraManager {
 
     public void startPreview(PluginCall call) {
         mainHandler.post(() -> {
-            setupCameraProvider(call);
+            ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(context);
+
+            cameraProviderFuture.addListener(() -> {
+                try {
+                    cameraProvider = cameraProviderFuture.get();
+                    List<androidx.camera.core.CameraInfo> available =
+                        cameraProvider.getAvailableCameraInfos();
+
+                    CameraSlot[] selected = buildSlots(context, available, 2);
+                    if (selected == null) {
+                        call.reject("Need at least 1 camera, found " + available.size());
+                        return;
+                    }
+                    slots = selected;
+
+                    setupPreviewViews(new BindResultCallback() {
+                        @Override
+                        public void onResult(BindResult result) {
+                            try {
+                                JSArray camList = new JSArray();
+                                for (CameraSummary cam : result.cameras) {
+                                    JSObject camJson = new JSObject();
+                                    camJson.put("cameraId", cam.cameraId);
+                                    camJson.put("lensFacing", cam.lensFacing);
+                                    camList.put(camJson);
+                                }
+                                JSObject ret = new JSObject();
+                                ret.put("cameras", camList);
+                                ret.put("concurrent", result.concurrent);
+                                call.resolve(ret);
+                            } catch (Exception e) {
+                                call.reject("Failed to build result", e);
+                            }
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            call.reject(error);
+                        }
+                    });
+                } catch (ExecutionException | InterruptedException e) {
+                    Log.e(TAG, "Failed to get camera provider", e);
+                    call.reject("Failed to get camera provider: " + e.getMessage());
+                }
+            }, ContextCompat.getMainExecutor(context));
         });
     }
 
-    private void setupCameraProvider(PluginCall call) {
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-            ProcessCameraProvider.getInstance(context);
+    private CameraSlot[] buildSlots(Context ctx, List<androidx.camera.core.CameraInfo> available, int maxSlots) {
+        CameraSlot[] result = new CameraSlot[maxSlots];
+        int slot = 0;
+        String[] labels = new String[]{"正视图", "右侧视图", "摄像头3", "摄像头4"};
 
-        cameraProviderFuture.addListener(() -> {
-            try {
-                cameraProvider = cameraProviderFuture.get();
+        for (androidx.camera.core.CameraInfo info : available) {
+            if (slot >= maxSlots) break;
+            Integer facing = info.getLensFacing();
+            Log.d(TAG, "CameraInfo: cameraId=" + Camera2CameraInfo.from(info).getCameraId()
+                + ", lensFacing=" + facing
+                + ", sensorRotation=" + info.getSensorRotationDegrees()
+                + ", hasFlash=" + info.hasFlashUnit());
 
-                boolean hasFront = false;
-                boolean hasBack = false;
-                try {
-                    hasFront = cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA);
-                    hasBack = cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA);
-                } catch (CameraInfoUnavailableException e) {
-                    Log.e(TAG, "Camera info unavailable", e);
-                }
-                Log.d(TAG, "Has front camera: " + hasFront + ", back camera: " + hasBack);
+            CameraSelector.Builder builder = new CameraSelector.Builder();
 
-                if (!hasFront || !hasBack) {
-                    call.reject("Device does not have both front and back cameras");
-                    return;
-                }
-
-                setupPreviewViews(call);
-            } catch (ExecutionException | InterruptedException e) {
-                Log.e(TAG, "Failed to get camera provider", e);
-                call.reject("Failed to get camera provider: " + e.getMessage());
+            if (facing != null) {
+                builder.requireLensFacing(facing);
+            } else {
+                String cameraId = Camera2CameraInfo.from(info).getCameraId();
+                builder.addCameraFilter(cameraInfos -> {
+                    List<androidx.camera.core.CameraInfo> filtered = new ArrayList<>();
+                    for (androidx.camera.core.CameraInfo ci : cameraInfos) {
+                        if (Camera2CameraInfo.from(ci).getCameraId().equals(cameraId)) {
+                            filtered.add(ci);
+                            break;
+                        }
+                    }
+                    return filtered;
+                });
             }
-        }, ContextCompat.getMainExecutor(context));
+
+            result[slot++] = new CameraSlot(ctx, builder.build(), labels[slot - 1], facing, info, Camera2CameraInfo.from(info).getCameraId());
+        }
+
+        if (slot == 0) return null;
+        return Arrays.copyOf(result, slot);
     }
 
-    private void setupPreviewViews(PluginCall call) {
-        frontPreviewView = new PreviewView(context);
-        frontPreviewView.setImplementationMode(PreviewView.ImplementationMode.PERFORMANCE);
-        frontPreviewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+    private void setupPreviewViews(BindResultCallback callback) {
+        for (CameraSlot s : slots) {
+            s.previewView.setImplementationMode(PreviewView.ImplementationMode.PERFORMANCE);
+            s.previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+            s.preview.setSurfaceProvider(s.previewView.getSurfaceProvider());
 
-        backPreviewView = new PreviewView(context);
-        backPreviewView.setImplementationMode(PreviewView.ImplementationMode.PERFORMANCE);
-        backPreviewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
-
-        frontSelector = new CameraSelector.Builder()
-            .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
-            .build();
-        backSelector = new CameraSelector.Builder()
-            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-            .build();
-
-        frontImageCapture = new ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetResolution(new Size(1080, 1440))
-                .setJpegQuality(85)
-                .build();
-
-        backImageCapture = new ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetResolution(new Size(1080, 1440))
-                .setJpegQuality(85)
-                .build();
-
-        frontPreview = new Preview.Builder()
-                .setTargetResolution(new Size(1080, 1440))
-                .setTargetFrameRate(Range.<Integer>create(10, 15))
-                .build();
-        frontPreview.setSurfaceProvider(frontPreviewView.getSurfaceProvider());
-
-        backPreview = new Preview.Builder()
-                .setTargetResolution(new Size(1080, 1440))
-                .setTargetFrameRate(Range.<Integer>create(10, 15))
-                .build();
-        backPreview.setSurfaceProvider(backPreviewView.getSurfaceProvider());
+            s.container.setBackgroundColor(0xFF000000);
+            s.previewView.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            s.container.addView(s.previewView);
+        }
 
         ViewGroup rootView = (ViewGroup) activity.getWindow().getDecorView().findViewById(android.R.id.content);
         containerView = new LinearLayout(context);
         containerView.setLayoutParams(new ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        ((LinearLayout) containerView).setOrientation(LinearLayout.HORIZONTAL);
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         ((LinearLayout) containerView).setGravity(Gravity.CENTER);
+        if (slots.length == 1) {
+            ((LinearLayout) containerView).setOrientation(LinearLayout.VERTICAL);
+        } else {
+            ((LinearLayout) containerView).setOrientation(LinearLayout.HORIZONTAL);
+        }
 
         int screenWidthPx = context.getResources().getDisplayMetrics().widthPixels;
-        int containerWidth = (int) (screenWidthPx * 0.415f);
-        int previewHeight = (int) (containerWidth * 4f / 3f);
         int colMargin = dpToPx(16);
 
-        frontContainer = new FrameLayout(context);
-        frontContainer.setBackgroundColor(0xFF000000);
-        FrameLayout.LayoutParams frontConParams = new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, previewHeight
-        );
-        frontConParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
-        frontContainer.setLayoutParams(frontConParams);
-        frontPreviewView.setLayoutParams(new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        frontContainer.addView(frontPreviewView);
+        for (int i = 0; i < slots.length; i++) {
+            CameraSlot s = slots[i];
+            int w = slots.length == 1 ? (int) (screenWidthPx * 0.85f)
+                                     : (int) (screenWidthPx * 0.415f);
+            int h = (int) (w * 4f / 3f);
 
-        TextView frontLabel = new TextView(context);
-        frontLabel.setText("正视图");
-        frontLabel.setTextSize(14);
-        frontLabel.setTextColor(0xFF000000);
-        frontLabel.setGravity(Gravity.CENTER);
-        frontLabel.setBackgroundColor(0x00000000);
-        frontLabel.setPadding(0, dpToPx(4), 0, dpToPx(8));
-        frontLabel.setLayoutParams(new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
+            TextView label = new TextView(context);
+            label.setText(s.label);
+            label.setTextSize(14);
+            label.setTextColor(0xFF000000);
+            label.setGravity(Gravity.CENTER);
+            label.setBackgroundColor(0x00000000);
+            label.setPadding(0, dpToPx(4), 0, dpToPx(8));
+            label.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout frontLayout = new LinearLayout(context);
-        frontLayout.setOrientation(LinearLayout.VERTICAL);
-        frontLayout.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams frontParams = new LinearLayout.LayoutParams(
-            containerWidth, previewHeight + dpToPx(60)
-        );
-        frontParams.setMargins(colMargin, 0, colMargin / 2, 0);
-        frontLayout.setLayoutParams(frontParams);
-        frontLayout.addView(frontLabel);
-        frontLayout.addView(frontContainer);
+            FrameLayout.LayoutParams conParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, h);
+            conParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
+            s.container.setLayoutParams(conParams);
 
-        backContainer = new FrameLayout(context);
-        backContainer.setBackgroundColor(0xFF000000);
-        FrameLayout.LayoutParams backConParams = new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, previewHeight
-        );
-        backConParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
-        backContainer.setLayoutParams(backConParams);
-        backPreviewView.setLayoutParams(new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        backContainer.addView(backPreviewView);
+            LinearLayout col = new LinearLayout(context);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams colParams = new LinearLayout.LayoutParams(w, h + dpToPx(60));
+            int marginStart = slots.length == 1 ? colMargin
+                                : (i == 0 ? colMargin : colMargin / 2);
+            int marginEnd = slots.length == 1 ? colMargin
+                                : (i == slots.length - 1 ? colMargin : colMargin / 2);
+            colParams.setMargins(marginStart, 0, marginEnd, 0);
+            col.setLayoutParams(colParams);
+            col.addView(label);
+            col.addView(s.container);
 
-        TextView backLabel = new TextView(context);
-        backLabel.setText("右侧视图");
-        backLabel.setTextSize(14);
-        backLabel.setTextColor(0xFF000000);
-        backLabel.setGravity(Gravity.CENTER);
-        backLabel.setBackgroundColor(0x00000000);
-        backLabel.setPadding(0, dpToPx(4), 0, dpToPx(8));
-        backLabel.setLayoutParams(new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
-
-        LinearLayout backLayout = new LinearLayout(context);
-        backLayout.setOrientation(LinearLayout.VERTICAL);
-        backLayout.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
-            containerWidth, previewHeight + dpToPx(60)
-        );
-        backParams.setMargins(colMargin / 2, 0, colMargin, 0);
-        backLayout.setLayoutParams(backParams);
-        backLayout.addView(backLabel);
-        backLayout.addView(backContainer);
-
-        containerView.addView(frontLayout);
-        containerView.addView(backLayout);
+            containerView.addView(col);
+        }
 
         rootView.addView(containerView);
-
-        bindCameras(call);
+        bindCameras(callback);
     }
 
-    private void bindCameras(PluginCall call) {
+    private void bindCameras(BindResultCallback callback) {
         if (cameraProvider == null) {
-            call.reject("Camera provider not ready");
+            callback.onError("Camera provider not ready");
+            return;
+        }
+
+        if (slots.length == 1) {
+            trySequentialBind(callback);
             return;
         }
 
         try {
             cameraProvider.unbindAll();
 
-            UseCaseGroup frontUseCaseGroup = new UseCaseGroup.Builder()
-                .addUseCase(frontPreview)
-                .addUseCase(frontImageCapture)
-                .build();
+            List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
+            for (CameraSlot s : slots) {
+                UseCaseGroup ug = new UseCaseGroup.Builder()
+                        .addUseCase(s.preview)
+                        .addUseCase(s.imageCapture)
+                        .build();
+                configs.add(new ConcurrentCamera.SingleCameraConfig(s.selector, ug, activity));
+            }
 
-            UseCaseGroup backUseCaseGroup = new UseCaseGroup.Builder()
-                .addUseCase(backPreview)
-                .addUseCase(backImageCapture)
-                .build();
-
-            ConcurrentCamera.SingleCameraConfig frontConfig =
-                new ConcurrentCamera.SingleCameraConfig(frontSelector, frontUseCaseGroup, activity);
-
-            ConcurrentCamera.SingleCameraConfig backConfig =
-                new ConcurrentCamera.SingleCameraConfig(backSelector, backUseCaseGroup, activity);
-
-            cameraProvider.bindToLifecycle(Arrays.asList(frontConfig, backConfig));
-            Log.d(TAG, "Dual cameras bound via ConcurrentCamera API");
-
-            call.resolve();
+            cameraProvider.bindToLifecycle(configs);
+            Log.d(TAG, "ConcurrentCamera bind: " + slots.length + " cameras");
+            CameraSummary[] camInfos = buildCameraInfos();
+            callback.onResult(new BindResult(true, camInfos));
         } catch (Exception e) {
-            Log.e(TAG, "ConcurrentCamera bind failed, trying sequential bind", e);
-
-            tryFallbackSequentialBind(call);
+            Log.e(TAG, "ConcurrentCamera bind failed, falling back to sequential", e);
+            trySequentialBind(callback);
         }
     }
 
-    private void tryFallbackSequentialBind(PluginCall call) {
+    private void trySequentialBind(BindResultCallback callback) {
         try {
             cameraProvider.unbindAll();
-
-            cameraProvider.bindToLifecycle(activity, frontSelector, frontPreview, frontImageCapture);
-            Log.d(TAG, "Front camera bound (fallback)");
-
-            cameraProvider.bindToLifecycle(activity, backSelector, backPreview, backImageCapture);
-            Log.d(TAG, "Back camera bound (fallback)");
-
-            call.resolve();
+            for (CameraSlot s : slots) {
+                cameraProvider.bindToLifecycle(activity, s.selector, s.preview, s.imageCapture);
+                Log.d(TAG, "Sequential bind: " + s.label);
+            }
+            CameraSummary[] camInfos = buildCameraInfos();
+            callback.onResult(new BindResult(false, camInfos));
         } catch (Exception e) {
-            Log.e(TAG, "Fallback bind also failed", e);
-            call.reject("Failed to bind cameras: " + e.getMessage());
+            Log.e(TAG, "Sequential bind failed", e);
+            callback.onError("Failed to bind cameras: " + e.getMessage());
         }
+    }
+
+    private CameraSummary[] buildCameraInfos() {
+        CameraSummary[] infos = new CameraSummary[slots.length];
+        for (int i = 0; i < slots.length; i++) {
+            CameraSlot s = slots[i];
+            infos[i] = new CameraSummary(s.cameraId, s.lensFacing);
+        }
+        return infos;
     }
 
     public void capture(PluginCall call) {
@@ -327,8 +344,7 @@ public class DualCameraManager {
             call.reject("Capture already in progress");
             return;
         }
-
-        if (frontImageCapture == null || backImageCapture == null) {
+        if (slots == null || slots.length == 0) {
             call.reject("Camera not initialized");
             return;
         }
@@ -342,156 +358,106 @@ public class DualCameraManager {
         }
 
         String timestamp = String.valueOf(System.currentTimeMillis());
-        pendingFrontPath = new File(photoDir, "front_" + timestamp + ".jpg").getAbsolutePath();
-        pendingBackPath = new File(photoDir, "back_" + timestamp + ".jpg").getAbsolutePath();
+        String[] labels = {"front", "back"};
+        for (int i = 0; i < slots.length; i++) {
+            slots[i].pendingPath = new File(photoDir, labels[i] + "_" + timestamp + ".jpg").getAbsolutePath();
+        }
 
-        captureBackCamera();
+        captureNext(0);
     }
 
-    private void captureBackCamera() {
-        if (backImageCapture == null) {
-            isCapturing = false;
-            if (captureCall != null) {
-                captureCall.reject("Back camera not available");
-                captureCall = null;
-            }
+    private void captureNext(int index) {
+        if (index >= slots.length) {
+            finishCapture();
             return;
         }
 
-        backImageCapture.takePicture(
-            executor,
-            new ImageCapture.OnImageCapturedCallback() {
-                @Override
-                public void onCaptureSuccess(@NonNull ImageProxy image) {
-                    saveImage(image, pendingBackPath, false, (success) -> {
-                        image.close();
-                        if (success) {
-                            captureFrontCamera();
-                        }
-                    });
-                }
-
-                @Override
-                public void onError(@NonNull ImageCaptureException exception) {
-                    Log.e(TAG, "Back camera capture failed", exception);
-                    isCapturing = false;
-                    if (captureCall != null) {
-                        captureCall.reject("Back camera capture failed: " + exception.getMessage());
-                        captureCall = null;
-                    }
-                }
-            }
-        );
-    }
-
-    private void captureFrontCamera() {
-        if (frontImageCapture == null) {
-            isCapturing = false;
-            if (captureCall != null) {
-                captureCall.reject("Front camera not available");
-                captureCall = null;
-            }
-            return;
-        }
-
-        frontImageCapture.takePicture(
-            executor,
-            new ImageCapture.OnImageCapturedCallback() {
-                @Override
-                public void onCaptureSuccess(@NonNull ImageProxy image) {
-                    saveImage(image, pendingFrontPath, true, (frontSuccess) -> {
-                        pendingFrontPath = frontSuccess ? pendingFrontPath : null;
+        CameraSlot s = slots[index];
+        boolean isFront = s.lensFacing == CameraSelector.LENS_FACING_FRONT;
+        s.imageCapture.takePicture(executor, new ImageCapture.OnImageCapturedCallback() {
+            @Override
+            public void onCaptureSuccess(@NonNull ImageProxy image) {
+                saveImage(image, s.pendingPath, isFront, (success) -> {
+                    image.close();
+                    if (!success) {
                         isCapturing = false;
-
-                        Uri frontUri = frontSuccess ? FileProvider.getUriForFile(context,
-                            context.getPackageName() + ".fileprovider", new File(pendingFrontPath)) : null;
-                        Uri backUri = pendingBackPath != null ? FileProvider.getUriForFile(context,
-                            context.getPackageName() + ".fileprovider", new File(pendingBackPath)) : null;
-
-                        long frontFileSizeKb = frontUri != null ? new File(pendingFrontPath).length() / 1024 : 0;
-                        long backFileSizeKb = pendingBackPath != null ? new File(pendingBackPath).length() / 1024 : 0;
-
-                        JSObject result = new JSObject();
-                        result.put("frontCameraUrl", frontUri != null ? frontUri.toString() : null);
-                        result.put("backCameraUrl", backUri != null ? backUri.toString() : null);
-                        result.put("frontCameraPath", pendingFrontPath);
-                        result.put("backCameraPath", pendingBackPath);
-                        result.put("frontCameraFileSize", frontFileSizeKb);
-                        result.put("backCameraFileSize", backFileSizeKb);
-                        result.put("frontCameraFileSizeUnit", "KB");
-                        result.put("backCameraFileSizeUnit", "KB");
-                        result.put("timestamp", System.currentTimeMillis());
-
-                        mainHandler.post(() -> {
-                            if (cameraProvider != null) {
-                                cameraProvider.unbindAll();
-                                cameraProvider = null;
-                            }
-                            displayCapturedPhotos(frontUri, backUri);
-
-                            if (captureCall != null) {
-                                captureCall.resolve(result);
-                                captureCall = null;
-                            }
-
-                            if (callback != null) {
-                                callback.onCaptureComplete(
-                                    frontUri != null ? frontUri.toString() : null,
-                                    backUri != null ? backUri.toString() : null,
-                                    pendingFrontPath,
-                                    pendingBackPath,
-                                    frontFileSizeKb,
-                                    backFileSizeKb
-                                );
-                            }
-                        });
-                    });
-                }
-
-                @Override
-                public void onError(@NonNull ImageCaptureException exception) {
-                    Log.e(TAG, "Front camera capture failed", exception);
-                    isCapturing = false;
-                    if (captureCall != null) {
-                        captureCall.reject("Front camera capture failed: " + exception.getMessage());
-                        captureCall = null;
+                        if (captureCall != null) {
+                            captureCall.reject(s.label + " save failed");
+                            captureCall = null;
+                        }
+                        return;
                     }
+                    File f = new File(s.pendingPath);
+                    s.capturedFileSizeKb = f.length() / 1024;
+                    s.capturedUri = FileProvider.getUriForFile(context,
+                            context.getPackageName() + ".fileprovider", f);
+                    captureNext(index + 1);
+                });
+            }
+
+            @Override
+            public void onError(@NonNull ImageCaptureException exception) {
+                Log.e(TAG, s.label + " capture failed", exception);
+                isCapturing = false;
+                if (captureCall != null) {
+                    captureCall.reject(s.label + " capture failed: " + exception.getMessage());
+                    captureCall = null;
                 }
             }
-        );
+        });
     }
 
-    private void displayCapturedPhotos(Uri frontUri, Uri backUri) {
-        if (frontContainer != null && frontUri != null) {
-            frontContainer.removeAllViews();
-            ImageView frontImageView = new ImageView(context);
-            frontImageView.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            ));
-            frontImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            frontImageView.setImageURI(frontUri);
-            frontContainer.addView(frontImageView);
+    private void finishCapture() {
+        isCapturing = false;
+
+        String[] uris = new String[slots.length];
+        String[] paths = new String[slots.length];
+        long[] fileSizeKb = new long[slots.length];
+        for (int i = 0; i < slots.length; i++) {
+            uris[i] = slots[i].capturedUri != null ? slots[i].capturedUri.toString() : null;
+            paths[i] = slots[i].pendingPath;
+            fileSizeKb[i] = slots[i].capturedFileSizeKb;
         }
 
-        if (backContainer != null && backUri != null) {
-            backContainer.removeAllViews();
-            ImageView backImageView = new ImageView(context);
-            backImageView.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            ));
-            backImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            backImageView.setImageURI(backUri);
-            backContainer.addView(backImageView);
+        JSObject result = new JSObject();
+        for (int i = 0; i < slots.length; i++) {
+            result.put("cameraUrl" + i, uris[i]);
+            result.put("cameraPath" + i, paths[i]);
+            result.put("cameraFileSize" + i, fileSizeKb[i]);
+            result.put("cameraFileSizeUnit", "KB");
         }
+        result.put("timestamp", System.currentTimeMillis());
 
-        frontImageCapture = null;
-        backImageCapture = null;
-        frontPreview = null;
-        backPreview = null;
+        mainHandler.post(() -> {
+            if (cameraProvider != null) {
+                cameraProvider.unbindAll();
+                cameraProvider = null;
+            }
+            displayCapturedPhotos();
 
-        Log.d(TAG, "Captured photos displayed");
+            if (captureCall != null) {
+                captureCall.resolve(result);
+                captureCall = null;
+            }
+
+            if (callback != null) {
+                callback.onCaptureComplete(uris, paths, fileSizeKb);
+            }
+        });
+    }
+
+    private void displayCapturedPhotos() {
+        for (CameraSlot s : slots) {
+            if (s.capturedUri != null) {
+                s.container.removeAllViews();
+                ImageView iv = new ImageView(context);
+                iv.setLayoutParams(new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                iv.setImageURI(s.capturedUri);
+                s.container.addView(iv);
+            }
+        }
     }
 
     private void saveImage(ImageProxy image, String filePath, boolean isFront, Consumer<Boolean> onComplete) {
@@ -559,14 +525,7 @@ public class DualCameraManager {
                 containerView = null;
             }
 
-            frontContainer = null;
-            backContainer = null;
-            frontPreviewView = null;
-            backPreviewView = null;
-            frontImageCapture = null;
-            backImageCapture = null;
-            frontPreview = null;
-            backPreview = null;
+            slots = null;
 
             Log.d(TAG, "Preview stopped");
         });
@@ -579,6 +538,99 @@ public class DualCameraManager {
     public interface UploadCallback {
         void onSuccess(String response);
         void onError(String error);
+    }
+
+    public interface AvailableCamerasCallback {
+        void onResult(java.util.List<CameraSummary> cameras);
+        void onError(String error);
+    }
+
+    public static class BindResult {
+        public boolean concurrent;
+        public CameraSummary[] cameras;
+
+        public BindResult(boolean concurrent, CameraSummary[] cameras) {
+            this.concurrent = concurrent;
+            this.cameras = cameras;
+        }
+    }
+
+    public interface BindResultCallback {
+        void onResult(BindResult result);
+        void onError(String error);
+    }
+
+    public static class CameraSummary {
+        public String cameraId;
+        public Integer lensFacing;
+        public String deviceId;
+
+        public CameraSummary(String cameraId, Integer lensFacing) {
+            this.cameraId = cameraId;
+            this.lensFacing = lensFacing;
+            this.deviceId = cameraId;
+        }
+
+        public CameraSummary(String cameraId, Integer lensFacing, String deviceId) {
+            this.cameraId = cameraId;
+            this.lensFacing = lensFacing;
+            this.deviceId = deviceId;
+        }
+    }
+
+    public void getAvailableCameras(AvailableCamerasCallback callback) {
+        mainHandler.post(() -> {
+            try {
+                CameraManager cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+                java.util.List<CameraSummary> result = new java.util.ArrayList<>();
+
+                for (String cameraId : cameraManager.getCameraIdList()) {
+                    CameraCharacteristics chars = cameraManager.getCameraCharacteristics(cameraId);
+                    Integer lensFacing = null;
+                    Integer facingVal = chars.get(CameraCharacteristics.LENS_FACING);
+                    if (facingVal != null) {
+                        lensFacing = facingVal;
+                    }
+                    result.add(new CameraSummary(cameraId, lensFacing, cameraId));
+                    Log.d(TAG, "Camera2Enum: id=" + cameraId + ", facing=" + lensFacing);
+                }
+
+                callback.onResult(result);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to enumerate cameras via Camera2", e);
+                callback.onError(e.getMessage());
+            }
+        });
+    }
+
+    public void isDualCameraSupported(Consumer<Boolean> callback) {
+        mainHandler.post(() -> {
+            ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(context);
+
+            cameraProviderFuture.addListener(() -> {
+                try {
+                    ProcessCameraProvider provider = cameraProviderFuture.get();
+
+                    List<List<androidx.camera.core.CameraInfo>> concurrentInfos =
+                            provider.getAvailableConcurrentCameraInfos();
+
+                    boolean supported = false;
+                    for (List<androidx.camera.core.CameraInfo> group : concurrentInfos) {
+                        if (group.size() >= 2) {
+                            supported = true;
+                            break;
+                        }
+                    }
+
+                    Log.d(TAG, "isDualCameraSupported: " + supported + " (concurrent groups: " + concurrentInfos.size() + ")");
+                    callback.accept(supported);
+                } catch (ExecutionException | InterruptedException e) {
+                    Log.e(TAG, "Failed to check dual camera support", e);
+                    callback.accept(false);
+                }
+            }, ContextCompat.getMainExecutor(context));
+        });
     }
 
     public void uploadFiles(

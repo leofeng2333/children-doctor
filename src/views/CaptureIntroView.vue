@@ -63,7 +63,9 @@ const goToCapture = () => {
 <style scoped lang="scss">
 .capture-intro-page {
   height: 100vh;
-  height: 100dvh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -74,7 +76,9 @@ const goToCapture = () => {
 }
 
 .content {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   display: flex;
   flex-direction: column;
 }

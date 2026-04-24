@@ -1,20 +1,27 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   text: string
   disabled?: boolean
+  loading?: boolean
   color?: string
 }>(), {
   color: '#000'
 })
 
-defineEmits<{
+const emit = defineEmits<{
   click: []
 }>()
+
+const handleClick = () => {
+  if (props.disabled || props.loading) return;
+  emit('click')
+}
 </script>
 
 <template>
-  <button class="primary-btn" @click="$emit('click')">
-    {{ text }}
+  <button class="primary-btn" :class="{ 'disabled': disabled }" :disabled="disabled || loading" @click="handleClick">
+    <span v-if="loading" class="loading-dot"></span>
+    <span v-else>{{ text }}</span>
   </button>
 </template>
 
@@ -40,10 +47,26 @@ defineEmits<{
   box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
 }
 
-.primary-btn:disabled {
+.primary-btn.disabled {
   background: #BCBCBC;
   color: #fff;
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.loading-dot {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

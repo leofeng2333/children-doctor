@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
@@ -8,6 +8,10 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 
 const userStore = useUserStore()
+
+const btnDisabled = computed(() => {
+  return !userStore.nickname.trim() && !userStore.phone.trim()
+})
 
 const goNext = () => {
   if (!userStore.nickname.trim() && !userStore.phone.trim()) {
@@ -34,7 +38,7 @@ const goNext = () => {
       <!-- 名字输入 -->
       <div class="input-group">
         <label class="input-label">我该怎么称呼你呢？</label>
-        <input v-model="userStore.nickname" type="text" class="input-field" placeholder="请输入用户全名/昵称" />
+        <input v-model="userStore.nickname" type="text" :maxlength="20" class="input-field" placeholder="请输入用户全名/昵称" />
       </div>
       <!-- 电话输入 -->
       <div class="input-group">
@@ -46,7 +50,7 @@ const goNext = () => {
     <!-- 按钮 -->
     <div class="bottom-section-buttons">
       <!-- 按钮 -->
-      <PrimaryButton text="下一步" @click="goNext" />
+      <PrimaryButton text="下一步" :disabled="btnDisabled" @click="goNext" />
 
       <!-- Logo -->
       <LogoText class="logo" />
@@ -56,8 +60,10 @@ const goNext = () => {
 
 <style scoped>
 .form-container {
-  height: 100dvh;
   height: 100vh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -97,7 +103,9 @@ const goNext = () => {
 
 /* 表单 */
 .form-content {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
 }
 
 .input-group {

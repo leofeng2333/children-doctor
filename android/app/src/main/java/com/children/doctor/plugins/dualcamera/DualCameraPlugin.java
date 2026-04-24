@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.util.Log;
 import androidx.core.content.ContextCompat;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -43,6 +44,52 @@ public class DualCameraPlugin extends Plugin {
     private boolean hasNativeCameraPermission() {
         return ContextCompat.checkSelfPermission(getContext(), Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @PluginMethod()
+    public void getAvailableCameras(PluginCall call) {
+        if (!hasNativeCameraPermission()) {
+            call.reject("Camera permission not granted");
+            return;
+        }
+
+        DualCameraManager manager = new DualCameraManager(
+            getContext(),
+            getActivity(),
+            new DualCameraManager.PreviewCallback() {
+                @Override
+                public void onError(String error) {}
+
+                @Override
+                public void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb) {}
+            }
+        );
+
+        manager.getAvailableCameras(new DualCameraManager.AvailableCamerasCallback() {
+            @Override
+            public void onResult(java.util.List<DualCameraManager.CameraSummary> cameras) {
+                JSObject result = new JSObject();
+                JSArray cameraList = new JSArray();
+                try {
+                    for (DualCameraManager.CameraSummary cam : cameras) {
+                        JSObject camJson = new JSObject();
+                        camJson.put("cameraId", cam.cameraId);
+                        camJson.put("deviceId", cam.deviceId);
+                        camJson.put("lensFacing", cam.lensFacing);
+                        cameraList.put(camJson);
+                    }
+                    result.put("cameras", cameraList);
+                    call.resolve(result);
+                } catch (Exception e) {
+                    call.reject("Failed to build camera list", e);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                call.reject(error);
+            }
+        });
     }
 
     @PluginMethod()
@@ -109,16 +156,15 @@ public class DualCameraPlugin extends Plugin {
                 }
 
                 @Override
-                public void onCaptureComplete(String frontUri, String backUri, String frontPath, String backPath, long frontFileSizeKb, long backFileSizeKb) {
+                public void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb) {
                     JSObject result = new JSObject();
-                    result.put("frontCameraUrl", frontUri);
-                    result.put("backCameraUrl", backUri);
-                    result.put("frontCameraPath", frontPath);
-                    result.put("backCameraPath", backPath);
-                    result.put("frontCameraFileSize", frontFileSizeKb);
-                    result.put("backCameraFileSize", backFileSizeKb);
-                    result.put("frontCameraFileSizeUnit", "KB");
-                    result.put("backCameraFileSizeUnit", "KB");
+                    for (int i = 0; i < uris.length; i++) {
+                        String prefix = i == 0 ? "frontCamera" : "backCamera";
+                        result.put(prefix + "Url", uris[i]);
+                        result.put(prefix + "Path", paths[i]);
+                        result.put(prefix + "FileSize", fileSizeKb[i]);
+                        result.put(prefix + "FileSizeUnit", "KB");
+                    }
                     result.put("timestamp", System.currentTimeMillis());
                     notifyListeners("captureComplete", result);
                 }
@@ -165,6 +211,32 @@ public class DualCameraPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("running", cameraManager != null);
         call.resolve(result);
+    }
+
+    @PluginMethod()
+    public void isDualCameraSupported(PluginCall call) {
+        if (!hasNativeCameraPermission()) {
+            call.reject("Camera permission not granted");
+            return;
+        }
+
+        DualCameraManager manager = new DualCameraManager(
+            getContext(),
+            getActivity(),
+            new DualCameraManager.PreviewCallback() {
+                @Override
+                public void onError(String error) {}
+
+                @Override
+                public void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb) {}
+            }
+        );
+
+        manager.isDualCameraSupported(supported -> {
+            JSObject result = new JSObject();
+            result.put("supported", supported);
+            call.resolve(result);
+        });
     }
 
     @PluginMethod()
@@ -230,10 +302,11 @@ public class DualCameraPlugin extends Plugin {
                 public void onError(String error) {}
 
                 @Override
-                public void onCaptureComplete(String frontUri, String backUri, String frontPath, String backPath, long frontFileSizeKb, long backFileSizeKb) {}
+                public void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb) {}
             }
         );
 
         uploadManager.uploadFiles(uploadUrl, files, extraData, callback);
     }
+
 }

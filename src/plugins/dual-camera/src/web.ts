@@ -3,6 +3,7 @@ import type {
   DualCameraPlugin,
   DualCameraOptions,
   DualCameraPermissionStatus,
+  DualCameraPreviewResult,
   DualCameraUploadOptions,
 } from './definitions';
 
@@ -17,7 +18,19 @@ export class DualCameraWeb
     throw this.unimplemented('Not implemented on web.');
   }
 
-  async startPreview(_options?: DualCameraOptions): Promise<void> {
+  async getAvailableCameras(): Promise<{ cameras: any[] }> {
+    throw this.unavailable('Dual camera is only available on Android.');
+  }
+
+  async isDualCameraSupported(): Promise<{ supported: boolean }> {
+    throw this.unavailable('Dual camera is only available on Android.');
+  }
+
+  async startPreview(_options?: DualCameraOptions): Promise<DualCameraPreviewResult> {
+    throw this.unavailable('Dual camera preview is only available on Android.');
+  }
+
+  async startPreviewWithPermission(_options?: DualCameraOptions): Promise<DualCameraPreviewResult> {
     throw this.unavailable('Dual camera preview is only available on Android.');
   }
 
@@ -30,10 +43,6 @@ export class DualCameraWeb
   }
 
   async isPreviewRunning(): Promise<{ running: boolean }> {
-    throw this.unavailable('Dual camera preview is only available on Android.');
-  }
-
-  async startPreviewWithPermission(_options?: DualCameraOptions): Promise<void> {
     throw this.unavailable('Dual camera preview is only available on Android.');
   }
 

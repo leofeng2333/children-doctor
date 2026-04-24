@@ -3,8 +3,26 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Capacitor } from '@capacitor/core';
 import { DualCamera } from '@/plugins/dual-camera/src/index';
-import type { DualCameraPhoto } from '@/plugins/dual-camera/src/definitions';
+import type {
+  DualCameraPhoto,
+  DualCameraPreviewResult,
+  DualCameraDeviceCamera,
+} from '@/plugins/dual-camera/src/definitions';
 import { startAnalysis, uploadPhotos } from '@/utils/service';
+
+interface DeviceInfo {
+  webViewVersion: string;
+  webViewEngine: string;
+}
+
+function getDeviceInfo(): DeviceInfo {
+  const ua = navigator.userAgent;
+  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
+  return {
+    webViewVersion: chromeMatch?.[1] ?? 'unknown',
+    webViewEngine: 'chromium',
+  };
+}
 
 const router = useRouter();
 
@@ -14,12 +32,42 @@ const isPreviewActive = ref(false);
 const isCapturing = ref(false);
 const isUploading = ref(false);
 const errorMsg = ref('');
+const isConcurrent = ref(false);
+const cameraCount = ref(0);
+const supportsConcurrent = ref(false);
+const availableCameras = ref<DualCameraDeviceCamera[]>([]);
+const activeCameras = ref<DualCameraDeviceCamera[]>([]);
+const deviceInfo = ref<DeviceInfo | null>(null);
 
 onMounted(async () => {
   errorMsg.value = '';
+
   try {
-    await DualCamera.startPreviewWithPermission();
+    deviceInfo.value = getDeviceInfo();
+    console.log('[DualCamera] 设备信息:', deviceInfo.value);
+  } catch (e) {
+    console.warn('[DualCamera] 获取设备信息失败:', e);
+  }
+
+  try {
+    const supportResult = await DualCamera.isDualCameraSupported();
+    supportsConcurrent.value = supportResult.supported;
+    console.log('[DualCamera] 支持并发双摄:', supportResult.supported);
+
+    const camerasResult = await DualCamera.getAvailableCameras();
+    availableCameras.value = camerasResult.cameras;
+    cameraCount.value = camerasResult.cameras.length;
+    console.log('[DualCamera] 可用摄像头:', camerasResult.cameras);
+  } catch (e) {
+    console.warn('[DualCamera] 获取摄像头信息失败:', e);
+  }
+
+  try {
+    const result = await DualCamera.startPreviewWithPermission() as DualCameraPreviewResult;
     isPreviewActive.value = true;
+    isConcurrent.value = result.concurrent;
+    activeCameras.value = result.cameras;
+    console.log('[DualCamera] 预览开启, 并发模式:', result.concurrent, '摄像头:', result.cameras);
   } catch (e) {
     errorMsg.value = (e as Error).message;
     console.error('[DualCamera] startPreview failed:', e);
@@ -81,8 +129,44 @@ const handleStartAnalysis = async () => {
 <template>
   <div class="capture-page">
     <div class="capture-content">
+      <div v-if="deviceInfo" class="debug-panel">
+        <div class="debug-title">设备信息</div>
+        <div class="debug-row">
+          <span class="debug-label">WebView 引擎</span>
+          <span class="debug-value">{{ deviceInfo.webViewEngine }} / {{ deviceInfo.webViewVersion }}</span>
+        </div>
+        <div class="debug-divider"></div>
+        <div class="debug-row">
+          <span class="debug-label">支持并发双摄</span>
+          <span :class="['debug-value', supportsConcurrent ? 'ok' : 'warn']">
+            {{ supportsConcurrent ? '是' : '否' }}
+          </span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">可用摄像头</span>
+          <span class="debug-value">{{ cameraCount }} 个</span>
+        </div>
+        <div v-for="cam in availableCameras" :key="cam.cameraId" class="debug-row debug-sub">
+          <span class="debug-label">camera</span>
+          <span class="debug-value">{{ cam.cameraId }} / lensFacing={{ cam.lensFacing }}</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">本次开启预览</span>
+          <span :class="['debug-value', isConcurrent ? 'ok' : 'warn']">
+            {{ isConcurrent ? '并发模式' : '单摄模式' }}
+          </span>
+        </div>
+        <div v-for="cam in activeCameras" :key="cam.cameraId" class="debug-row debug-sub">
+          <span class="debug-label">active</span>
+          <span class="debug-value">{{ cam.cameraId }} / lensFacing={{ cam.lensFacing }}</span>
+        </div>
+      </div>
+
       <div class="title-tip">
         请正面看向镜头
+      </div>
+      <div v-if="errorMsg" class="error-tip">
+        {{ errorMsg }}
       </div>
     </div>
 
@@ -98,7 +182,11 @@ const handleStartAnalysis = async () => {
 <style scoped lang="scss">
 .capture-page {
   height: 100vh;
-  height: 100dvh;
+
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -110,10 +198,64 @@ const handleStartAnalysis = async () => {
 }
 
 .capture-content {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.debug-panel {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+}
+
+.debug-divider {
+  border-top: 1px solid #ddd;
+  margin: 6px 0;
+}
+
+.debug-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.debug-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: #555;
+
+  &.debug-sub {
+    padding-left: 12px;
+    font-size: 11px;
+    color: #777;
+  }
+}
+
+.debug-label {
+  color: #666;
+}
+
+.debug-value {
+  color: #333;
+  font-weight: 500;
+
+  &.ok {
+    color: #52c41a;
+  }
+
+  &.warn {
+    color: #fa8c16;
+  }
 }
 
 .title-tip {
@@ -152,29 +294,6 @@ const handleStartAnalysis = async () => {
   background: #fafafa;
   border-radius: 12px;
   padding: 8px;
-}
-
-.photo-item {
-  flex: 1;
-  text-align: center;
-
-  .label {
-    display: inline-block;
-    padding: 2px 8px;
-    background: #1890ff;
-    color: #fff;
-    border-radius: 4px;
-    font-size: 11px;
-    margin-bottom: 4px;
-  }
-
-  img {
-    width: 100%;
-    max-width: 160px;
-    height: auto;
-    border-radius: 6px;
-    border: 1px solid #eee;
-  }
 }
 
 .waiting-tip {

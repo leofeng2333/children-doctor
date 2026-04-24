@@ -138,7 +138,9 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .diagnosis-container {
   height: 100vh;
-  height: 100dvh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -171,7 +173,9 @@ onUnmounted(() => {
 
 /* 步骤容器 */
 .steps-container {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -184,7 +188,9 @@ onUnmounted(() => {
 .page-top-container {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   min-height: 0;
 }
 
@@ -248,7 +254,9 @@ onUnmounted(() => {
 /* 步骤文字 */
 .step-text {
   height: 100%;
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 16px;
   font-weight: 400;

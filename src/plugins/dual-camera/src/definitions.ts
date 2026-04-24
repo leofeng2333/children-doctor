@@ -37,11 +37,24 @@ export interface DualCameraUploadProgress {
   percent: number;
 }
 
+export interface DualCameraDeviceCamera {
+  cameraId: string;
+  deviceId: string;
+  lensFacing: number | null;
+}
+
+export interface DualCameraPreviewResult {
+  cameras: DualCameraDeviceCamera[];
+  concurrent: boolean;
+}
+
 export interface DualCameraPlugin {
   checkPermissions(): Promise<DualCameraPermissionStatus>;
   requestPermissions(): Promise<DualCameraPermissionStatus>;
-  startPreview(options?: DualCameraOptions): Promise<void>;
-  startPreviewWithPermission(options?: DualCameraOptions): Promise<void>;
+  getAvailableCameras(): Promise<{ cameras: DualCameraDeviceCamera[] }>;
+  isDualCameraSupported(): Promise<{ supported: boolean }>;
+  startPreview(options?: DualCameraOptions): Promise<DualCameraPreviewResult>;
+  startPreviewWithPermission(options?: DualCameraOptions): Promise<DualCameraPreviewResult>;
   stopPreview(): Promise<void>;
   capture(): Promise<DualCameraPhoto>;
   isPreviewRunning(): Promise<{ running: boolean }>;

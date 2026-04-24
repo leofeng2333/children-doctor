@@ -25,6 +25,7 @@ const cityMap: Record<string, { key: string; name: string; center: [number, numb
   '义乌市': { key: '330782', name: '义乌市', center: [120.05, 29.3], zoom: 1.1 },
 }
 
+const btnLoading = ref(false);
 const goNext = async () => {
   if (!isOutOfProvince.value && (!locationList.value.length || cityMap[locationList.value.lastItem.name])) {
     Toast.show({
@@ -43,7 +44,10 @@ const goNext = async () => {
     params.city = locationList.value[0].name;
     params.district = locationList.value[1]?.name;
   }
-  const tempResponse = await saveUserInfo(params)
+  btnLoading.value = true;
+  const tempResponse = await saveUserInfo(params).finally(() => {
+    btnLoading.value = false;
+  })
   console.log('tempResponse', tempResponse);
   router.push('/diagnosis')
 }
@@ -215,7 +219,7 @@ onUnmounted(() => {
     <!-- 按钮 -->
     <div class="bottom-section-buttons">
       <!-- 按钮 -->
-      <PrimaryButton text="下一步" @click="goNext" />
+      <PrimaryButton text="下一步" :loading="btnLoading" @click="goNext" />
 
       <!-- Logo -->
       <LogoText class="logo" />
@@ -226,7 +230,9 @@ onUnmounted(() => {
 <style scoped>
 .form-container {
   height: 100vh;
-  height: 100dvh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -278,7 +284,9 @@ onUnmounted(() => {
 
 /* 表单 */
 .page-content {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
 
   .position-list {
     display: flex;

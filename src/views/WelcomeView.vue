@@ -22,18 +22,17 @@ onMounted(async () => {
     <!-- 顶部口腔科图片 -->
     <div class="top-section">
       <div class="mouth-image">
-        <img src="https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/0cb7dd115bdb938b437f3dbb3c68668b9f380c63"
-          alt="口腔科" />
+        <img src="@/assets/images/tooth2.png" alt="口腔科" />
       </div>
     </div>
 
     <!-- 底部黄色区域 -->
     <div class="bottom-section">
+
       <div class="bottom-section-content">
         <!-- 小图标 -->
         <div class="small-icon">
-          <img src="https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/0cb7dd115bdb938b437f3dbb3c68668b9f380c63"
-            alt="口腔科图标" />
+          <img src="@/assets/images/tooth1.png" alt="口腔科图标" />
         </div>
 
         <!-- 主标题 -->
@@ -59,7 +58,9 @@ onMounted(async () => {
 <style scoped lang="scss">
 .welcome-container {
   height: 100vh;
-  height: 100dvh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #FDFDFD;
   display: flex;
   flex-direction: column;
@@ -73,14 +74,19 @@ onMounted(async () => {
   justify-content: flex-end;
   padding: 20px;
   padding-top: max(20px, env(safe-area-inset-top));
+  position: relative;
 }
 
 .mouth-image {
-  width: 100px;
-  height: 100px;
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+
+  position: absolute;
+  bottom: -78px;
+  right: 72px;
+  z-index: 10;
 }
 
 .mouth-image img {
@@ -91,7 +97,9 @@ onMounted(async () => {
 
 /* 底部区域 */
 .bottom-section {
-  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0%;
   background: linear-gradient(180deg, #FFE361 0%, #FFD93D 100%);
   border-radius: 0 240px 0 0;
   padding: 30px;
@@ -100,6 +108,8 @@ onMounted(async () => {
   flex-direction: column;
   align-items: flex-start;
   justify-content: space-between;
+  position: relative;
+  z-index: 11;
 
 
   .bottom-section-buttons {
@@ -111,12 +121,10 @@ onMounted(async () => {
 }
 
 .small-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
   overflow: hidden;
   margin-bottom: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .small-icon img {
