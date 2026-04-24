@@ -16,8 +16,8 @@ export const uploadPhotos = async (
 
   console.log('[Upload] 开始上传照片, 数量:', photos.length)
 
-  const frontPaths = photos.map((p) => p.frontCameraPath)
-  const sidePaths = photos.map((p) => p.backCameraPath)
+  const frontPaths = photos.map((p) => p.frontCameraUrl)
+  const sidePaths = photos.map((p) => p.backCameraUrl)
 
   console.log('[Upload] front paths:', frontPaths)
   console.log('[Upload] side paths:', sidePaths)

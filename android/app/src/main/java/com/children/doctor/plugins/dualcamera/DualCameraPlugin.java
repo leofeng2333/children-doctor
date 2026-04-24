@@ -55,7 +55,6 @@ public class DualCameraPlugin extends Plugin {
 
         DualCameraManager manager = new DualCameraManager(
             getContext(),
-            getActivity(),
             new DualCameraManager.PreviewCallback() {
                 @Override
                 public void onError(String error) {}
@@ -146,7 +145,6 @@ public class DualCameraPlugin extends Plugin {
 
         cameraManager = new DualCameraManager(
             getContext(),
-            getActivity(),
             new DualCameraManager.PreviewCallback() {
                 @Override
                 public void onError(String error) {
@@ -159,12 +157,11 @@ public class DualCameraPlugin extends Plugin {
                 public void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb) {
                     JSObject result = new JSObject();
                     for (int i = 0; i < uris.length; i++) {
-                        String prefix = i == 0 ? "frontCamera" : "backCamera";
-                        result.put(prefix + "Url", uris[i]);
-                        result.put(prefix + "Path", paths[i]);
-                        result.put(prefix + "FileSize", fileSizeKb[i]);
-                        result.put(prefix + "FileSizeUnit", "KB");
+                        result.put("cameraUrl" + i, uris[i]);
+                        result.put("cameraPath" + i, paths[i]);
+                        result.put("cameraFileSize" + i, fileSizeKb[i]);
                     }
+                    result.put("cameraFileSizeUnit", "KB");
                     result.put("timestamp", System.currentTimeMillis());
                     notifyListeners("captureComplete", result);
                 }
@@ -222,7 +219,6 @@ public class DualCameraPlugin extends Plugin {
 
         DualCameraManager manager = new DualCameraManager(
             getContext(),
-            getActivity(),
             new DualCameraManager.PreviewCallback() {
                 @Override
                 public void onError(String error) {}
@@ -296,7 +292,6 @@ public class DualCameraPlugin extends Plugin {
 
         DualCameraManager uploadManager = new DualCameraManager(
             getContext(),
-            getActivity(),
             new DualCameraManager.PreviewCallback() {
                 @Override
                 public void onError(String error) {}

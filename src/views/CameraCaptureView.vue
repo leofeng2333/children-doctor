@@ -91,8 +91,10 @@ const handleCapture = async () => {
     const result = await DualCamera.capture();
     photos.value.push({
       ...result,
-      frontCameraUrl: Capacitor.convertFileSrc(result.frontCameraUrl),
-      backCameraUrl: Capacitor.convertFileSrc(result.backCameraUrl),
+      // @ts-ignore
+      frontCameraUrl: Capacitor.convertFileSrc(result.cameraPath0),
+      // @ts-ignore
+      backCameraUrl: Capacitor.convertFileSrc(result.cameraPath1),
     });
     console.log('[DualCamera] 拍照成功:', result);
   } catch (e) {
