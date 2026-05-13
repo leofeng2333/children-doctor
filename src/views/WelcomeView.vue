@@ -1,14 +1,27 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '../components/LogoText.vue'
+import IconButton from '../components/IconButton.vue'
+import PasswordDialog from '../components/PasswordDialog.vue'
 import { createSession } from '@/utils/service'
 import { onMounted } from 'vue'
 
 const router = useRouter()
 
+const showPasswordDialog = ref(false)
+
 const goToForm = () => {
   router.push('/form')
+}
+
+const handlePasswordSuccess = () => {
+  console.log('管理员密码验证通过')
+}
+
+const handleAdminButtonClick = () => {
+  showPasswordDialog.value = true
 }
 
 onMounted(async () => {
@@ -19,6 +32,9 @@ onMounted(async () => {
 
 <template>
   <div class="welcome-container">
+    <!-- 右上角空白按钮 -->
+    <IconButton class="admin-button" @dblclick="handleAdminButtonClick" />
+
     <!-- 顶部口腔科图片 -->
     <div class="top-section">
       <div class="mouth-image">
@@ -48,19 +64,27 @@ onMounted(async () => {
       <div class="bottom-section-buttons">
         <PrimaryButton text="走进诊所" color="#fff" @click="goToForm" />
 
+        <div class="support-text">本AI诊断系统由杭州儿童口腔医院专业支持</div>
         <!-- Logo -->
         <LogoText class="logo" />
       </div>
     </div>
+
+    <!-- 密码验证弹窗 -->
+    <PasswordDialog :visible="showPasswordDialog" @close="showPasswordDialog = false"
+      @success="handlePasswordSuccess" />
   </div>
 </template>
 
 <style scoped lang="scss">
 .welcome-container {
   height: 100vh;
+  position: relative;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FDFDFD;
   display: flex;
   flex-direction: column;
@@ -69,7 +93,7 @@ onMounted(async () => {
 
 /* 顶部区域 */
 .top-section {
-  height: 30%;
+  height: 300px;
   display: flex;
   justify-content: flex-end;
   padding: 20px;
@@ -78,15 +102,23 @@ onMounted(async () => {
 }
 
 .mouth-image {
-  width: 150px;
-  height: 150px;
+  width: 268px;
+  height: 268px;
   border-radius: 50%;
   overflow: hidden;
 
   position: absolute;
-  bottom: -78px;
-  right: 72px;
+  bottom: -160px;
+  right: 140px;
   z-index: 10;
+}
+
+/* 右上角管理员按钮 */
+.admin-button {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  right: max(20px, env(safe-area-inset-right));
+  z-index: 20;
 }
 
 .mouth-image img {
@@ -101,8 +133,9 @@ onMounted(async () => {
   flex-shrink: 1;
   flex-basis: 0%;
   background: linear-gradient(180deg, #FFE361 0%, #FFD93D 100%);
-  border-radius: 0 240px 0 0;
-  padding: 30px;
+  border-radius: 0 500px 0 0;
+  padding: 85px;
+  padding-top: 120px;
   padding-bottom: calc(30px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
@@ -117,14 +150,21 @@ onMounted(async () => {
     display: flex;
     flex-direction: column;
     align-items: center;
+
+    .support-text {
+      font-size: 20px;
+      line-height: 1;
+      text-align: center;
+      margin-top: 32px;
+    }
   }
 }
 
 .small-icon {
-  width: 48px;
-  height: 48px;
+  width: 88px;
+  height: 88px;
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 32px;
 }
 
 .small-icon img {
@@ -135,23 +175,23 @@ onMounted(async () => {
 
 .main-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 48px;
+  font-size: 96px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 120px;
   color: #000;
   margin: 0 0 16px 0;
 }
 
 .sub-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 18px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 2.8;
+  line-height: 1.8;
   color: #000;
   margin: 0 0 40px 0;
 }
 
 .logo {
-  margin-top: 12px;
+  margin-top: 20px;
 }
 </style>

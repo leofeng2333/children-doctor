@@ -8,7 +8,7 @@
 <style scoped>
 .logo {
   font-family: 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 24px;
   color: #BCBCBC;
 }
 </style>

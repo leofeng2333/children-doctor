@@ -13,7 +13,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: CameraCaptureView,
+      component: WelcomeView,
     },
     {
       path: '/diagnosis',
