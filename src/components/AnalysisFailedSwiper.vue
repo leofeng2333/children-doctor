@@ -7,9 +7,18 @@ import 'swiper/css/effect-cards';
 
 // import required modules
 import { EffectCards } from 'swiper/modules';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const emit = defineEmits(['slideChange']);
+
+interface Props {
+  analysisResult: any;
+}
+
+const props = defineProps<Props>();
+
+const goodImgSrc = computed(() => props.analysisResult?.llmAnalysis.result.predictions.correctedImageUrl)
+const badImgSrc = computed(() => props.analysisResult?.llmAnalysis.result.predictions.futureImageUrl)
 
 const swiperInstance = ref<any>(null);
 
@@ -41,8 +50,12 @@ onUnmounted(() => {
   <div class="swiper-container">
     <div class="swiper detail-swiper">
       <div class="swiper-wrapper">
-        <div class="swiper-slide">Slide 1</div>
-        <div class="swiper-slide">Slide 2</div>
+        <div class="swiper-slide">
+          <img :src="goodImgSrc" alt="good-img" srcset="">
+        </div>
+        <div class="swiper-slide">
+          <img :src="badImgSrc" alt="bad-img" srcset="">
+        </div>
       </div>
 
     </div>
@@ -83,8 +96,8 @@ onUnmounted(() => {
   }
 
   .button-icon {
-    width: 25px;
-    height: 25px;
+    width: 60px;
+    height: 60px;
 
     img {
       width: 100%;
@@ -110,8 +123,8 @@ onUnmounted(() => {
 
 
 .swiper {
-  width: 210px;
-  height: 280px;
+  width: 485px;
+  height: 646px;
 }
 
 .swiper-slide {
@@ -123,6 +136,12 @@ onUnmounted(() => {
   font-weight: bold;
   color: #fff;
   border-radius: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .swiper-slide:nth-child(1n) {
@@ -141,18 +160,18 @@ onUnmounted(() => {
 }
 
 .custom-pagination-bullet {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
   background-color: #d9d9d9;
-  border-radius: 4px;
+  border-radius: 8px;
   transition: width 0.3s ease-in-out;
 
   &:first-child {
-    margin-right: 8px;
+    margin-right: 16px;
   }
 
   &-active {
-    width: 24px;
+    width: 48px;
   }
 }
 </style>

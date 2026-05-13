@@ -32,14 +32,19 @@ const handleClick = () => {
   background: #FF9900;
   color: v-bind(color);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 32px;
   border: none;
   border-radius: 50px;
-  padding: 12px 30px;
+  line-height: 1;
+  padding: 34px 60px;
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(255, 153, 0, 0.4);
   transition: all 0.3s ease;
+
+  &>span {
+    font-weight: 700;
+
+  }
 }
 
 .primary-btn:active {

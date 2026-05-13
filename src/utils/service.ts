@@ -74,3 +74,19 @@ export const saveQuestionAnswers = (answers: Record<string, any>) => {
 export const startAnalysis = () => {
   return post('/api/ai/analyze')
 }
+
+export const createSubscriptionTask = () => {
+  return post('/api/wechat/follow-task/create')
+}
+
+export const getSubscriptionStatus = (taskId: string) => {
+  return post('/api/wechat/follow-status', {
+    followTaskId: taskId,
+  })
+}
+
+export const getAnalysisResult = (taskId: string) => {
+  return post('/api/ai/result', {
+    taskId,
+  })
+}

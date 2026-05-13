@@ -1,16 +1,28 @@
 <script setup lang="ts">
 import LogoText from '@/components/LogoText.vue'
 import PrimaryButton from '@/components/PrimaryButton.vue'
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { getAnalysisResult, startAnalysis } from '@/utils/service'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 
 const router = useRouter()
 
-const loading = ref(false);
-const analysisResult = ref<any>({
-  success: false,
-});
+const analysisTaskId = useRoute().query.taskId as string;
+const analysisResult = ref<any>();
+
+const loading = ref(true);
+// const analysisResult = ref<any>({
+//   success: false,
+// });
+
+const analysisCompleted = computed(() => {
+  return !!analysisResult.value;
+})
+
+const analysisResultTag = computed(() => {
+  return analysisResult.value?.llmAnalysis.result.isHealthy;
+})
 
 const handleReturnReport = () => {
   router.back()
@@ -23,22 +35,31 @@ const handleSlideChange = (index: number) => {
 }
 
 onMounted(async () => {
-  const r1 = await fetch('/api/session/create', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      deviceId: '123456789011111111',
-    }),
+
+  //   {
+  //     "code": 200,
+  //     "message": "操作成功",
+  //     "data": {
+  //         "followTaskId": "follow_100024b8b9e1431f",
+  //         "qrcodeUrl": "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=gQE58TwAAAAAAAAAAS5odHRwOi8vd2VpeGluLnFxLmNvbS9xLzAyZjZwSm9kaWZlWHMxMDAwMDAwN0YAAgQNle9pAwQAAAAA"
+  //     }
+  // }
+  loading.value = true;
+  const result = await startAnalysis().finally(() => {
+    loading.value = false;
   });
-  const r1Json = await r1.json()
-  console.log('r1Json', r1Json);
-  // const response = await fetch('/api/wechat/follow-task/create', {
-  //   method: 'POST',
-  // });
-  // const geoJson = await response.json()
-  // console.log('geoJson', geoJson);
+  analysisResult.value = result;
+
+  // const timer = setInterval(async () => {
+  //   const tempAnalysisResult = await getAnalysisResult(analysisTaskId);
+  //   if (tempAnalysisResult.status !== 'processing') {
+  //     clearInterval(timer);
+  //     analysisResult.value = tempAnalysisResult;
+  //     console.log('tempAnalysisResult', tempAnalysisResult);
+
+  //   }
+  // }, 1000);
+
 })
 
 </script>
@@ -54,7 +75,7 @@ onMounted(async () => {
   <div v-else class="detail-analysis-page">
     <!-- 页面内容 -->
     <div class="page-content">
-      <template v-if="analysisResult.success">
+      <template v-if="analysisResultTag">
         <h1 class="page-title">真棒，<br />
           你的颌面非常健康！</h1>
         <!-- 说明文字 -->
@@ -82,7 +103,7 @@ onMounted(async () => {
 
 
       <div class="analysis-result">
-        <div class="analysis-success" v-if="analysisResult.success">
+        <div class="analysis-success" v-if="analysisResultTag">
           <div class="analysis-success-tips">
             <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
             <h3 class="tips-title">健康小贴士: </h3>
@@ -94,7 +115,7 @@ onMounted(async () => {
           <ScanSubscription />
         </div>
         <div class="analysis-failed" v-else>
-          <AnalysisFailedSwiper @slideChange="handleSlideChange" />
+          <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0" class="analysis-failed-tips">
               <h3 class="tips-title">问题诊断: </h3>
@@ -118,14 +139,16 @@ onMounted(async () => {
 <style scoped lang="scss">
 .detail-analysis-page {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 100px;
+  padding-top: max(100px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
 
@@ -154,20 +177,20 @@ onMounted(async () => {
 
 .page-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 28px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
   margin-top: 24px;
 }
 
 .description {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 26px;
+  line-height: 52px;
   color: #000;
-  margin: 16px 0 16px 0;
+  margin: 16px 0 32px 0;
 }
 
 .page-content {
@@ -190,9 +213,9 @@ onMounted(async () => {
       position: relative;
 
       .analysis-success-img {
-        width: 210px;
-        height: 280px;
-        margin-bottom: 48px;
+        width: 540px;
+        height: 720px;
+        margin-bottom: 60px;
 
         img {
           width: 100%;
@@ -207,33 +230,35 @@ onMounted(async () => {
         font-weight: 400;
         color: #000;
         position: absolute;
-        top: 240px;
+        top: 610px;
         right: 0;
         text-align: center;
-        width: 110px;
+        width: 270px;
         background-color: #bcbcbc;
         box-sizing: border-box;
-        padding: 10px 7px;
+        padding: 20px 12px;
         text-align: left;
 
         .tips-title {
-          font-size: 14px;
-          zoom: 0.65;
+          font-size: 20px;
+          // zoom: 0.65;
+          line-height: 1;
           font-weight: 700;
-          margin-bottom: 4px;
+          margin-top: 4px;
+          margin-bottom: 12px;
         }
 
         .tips-content {
-          font-size: 12px;
-          zoom: 0.65;
-          line-height: 16px;
+          font-size: 20px;
+          // zoom: 0.65;
+          line-height: 24px;
         }
 
         img {
-          width: 40px;
+          width: 80px;
           position: absolute;
-          left: 35px;
-          top: -20px;
+          left: 100px;
+          top: -40px;
         }
       }
     }
@@ -257,18 +282,18 @@ onMounted(async () => {
         width: 100%;
         background-color: #bcbcbc;
         box-sizing: border-box;
-        padding: 10px 10px;
+        padding: 40px;
         text-align: left;
 
         .tips-title {
-          font-size: 14px;
+          font-size: 24px;
           font-weight: 700;
           margin-bottom: 4px;
         }
 
         .tips-content {
-          font-size: 12px;
-          line-height: 16px;
+          font-size: 20px;
+          line-height: 24px;
         }
       }
     }

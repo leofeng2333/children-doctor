@@ -2,7 +2,7 @@ export default {
   plugins: {
     'postcss-px-to-viewport': {
       unitToConvert: 'px', // 要转换的单位
-      viewportWidth: 375, // 设计稿宽度（移动端）
+      viewportWidth: 900, // 设计稿宽度（移动端）
       unitPrecision: 5, // 转换后的精度
       propList: ['*'], // 要转换的 CSS 属性列表，* 表示全部
       viewportUnit: 'vw', // 转换后的单位
@@ -11,7 +11,7 @@ export default {
       minPixelValue: 1, // 最小转换值
       mediaQuery: false, // 是否转换媒体查询中的 px
       exclude: [/node_modules/, /exclude/], // 排除的文件（正则匹配）
-      landscape: false // 是否转换横屏状态
-    }
-  }
+      landscape: false, // 是否转换横屏状态
+    },
+  },
 }

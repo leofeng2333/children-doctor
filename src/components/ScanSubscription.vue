@@ -1,14 +1,35 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { createSubscriptionTask, getSubscriptionStatus } from '@/utils/service';
+import { onMounted, ref } from 'vue';
 
-const hadSubscription = ref(true);
+const hadSubscription = ref(false);
+
+const qrcodeUrl = ref('');
+
+onMounted(async () => {
+  const response = await createSubscriptionTask();
+  qrcodeUrl.value = response.qrcodeUrl;
+  console.log('response', response);
+
+  const timer = setInterval(async () => {
+    const tempHadSubscription = await getSubscriptionStatus(response.followTaskId);
+    console.log('tempHadSubscription', tempHadSubscription);
+    if (tempHadSubscription.status === 1) {
+      clearInterval(timer);
+      hadSubscription.value = true;
+    }
+
+    // hadSubscription.value = tempHadSubscription;
+    // if (tempHadSubscription) {
+    // }
+  }, 1000);
+})
 </script>
 
 <template>
   <div v-if="!hadSubscription" class="scan-container">
     <div class="qrcode-container">
-      <img src="https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=mock_ticket_follow_df491d7637184388_1776492749873"
-        alt="qrcode" />
+      <img :src="qrcodeUrl" alt="qrcode" />
     </div>
     <div class="subscription-container">
       扫码关注<br />
@@ -39,8 +60,8 @@ const hadSubscription = ref(true);
 }
 
 .qrcode-container {
-  width: 85px;
-  height: 85px;
+  width: 185px;
+  height: 185px;
 
   img {
     width: 100%;
@@ -50,8 +71,8 @@ const hadSubscription = ref(true);
 }
 
 .subscription-container {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 32px;
+  line-height: 42px;
   margin-top: 12px;
   text-align: center;
 }
@@ -66,16 +87,17 @@ const hadSubscription = ref(true);
     justify-content: center;
 
     .scan-save-photo-container {
-      font-size: 16px;
+      font-size: 32px;
+      line-height: 52px;
       display: flex;
       align-items: center;
-      padding-left: 6px;
+      padding-left: 12px;
       margin-bottom: 6px;
 
       img {
-        width: 16px;
-        height: 16px;
-        margin-right: 6px;
+        width: 24px;
+        height: 24px;
+        margin-right: 12px;
       }
     }
   }
@@ -95,14 +117,15 @@ const hadSubscription = ref(true);
   .status-tag-btn {
     padding: 10px 18px;
     color: #000;
-    font-size: 16px;
+    font-size: 32px;
+    line-height: 52px;
     font-weight: 700;
     background: #D9D9D9;
     border-radius: 50px;
     line-height: 1;
     box-sizing: border-box;
-    min-height: 32px;
-    min-width: 48px;
+    min-height: 70px;
+    min-width: 369px;
     width: 160px;
     border-color: transparent;
   }

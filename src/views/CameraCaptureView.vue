@@ -37,17 +37,9 @@ const cameraCount = ref(0);
 const supportsConcurrent = ref(false);
 const availableCameras = ref<DualCameraDeviceCamera[]>([]);
 const activeCameras = ref<DualCameraDeviceCamera[]>([]);
-const deviceInfo = ref<DeviceInfo | null>(null);
 
 onMounted(async () => {
   errorMsg.value = '';
-
-  try {
-    deviceInfo.value = getDeviceInfo();
-    console.log('[DualCamera] 设备信息:', deviceInfo.value);
-  } catch (e) {
-    console.warn('[DualCamera] 获取设备信息失败:', e);
-  }
 
   try {
     const supportResult = await DualCamera.isDualCameraSupported();
@@ -92,9 +84,9 @@ const handleCapture = async () => {
     photos.value.push({
       ...result,
       // @ts-ignore
-      frontCameraUrl: Capacitor.convertFileSrc(result.cameraPath0),
+      frontCameraUrl: result.cameraPath0,
       // @ts-ignore
-      backCameraUrl: Capacitor.convertFileSrc(result.cameraPath1),
+      backCameraUrl: result.cameraPath1,
     });
     console.log('[DualCamera] 拍照成功:', result);
   } catch (e) {
@@ -110,14 +102,17 @@ const handleStartAnalysis = async () => {
   isUploading.value = true;
   errorMsg.value = '';
   try {
-    console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
-    const uploadResult = await uploadPhotos(photos.value);
-    console.log('[CameraCapture] 上传结果:', uploadResult);
+    // console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
+    // const uploadResult = await uploadPhotos(photos.value);
+    // console.log('[CameraCapture] 上传结果:', uploadResult);
     const analysisResult = (await startAnalysis()) as { llmAnalysis: { taskId: string } };
     console.log('[CameraCapture] 启动分析:', analysisResult);
     const taskId = analysisResult.llmAnalysis.taskId
     await router.push({
-      path: '/detail-analysis?taskId=' + taskId,
+      path: '/detail-analysis',
+      query: {
+        taskId
+      }
     });
   } catch (e) {
     errorMsg.value = (e as Error).message;
@@ -131,50 +126,16 @@ const handleStartAnalysis = async () => {
 <template>
   <div class="capture-page">
     <div class="capture-content">
-      <div v-if="deviceInfo" class="debug-panel">
-        <div class="debug-title">设备信息</div>
-        <div class="debug-row">
-          <span class="debug-label">WebView 引擎</span>
-          <span class="debug-value">{{ deviceInfo.webViewEngine }} / {{ deviceInfo.webViewVersion }}</span>
-        </div>
-        <div class="debug-divider"></div>
-        <div class="debug-row">
-          <span class="debug-label">支持并发双摄</span>
-          <span :class="['debug-value', supportsConcurrent ? 'ok' : 'warn']">
-            {{ supportsConcurrent ? '是' : '否' }}
-          </span>
-        </div>
-        <div class="debug-row">
-          <span class="debug-label">可用摄像头</span>
-          <span class="debug-value">{{ cameraCount }} 个</span>
-        </div>
-        <div v-for="cam in availableCameras" :key="cam.cameraId" class="debug-row debug-sub">
-          <span class="debug-label">camera</span>
-          <span class="debug-value">{{ cam.cameraId }} / lensFacing={{ cam.lensFacing }}</span>
-        </div>
-        <div class="debug-row">
-          <span class="debug-label">本次开启预览</span>
-          <span :class="['debug-value', isConcurrent ? 'ok' : 'warn']">
-            {{ isConcurrent ? '并发模式' : '单摄模式' }}
-          </span>
-        </div>
-        <div v-for="cam in activeCameras" :key="cam.cameraId" class="debug-row debug-sub">
-          <span class="debug-label">active</span>
-          <span class="debug-value">{{ cam.cameraId }} / lensFacing={{ cam.lensFacing }}</span>
-        </div>
-      </div>
 
       <div class="title-tip">
         请正面看向镜头
       </div>
-      <div v-if="errorMsg" class="error-tip">
-        {{ errorMsg }}
-      </div>
     </div>
 
     <div class="bottom-section">
-      <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
-      <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" />
+      <!-- <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
+      <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" /> -->
+      <PrimaryButton text="开始分析" @click="handleStartAnalysis" />
       <LogoText class="logo" />
     </div>
   </div>
@@ -261,14 +222,13 @@ const handleStartAnalysis = async () => {
 }
 
 .title-tip {
-  padding: 12px 24px;
+  padding: 9px 54px;
   color: #000;
-  font-size: 14px;
+  font-size: 32px;
   background: #bcbcbc;
   border-radius: 50px;
-  line-height: 1;
+  line-height: 52px;
   box-sizing: border-box;
-  min-height: 32px;
   min-width: 48px;
   font-weight: 700;
 }
