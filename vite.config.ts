@@ -17,6 +17,13 @@ export default defineConfig({
       dts: 'src/components.d.ts',
     }),
   ],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  esbuild: {
+    logOverride: {
+      'ts-nocheck': 'suppress',
+      'ts-ignore': 'suppress',
+    },
+  } as any,
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

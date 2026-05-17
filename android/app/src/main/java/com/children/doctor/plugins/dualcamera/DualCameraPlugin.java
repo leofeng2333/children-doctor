@@ -194,6 +194,18 @@ public class DualCameraPlugin extends Plugin {
     }
 
     @PluginMethod()
+    public void closeAll(PluginCall call) {
+        if (cameraManager == null) {
+            call.resolve();
+            return;
+        }
+
+        cameraManager.stopPreview();
+        cameraManager = null;
+        call.resolve();
+    }
+
+    @PluginMethod()
     public void capture(PluginCall call) {
         if (cameraManager == null) {
             call.reject("Preview is not running. Call startPreview first.");

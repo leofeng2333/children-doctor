@@ -102,17 +102,12 @@ const handleStartAnalysis = async () => {
   isUploading.value = true;
   errorMsg.value = '';
   try {
-    // console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
-    // const uploadResult = await uploadPhotos(photos.value);
-    // console.log('[CameraCapture] 上传结果:', uploadResult);
-    const analysisResult = (await startAnalysis()) as { llmAnalysis: { taskId: string } };
-    console.log('[CameraCapture] 启动分析:', analysisResult);
-    const taskId = analysisResult.llmAnalysis.taskId
+    console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
+    await DualCamera.closeAll();
+    const uploadResult = await uploadPhotos(photos.value);
+    console.log('[CameraCapture] 上传结果:', uploadResult);
     await router.push({
       path: '/detail-analysis',
-      query: {
-        taskId
-      }
     });
   } catch (e) {
     errorMsg.value = (e as Error).message;
@@ -133,9 +128,9 @@ const handleStartAnalysis = async () => {
     </div>
 
     <div class="bottom-section">
-      <!-- <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
-      <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" /> -->
-      <PrimaryButton text="开始分析" @click="handleStartAnalysis" />
+      <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
+      <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" />
+      <!-- <PrimaryButton text="开始分析" @click="handleStartAnalysis" /> -->
       <LogoText class="logo" />
     </div>
   </div>
@@ -153,8 +148,8 @@ const handleStartAnalysis = async () => {
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 90px;
+  padding-top: max(110px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
   justify-content: space-between;
@@ -280,6 +275,6 @@ const handleStartAnalysis = async () => {
 }
 
 .logo {
-  margin-top: 12px;
+  margin-top: 20px;
 }
 </style>

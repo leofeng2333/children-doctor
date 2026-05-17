@@ -38,6 +38,10 @@ export class DualCameraWeb
     throw this.unavailable('Dual camera preview is only available on Android.');
   }
 
+  async closeAll(): Promise<void> {
+    throw this.unavailable('Dual camera preview is only available on Android.');
+  }
+
   async capture(): Promise<{ frontCameraUrl: string; backCameraUrl: string; frontCameraPath: string; backCameraPath: string; timestamp: number }> {
     throw this.unavailable('Dual camera capture is only available on Android.');
   }

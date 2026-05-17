@@ -16,11 +16,12 @@ const goToCapture = () => {
     <div class="content">
       <!-- 标题 -->
       <h1 class="title">
-        太棒了！<br />现在我们来拍摄照片
+        你的表现太棒了！<br />现在进入拍照环节吧！
       </h1>
 
       <!-- 说明文字 -->
       <p class="description">
+        请注视屏幕<br />
         根据屏幕提示，请拍摄不同角度的照片。
       </p>
 
@@ -63,14 +64,16 @@ const goToCapture = () => {
 <style scoped lang="scss">
 .capture-intro-page {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 90px;
+  padding-top: max(135px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
@@ -85,18 +88,18 @@ const goToCapture = () => {
 
 .title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 30px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
   margin-top: 24px;
 }
 
 .description {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 26px;
+  line-height: 52px;
   color: #000;
   margin: 16px 0 48px 0;
 }
@@ -105,6 +108,7 @@ const goToCapture = () => {
   display: flex;
   justify-content: space-between;
   margin-top: 36px;
+  padding: 0 50px;
 }
 
 .sample-item {
@@ -124,8 +128,8 @@ const goToCapture = () => {
 /* 四角边框容器 */
 .corner-frame {
   position: relative;
-  width: 116px;
-  height: 107px;
+  width: 240px;
+  height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -134,9 +138,9 @@ const goToCapture = () => {
 /* 四角边框 */
 .corner {
   position: absolute;
-  width: 24px;
-  height: 24px;
-  border: 2px solid #e7e7e7;
+  width: 48px;
+  height: 48px;
+  border: 2px solid #bcbcbc;
 
   &.top-left {
     top: 0;
@@ -168,8 +172,8 @@ const goToCapture = () => {
 }
 
 .sample-image {
-  width: 100px;
-  height: 91px;
+  width: 200px;
+  height: 180px;
   object-fit: cover;
   border-radius: 4px;
 }
@@ -198,6 +202,6 @@ const goToCapture = () => {
 }
 
 .logo {
-  margin-top: 12px;
+  margin-top: 20px;
 }
 </style>

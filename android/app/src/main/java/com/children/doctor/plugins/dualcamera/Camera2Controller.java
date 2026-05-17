@@ -170,7 +170,7 @@ public class Camera2Controller {
 
                 @Override
                 public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surfaceTexture) {
-                    if (sessions[slot] != null) {
+                    if (sessions != null && sessions[slot] != null) {
                         sessions[slot].close();
                     }
                     if (surface != null) {
@@ -368,7 +368,16 @@ public class Camera2Controller {
                 sessions = null;
             }
             isCapturing.set(false);
-            Log.d(TAG, "Preview stopped, camera resources released");
+
+            if (containerView != null) {
+                ViewGroup rootView = (ViewGroup) ((android.app.Activity) context).getWindow().getDecorView().findViewById(android.R.id.content);
+                if (rootView != null) {
+                    rootView.removeView(containerView);
+                }
+                containerView = null;
+            }
+
+            Log.d(TAG, "Preview stopped, camera resources and views released");
         });
     }
 

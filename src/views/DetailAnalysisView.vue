@@ -34,32 +34,18 @@ const handleSlideChange = (index: number) => {
   swiperIndex.value = index;
 }
 
-onMounted(async () => {
+const diagnosisResults = computed(() => {
+  return analysisResult.value?.llmAnalysis.result.issues.join();
+})
 
-  //   {
-  //     "code": 200,
-  //     "message": "操作成功",
-  //     "data": {
-  //         "followTaskId": "follow_100024b8b9e1431f",
-  //         "qrcodeUrl": "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=gQE58TwAAAAAAAAAAS5odHRwOi8vd2VpeGluLnFxLmNvbS9xLzAyZjZwSm9kaWZlWHMxMDAwMDAwN0YAAgQNle9pAwQAAAAA"
-  //     }
-  // }
+onMounted(async () => {
   loading.value = true;
   const result = await startAnalysis().finally(() => {
     loading.value = false;
   });
+  console.log('result', result);
+
   analysisResult.value = result;
-
-  // const timer = setInterval(async () => {
-  //   const tempAnalysisResult = await getAnalysisResult(analysisTaskId);
-  //   if (tempAnalysisResult.status !== 'processing') {
-  //     clearInterval(timer);
-  //     analysisResult.value = tempAnalysisResult;
-  //     console.log('tempAnalysisResult', tempAnalysisResult);
-
-  //   }
-  // }, 1000);
-
 })
 
 </script>
@@ -119,7 +105,7 @@ onMounted(async () => {
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0" class="analysis-failed-tips">
               <h3 class="tips-title">问题诊断: </h3>
-              <p class="tips-content">你的长相是这样的你的长相是这样的你的长相是这样的你的长相是这样的</p>
+              <p class="tips-content">{{ diagnosisResults }}</p>
             </div>
             <ScanSubscription v-show="swiperIndex === 1" />
           </div>
@@ -147,7 +133,7 @@ onMounted(async () => {
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 100px;
+  padding: 0 90px;
   padding-top: max(100px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
@@ -305,7 +291,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 0 8px;
 }
 
 .logo {

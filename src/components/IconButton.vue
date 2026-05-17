@@ -21,12 +21,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <button
-    class="icon-button"
-    type="button"
-    aria-label="功能按钮"
-    @click="handleTap"
-  >
+  <button class="icon-button" type="button" aria-label="功能按钮" @click="handleTap">
     <slot />
   </button>
 </template>

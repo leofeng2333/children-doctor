@@ -149,16 +149,9 @@ public class DualCameraManager {
     public void stopPreview() {
         mainHandler.post(() -> {
             if (controller != null) {
-                controller.shutdown();
+                controller.stopPreview();
                 controller = null;
             }
-
-            ViewGroup rootView = (ViewGroup) ((android.app.Activity) context).getWindow().getDecorView().findViewById(android.R.id.content);
-            if (rootView != null) {
-                rootView.removeView(containerView);
-            }
-            containerView = null;
-
             isCapturing = false;
             Log.d(TAG, "Preview stopped");
         });

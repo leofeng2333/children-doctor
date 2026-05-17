@@ -230,15 +230,17 @@ onUnmounted(() => {
 <style scoped>
 .form-container {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  padding: 0 90px;
+  padding-top: max(135px, env(safe-area-inset-top));
+  padding-bottom: calc(42px + env(safe-area-inset-bottom));
   overflow: hidden;
   justify-content: space-between;
 }
@@ -254,31 +256,30 @@ onUnmounted(() => {
 /* 欢迎语 */
 .welcome-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 30px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
-  margin-top: 24px;
 }
 
 /* 标题 */
 .form-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 1.625;
+  line-height: 52px;
   color: #000;
   margin: 16px 0 30px 0;
 }
 
 .map-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 1.625;
+  line-height: 52px;
   color: #000;
 
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 
 }
 
@@ -298,9 +299,9 @@ onUnmounted(() => {
 
   .position-item {
 
-    padding: 8px 18px;
+    padding: 12px 26px;
     color: #000;
-    font-size: 14px;
+    font-size: 24px;
     background: #D9D9D9;
     border-radius: 50px;
     line-height: 1;
@@ -311,10 +312,10 @@ onUnmounted(() => {
   }
 
   .position-item-separator {
-    width: 6px;
+    width: 12px;
     height: 1px;
     background-color: #000;
-    margin: 0 8px;
+    margin: 0 12px;
     color: #000;
   }
 
@@ -347,7 +348,7 @@ onUnmounted(() => {
       /* background: #D9D9D9; */
       /* border-radius: 12px; */
       width: 100%;
-      height: 360px;
+      height: 600px;
     }
 
   }
@@ -359,7 +360,7 @@ onUnmounted(() => {
   align-items: center;
 
   .logo {
-    margin-top: 12px;
+    margin-top: 20px;
   }
 }
 </style>

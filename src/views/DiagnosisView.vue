@@ -28,8 +28,8 @@ const drawConnectors = () => {
     const curr = circle.getBoundingClientRect()
     let x1, y1, x2, y2: number;
     if (i === 1) {
-      x1 = prev.right - containerRect.left + 10
-      y1 = prev.top + prev.height / 2 - containerRect.top + 15
+      x1 = prev.right - containerRect.left + 15
+      y1 = prev.top + prev.height / 2 - containerRect.top + 20
       x2 = curr.left - containerRect.left - 10
       y2 = curr.top - containerRect.top + 24
     } else {
@@ -138,14 +138,16 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .diagnosis-container {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 90px;
+  padding-top: max(135px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
   justify-content: space-between;
@@ -154,19 +156,18 @@ onUnmounted(() => {
 /* 欢迎语 */
 .welcome-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 30px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
-  margin-top: 24px;
 }
 
 /* 说明文字 */
 .description {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 26px;
+  line-height: 52px;
   color: #000;
   margin: 16px 0 48px 0;
 }
@@ -243,8 +244,8 @@ onUnmounted(() => {
 
 /* 圆形图标 */
 .step-circle {
-  width: 72px;
-  height: 72px;
+  width: 172px;
+  height: 172px;
   border-radius: 50%;
   background: #D9D9D9;
   flex-shrink: 0;
@@ -258,23 +259,21 @@ onUnmounted(() => {
   flex-shrink: 1;
   flex-basis: 0%;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
   font-weight: 400;
   color: #000;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  margin-left: 8px;
-  zoom: 0.8;
+  margin-left: 16px;
 
 
   .step-text-title {
-    font-size: 12px;
+    font-size: 24px;
     font-weight: 700;
   }
 
   .step-text-content {
-    font-size: 12px;
+    font-size: 24px;
     font-weight: 400;
     color: #000;
     line-height: 20px;

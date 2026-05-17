@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
@@ -9,12 +9,50 @@ const router = useRouter()
 
 const userStore = useUserStore()
 
+const phoneError = ref('')
+const nicknameError = ref('')
+
+const validateNickname = (value: string) => {
+  if (!value.trim()) {
+    nicknameError.value = '请输入用户称呼'
+    return false
+  }
+  nicknameError.value = ''
+  return true
+}
+
+const validatePhone = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    phoneError.value = ''
+    return false
+  }
+  const phoneRegex = /^1[3-9]\d{9}$/
+  if (!phoneRegex.test(trimmed)) {
+    phoneError.value = '请输入正确的11位手机号'
+    return false
+  }
+  phoneError.value = ''
+  return true
+}
+
 const btnDisabled = computed(() => {
-  return !userStore.nickname.trim() && !userStore.phone.trim()
+  return !userStore.nickname.trim() || !userStore.phone.trim()
+})
+
+watch(() => userStore.phone, (newVal) => {
+  validatePhone(newVal)
+})
+
+watch(() => userStore.nickname, (newVal) => {
+  validateNickname(newVal)
 })
 
 const goNext = () => {
-  if (!userStore.nickname.trim() && !userStore.phone.trim()) {
+  if (!validateNickname(userStore.nickname)) {
+    return;
+  }
+  if (!validatePhone(userStore.phone)) {
     return;
   }
   router.push('/map')
@@ -38,12 +76,16 @@ const goNext = () => {
       <!-- 名字输入 -->
       <div class="input-group">
         <label class="input-label">我该怎么称呼你呢？</label>
-        <input v-model="userStore.nickname" type="text" :maxlength="20" class="input-field" placeholder="请输入用户全名/昵称" />
+        <input v-model="userStore.nickname" type="text" :maxlength="20" class="input-field"
+          :class="{ 'input-field-error': nicknameError }" placeholder="请输入用户全名/昵称" />
+        <p v-if="nicknameError" class="error-text">{{ nicknameError }}</p>
       </div>
       <!-- 电话输入 -->
       <div class="input-group">
         <label class="input-label">你的联系方式？</label>
-        <input v-model="userStore.phone" type="tel" class="input-field" placeholder="请输入手机号" />
+        <input v-model="userStore.phone" type="tel" class="input-field" :class="{ 'input-field-error': phoneError }"
+          placeholder="请输入手机号" />
+        <p v-if="phoneError" class="error-text">{{ phoneError }}</p>
       </div>
     </div>
 
@@ -61,14 +103,16 @@ const goNext = () => {
 <style scoped>
 .form-container {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 90px;
+  padding-top: max(135px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
@@ -84,19 +128,18 @@ const goNext = () => {
 /* 欢迎语 */
 .welcome-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 30px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
-  margin-top: 24px;
 }
 
 /* 标题 */
 .form-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 1.625;
+  line-height: 52px;
   color: #000;
   margin: 16px 0 60px 0;
 }
@@ -115,7 +158,8 @@ const goNext = () => {
 .input-label {
   display: block;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
+  line-height: 52px;
   font-weight: 400;
   color: #000;
   margin-bottom: 12px;
@@ -123,13 +167,13 @@ const goNext = () => {
 
 .input-field {
   width: 100%;
-  height: 50px;
+  height: 75px;
   background: #D9D9D9;
   border: none;
   border-radius: 12px;
   padding: 0 24px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 20px;
   color: #000;
 }
 
@@ -142,13 +186,24 @@ const goNext = () => {
   background: #E5E5E5;
 }
 
+.input-field-error {
+  background: #FFE4E4 !important;
+  border: 2px solid #FF4D4F;
+}
+
+.error-text {
+  font-size: 18px;
+  color: #FF4D4F;
+  margin: 8px 0 0 0;
+}
+
 .bottom-section-buttons {
   display: flex;
   flex-direction: column;
   align-items: center;
 
   .logo {
-    margin-top: 12px;
+    margin-top: 20px;
   }
 }
 </style>

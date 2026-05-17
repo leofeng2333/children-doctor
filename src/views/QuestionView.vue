@@ -65,9 +65,9 @@ const goNext = async () => {
   <div class="question-page">
     <div class="question-content">
       <!-- 返回按钮 -->
-      <button class="back-button" @click="goBack">
-        <img src="@/assets/images/back-button.png" alt="返回" />
-      </button>
+      <div class="back-button">
+        <!-- <img src="@/assets/images/back-button.png" alt="返回" /> -->
+      </div>
 
       <!-- 问询标题 -->
       <div class="header">
@@ -102,22 +102,24 @@ const goNext = async () => {
 <style scoped lang="scss">
 .question-page {
   height: 100vh;
+
   @supports (height: 100dvh) {
     height: 100dvh;
   }
+
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  padding: 0 30px;
-  padding-top: max(42px, env(safe-area-inset-top));
+  padding: 0 90px;
+  padding-top: max(135px, env(safe-area-inset-top));
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
   justify-content: space-between;
 }
 
 .back-button {
-  width: 45px;
-  height: 45px;
+  width: 80px;
+  height: 80px;
   padding: 0;
   border: none;
   background: transparent;
@@ -125,7 +127,6 @@ const goNext = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 24px;
 
   img {
     width: 100%;
@@ -140,18 +141,18 @@ const goNext = async () => {
 
 .title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 32px;
+  font-size: 64px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 80px;
   color: #000;
   margin: 0;
 }
 
 .progress {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 18px;
+  font-size: 36px;
   font-weight: 700;
-  line-height: 2.22;
+  line-height: 80px;
   color: #000;
   margin: 0;
   margin-top: 4px;
@@ -169,17 +170,17 @@ const goNext = async () => {
 
 .question-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 18px;
+  font-size: 36px;
   font-weight: 400;
-  line-height: 1.44;
+  line-height: 52px;
   color: #000;
   margin: 0;
 }
 
 .options {
   display: flex;
-  gap: 16px;
   margin-top: 75px;
+
 }
 
 .option-button {
@@ -193,11 +194,15 @@ const goNext = async () => {
   border-radius: 73.5px;
   cursor: pointer;
   transition: all 0.2s ease;
-  width: 141px;
-  height: 64.5px;
+  width: 282px;
+  height: 130px;
 
   &.selected {
     background: #4CAF50;
+  }
+
+  &:first-child {
+    margin-right: 48px;
   }
 }
 
@@ -210,9 +215,9 @@ const goNext = async () => {
 
 .option-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 16px;
+  font-size: 32px;
   font-weight: 700;
-  line-height: 1.625;
+  line-height: 52px;
   color: #000;
   margin-top: 2px;
 }
@@ -224,6 +229,6 @@ const goNext = async () => {
 }
 
 .logo {
-  margin-top: 12px;
+  margin-top: 20px;
 }
 </style>
