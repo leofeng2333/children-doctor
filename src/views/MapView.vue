@@ -10,7 +10,6 @@ import { saveUserInfo } from '@/utils/service'
 
 const router = useRouter()
 
-const isOutOfProvince = ref(false)
 const chartRef = ref<HTMLDivElement | null>(null)
 
 const echartsInstance = ref<echarts.ECharts | null>(null);
@@ -27,7 +26,7 @@ const cityMap: Record<string, { key: string; name: string; center: [number, numb
 
 const btnLoading = ref(false);
 const goNext = async () => {
-  if (!isOutOfProvince.value && (!locationList.value.length || cityMap[locationList.value.lastItem.name])) {
+  if (!locationList.value.length || cityMap[locationList.value.lastItem.name]) {
     Toast.show({
       text: '请选择县市区',
       position: 'center'
@@ -38,26 +37,16 @@ const goNext = async () => {
   const params: Record<string, string> = {
     nickname: nickname,
     phone: phone,
-    province: isOutOfProvince.value ? '浙江省外' : '浙江省',
+    province: '浙江省',
   }
-  if (!isOutOfProvince.value) {
-    params.city = locationList.value[0].name;
-    params.district = locationList.value[1]?.name;
-  }
+  params.city = locationList.value[0].name;
+  params.district = locationList.value[1]?.name;
   btnLoading.value = true;
   const tempResponse = await saveUserInfo(params).finally(() => {
     btnLoading.value = false;
   })
   console.log('tempResponse', tempResponse);
   router.push('/diagnosis')
-}
-
-const selectOutOfProvince = () => {
-  isOutOfProvince.value = true
-  currentMapName.value = '浙江省';
-  initMap('330000', '浙江省', [120.4, 29.1], 1.1);
-  locationList.value = [];
-
 }
 
 const showReturn = computed(() => {
@@ -138,12 +127,10 @@ const initMap = async (mapKey: string, mapName: string, center: [number, number]
 }
 
 onMounted(async () => {
-
   await initMap('330000', '浙江省', [120.4, 29.1], 1.1);
   await nextTick();
   echartsInstance.value!.on('click', (params: any) => {
     console.log('city', params);
-    isOutOfProvince.value = false;
 
     const cityInfo = cityMap[params.name]
 
@@ -165,7 +152,6 @@ onMounted(async () => {
     }
     locationList.value.push(params);
 
-
   })
 })
 
@@ -179,25 +165,19 @@ onUnmounted(() => {
   <div class="form-container">
 
     <div class="page-top-container">
-      <!-- 欢迎语 -->
       <div class="welcome-text">
         Hi，<br />我是你的AI口腔医生！
       </div>
 
-      <!-- 标题 -->
       <h1 class="form-title">我们先来填写用户的问诊单吧。</h1>
 
-      <!-- 表单 -->
       <div class="page-content">
         <h2 class="map-title">
           你现居住在哪里？
         </h2>
 
-        <div v-if="isOutOfProvince" class="position-list">
-          <div class="position-item">浙江省外</div>
-        </div>
-        <div v-else class="position-list">
-          <div class="position-item">{{ isOutOfProvince ? "浙江省外" : "浙江省" }}</div>
+        <div class="position-list">
+          <div class="position-item">浙江省</div>
           <template v-for="item in locationList">
             <span class="position-item-separator"></span>
             <div class="position-item">{{ item.name }}</div>
@@ -206,22 +186,14 @@ onUnmounted(() => {
 
         <div class="map-area">
           <img v-show="showReturn" src="@/assets/return.svg" alt="返回" class="return-icon" @click="handleReturn">
-
-          <div class="position-button-area" :class="{ 'return-button-area': showReturn }">
-            <div v-show="!showReturn" class="position-item position-button" @click="selectOutOfProvince">我在浙江省外</div>
-          </div>
           <div ref="chartRef" class="map-container"></div>
         </div>
       </div>
 
     </div>
 
-    <!-- 按钮 -->
     <div class="bottom-section-buttons">
-      <!-- 按钮 -->
       <PrimaryButton text="下一步" :loading="btnLoading" @click="goNext" />
-
-      <!-- Logo -->
       <LogoText class="logo" />
     </div>
   </div>
@@ -245,15 +217,6 @@ onUnmounted(() => {
   justify-content: space-between;
 }
 
-/* Logo */
-.logo-text {
-  text-align: center;
-  font-family: 'Inter', sans-serif;
-  font-size: 24px;
-  color: #BCBCBC;
-}
-
-/* 欢迎语 */
 .welcome-text {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 64px;
@@ -262,7 +225,6 @@ onUnmounted(() => {
   color: #000;
 }
 
-/* 标题 */
 .form-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 32px;
@@ -278,12 +240,9 @@ onUnmounted(() => {
   font-weight: 400;
   line-height: 52px;
   color: #000;
-
   margin-bottom: 12px;
-
 }
 
-/* 表单 */
 .page-content {
   flex-grow: 1;
   flex-shrink: 1;
@@ -294,18 +253,15 @@ onUnmounted(() => {
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
-    align-items: center;
   }
 
   .position-item {
-
     padding: 12px 26px;
     color: #000;
     font-size: 24px;
     background: #D9D9D9;
     border-radius: 50px;
     line-height: 1;
-
     box-sizing: border-box;
     min-height: 32px;
     min-width: 48px;
@@ -333,24 +289,10 @@ onUnmounted(() => {
       height: 32px;
     }
 
-    .position-button-area {
-      display: flex;
-      justify-content: flex-end;
-      min-height: 32px;
-
-      .position-button {
-        font-weight: 700;
-      }
-    }
-
     .map-container {
-      /* flex: 1; */
-      /* background: #D9D9D9; */
-      /* border-radius: 12px; */
       width: 100%;
       height: 600px;
     }
-
   }
 }
 

@@ -55,7 +55,7 @@ const goNext = () => {
   if (!validatePhone(userStore.phone)) {
     return;
   }
-  router.push('/map')
+  router.push('/location')
   userStore.update(userStore.nickname.trim(), userStore.phone.trim())
 }
 </script>
