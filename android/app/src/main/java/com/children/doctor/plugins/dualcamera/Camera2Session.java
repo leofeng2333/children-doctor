@@ -1,9 +1,9 @@
 package com.children.doctor.plugins.dualcamera;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -20,7 +20,9 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 import android.util.Size;
+import android.view.Display;
 import android.view.Surface;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 
@@ -32,11 +34,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Camera2Session {
 
     private static final String TAG = "Camera2Session";
+    private static final int MAX_CAPTURE_BUFFERS = 2;
+    private static final int OPEN_RETRY_COUNT = 2;
+    private static final long OPEN_RETRY_DELAY_MS = 500;
 
     private final Context context;
     private final HandlerThread cameraThread;
@@ -52,6 +58,7 @@ public class Camera2Session {
 
     private final AtomicBoolean isOpen = new AtomicBoolean(false);
     private final AtomicBoolean isCapturing = new AtomicBoolean(false);
+    private final AtomicBoolean isPreviewActive = new AtomicBoolean(false);
 
     private final String cameraId;
     private final int lensFacing;
@@ -67,6 +74,12 @@ public class Camera2Session {
     public interface CaptureCallback {
         void onCaptureSuccess(String filePath, long fileSizeKb);
         void onCaptureError(String error);
+    }
+
+    public interface Callback {
+        void onOpened();
+        void onDisconnected();
+        void onError(String error);
     }
 
     public static class Camera2Info {
@@ -92,24 +105,27 @@ public class Camera2Session {
         this.captureSize = (captureSize != null && captureSize.getWidth() > 0 && captureSize.getHeight() > 0)
                 ? captureSize : DEFAULT_CAPTURE_SIZE;
 
-        int so = 0;
-        try {
-            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
-            CameraCharacteristics chars = manager.getCameraCharacteristics(cameraId);
-            Integer sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION);
-            so = (sensorOrientation != null) ? sensorOrientation : 0;
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to read sensor orientation", e);
-        }
-        this.sensorOrientation = so;
+        this.sensorOrientation = readSensorOrientation();
 
         this.cameraThread = new HandlerThread("Camera2Thread-" + cameraId);
         this.cameraThread.start();
         this.cameraHandler = new Handler(cameraThread.getLooper());
 
         Log.d(TAG, "Created session for camera " + cameraId + ", lensFacing=" + lensFacing
-                + ", sensorOrientation=" + this.sensorOrientation
+                + ", sensorOrientation=" + sensorOrientation
                 + ", preview=" + this.previewSize + ", capture=" + this.captureSize);
+    }
+
+    private int readSensorOrientation() {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics chars = manager.getCameraCharacteristics(cameraId);
+            Integer orientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            return (orientation != null) ? orientation : 0;
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to read sensor orientation", e);
+            return 0;
+        }
     }
 
     public static List<Camera2Info> getAvailableCameras(Context context) {
@@ -121,8 +137,8 @@ public class Camera2Session {
                 Integer facing = chars.get(CameraCharacteristics.LENS_FACING);
                 int lensFacing = (facing != null) ? facing : CameraCharacteristics.LENS_FACING_BACK;
 
-                Size capture = chooseOptimalSize(context, id, lensFacing, true);
-                Size preview = chooseOptimalSize(context, id, lensFacing, false);
+                Size capture = chooseOptimalSize(context, id, true);
+                Size preview = chooseOptimalSize(context, id, false);
 
                 result.add(new Camera2Info(id, lensFacing, preview, capture));
                 Log.d(TAG, "Camera2Enum: id=" + id + ", facing=" + lensFacing
@@ -134,7 +150,7 @@ public class Camera2Session {
         return result;
     }
 
-    private static Size chooseOptimalSize(Context ctx, String cameraId, int lensFacing, boolean forCapture) {
+    private static Size chooseOptimalSize(Context ctx, String cameraId, boolean forCapture) {
         try {
             CameraManager manager = (CameraManager) ctx.getSystemService(Context.CAMERA_SERVICE);
             CameraCharacteristics chars = manager.getCameraCharacteristics(cameraId);
@@ -188,20 +204,25 @@ public class Camera2Session {
         }
     }
 
-    public void open(Surface previewSurface, Callback callback) {
+    public void open(Surface previewSurface, SurfaceTexture surfaceTexture, Callback callback) {
         if (isOpen.get()) {
             callback.onError("Camera already open");
             return;
         }
 
         this.previewSurface = previewSurface;
+        this.previewSurfaceTexture = surfaceTexture;
         this.imageReader = ImageReader.newInstance(
                 captureSize.getWidth(),
                 captureSize.getHeight(),
                 ImageFormat.JPEG,
-                2
+                MAX_CAPTURE_BUFFERS
         );
 
+        openWithRetry(previewSurface, 0, callback);
+    }
+
+    private void openWithRetry(Surface previewSurface, int attempt, Callback callback) {
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
@@ -217,6 +238,7 @@ public class Camera2Session {
                     cameraDevice = null;
                     isOpen.set(false);
                     Log.w(TAG, "Camera " + cameraId + " disconnected");
+                    callback.onDisconnected();
                 }
 
                 @Override
@@ -224,13 +246,26 @@ public class Camera2Session {
                     camera.close();
                     cameraDevice = null;
                     isOpen.set(false);
-                    Log.e(TAG, "Camera " + cameraId + " error: " + error);
-                    callback.onError("Camera error: " + error);
+                    Log.e(TAG, "Camera " + cameraId + " error: " + error + ", attempt=" + attempt);
+
+                    if (attempt < OPEN_RETRY_COUNT) {
+                        Log.d(TAG, "Retrying open for camera " + cameraId + " (attempt " + (attempt + 1) + "/" + (OPEN_RETRY_COUNT + 1) + ")");
+                        cameraHandler.postDelayed(() -> openWithRetry(previewSurface, attempt + 1, callback),
+                                OPEN_RETRY_DELAY_MS);
+                    } else {
+                        callback.onError("Camera error: " + error);
+                    }
                 }
             }, cameraHandler);
         } catch (CameraAccessException | SecurityException e) {
             Log.e(TAG, "Failed to open camera " + cameraId, e);
-            callback.onError("Failed to open camera: " + e.getMessage());
+            if (attempt < OPEN_RETRY_COUNT) {
+                Log.d(TAG, "Retrying open after exception for camera " + cameraId);
+                cameraHandler.postDelayed(() -> openWithRetry(previewSurface, attempt + 1, callback),
+                        OPEN_RETRY_DELAY_MS);
+            } else {
+                callback.onError("Failed to open camera: " + e.getMessage());
+            }
         }
     }
 
@@ -275,18 +310,36 @@ public class Camera2Session {
 
             captureSession.setRepeatingRequest(previewRequestBuilder.build(),
                     null, cameraHandler);
+            isPreviewActive.set(true);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to start preview", e);
         }
     }
 
-    public void capture(String filePath, CaptureCallback callback) {
+    public void pausePreview() {
+        if (!isPreviewActive.get()) return;
+        try {
+            captureSession.stopRepeating();
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "Failed to pause preview", e);
+        }
+        isPreviewActive.set(false);
+    }
+
+    public void resumePreview() {
+        if (!isOpen.get() || !isPreviewActive.compareAndSet(false, true)) return;
+        startPreview();
+    }
+
+    public void capture(String filePath, CountDownLatch latch, CaptureCallback callback) {
         if (!isOpen.get() || captureSession == null || cameraDevice == null) {
             callback.onCaptureError("Camera not ready");
+            latch.countDown();
             return;
         }
-        if (isCapturing.getAndSet(true)) {
+        if (!isCapturing.compareAndSet(false, true)) {
             callback.onCaptureError("Capture already in progress");
+            latch.countDown();
             return;
         }
 
@@ -308,29 +361,13 @@ public class Camera2Session {
                     byte[] bytes = new byte[buffer.remaining()];
                     buffer.get(bytes);
 
-                    byte[] finalBytes = bytes;
-
-                    if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
-                        Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                        if (original != null) {
-                            Matrix m = new Matrix();
-                            m.setScale(-1f, 1f);
-                            Bitmap mirrored = Bitmap.createBitmap(original, 0, 0,
-                                    original.getWidth(), original.getHeight(), m, true);
-                            original.recycle();
-                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                            mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
-                            mirrored.recycle();
-                            finalBytes = baos.toByteArray();
-                        }
-                    }
+                    byte[] finalBytes = applyFrontMirrorIfNeeded(bytes);
 
                     try (FileOutputStream fos = new FileOutputStream(filePath)) {
                         fos.write(finalBytes);
                     }
 
-                    File f = new File(filePath);
-                    long fileSizeKb = f.length() / 1024;
+                    long fileSizeKb = new File(filePath).length() / 1024;
                     isCapturing.set(false);
                     callback.onCaptureSuccess(filePath, fileSizeKb);
                 } catch (Exception e) {
@@ -346,13 +383,11 @@ public class Camera2Session {
         }, cameraHandler);
 
         try {
-            CaptureRequest.Builder builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            CaptureRequest.Builder builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             builder.addTarget(imageReader.getSurface());
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
-            int displayRotation = context.getResources().getConfiguration().orientation
-                    == Configuration.ORIENTATION_PORTRAIT ? Surface.ROTATION_0 : Surface.ROTATION_90;
-            builder.set(CaptureRequest.JPEG_ORIENTATION, getJpegOrientation(displayRotation));
+            builder.set(CaptureRequest.JPEG_ORIENTATION, getJpegOrientation(getDisplayRotation()));
 
             captureSession.capture(builder.build(), new CameraCaptureSession.CaptureCallback() {
                 @Override
@@ -369,25 +404,69 @@ public class Camera2Session {
         }
     }
 
+    private byte[] applyFrontMirrorIfNeeded(byte[] bytes) {
+        if (lensFacing != CameraCharacteristics.LENS_FACING_FRONT) {
+            return bytes;
+        }
+
+        Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        if (original == null) {
+            return bytes;
+        }
+
+        int w = original.getWidth();
+        int h = original.getHeight();
+        Bitmap mirrored = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(mirrored);
+        Matrix m = new Matrix();
+        m.setScale(-1f, 1f);
+        m.postTranslate(w, 0);
+        canvas.drawBitmap(original, m, null);
+        original.recycle();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
+        mirrored.recycle();
+        return baos.toByteArray();
+    }
+
     public void close() {
         try {
             if (captureSession != null) {
                 captureSession.close();
                 captureSession = null;
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing capture session", e);
+        }
+
+        try {
             if (cameraDevice != null) {
                 cameraDevice.close();
                 cameraDevice = null;
             }
-            if (imageReader != null) {
-                imageReader.close();
-                imageReader = null;
-            }
-            isOpen.set(false);
-            isCapturing.set(false);
         } catch (Exception e) {
-            Log.e(TAG, "Error closing camera", e);
+            Log.e(TAG, "Error closing camera device", e);
         }
+
+        if (imageReader != null) {
+            imageReader.close();
+            imageReader = null;
+        }
+
+        if (previewSurface != null) {
+            previewSurface.release();
+            previewSurface = null;
+        }
+
+        if (previewSurfaceTexture != null) {
+            previewSurfaceTexture.release();
+            previewSurfaceTexture = null;
+        }
+
+        isOpen.set(false);
+        isCapturing.set(false);
+        isPreviewActive.set(false);
     }
 
     public void shutdown() {
@@ -398,6 +477,15 @@ public class Camera2Session {
                 cameraThread.join(1000);
             } catch (InterruptedException e) {
                 Log.e(TAG, "Thread join interrupted", e);
+            }
+            if (cameraThread.isAlive()) {
+                cameraThread.quit();
+                try {
+                    cameraThread.join(500);
+                } catch (InterruptedException e) {
+                    Log.e(TAG, "Forced thread join interrupted", e);
+                }
+                Log.w(TAG, "Forced thread quit for camera " + cameraId);
             }
         }
     }
@@ -426,38 +514,26 @@ public class Camera2Session {
         return sensorOrientation;
     }
 
-    /**
-     * Computes the JPEG orientation value for the given display rotation.
-     * Sensor output is rotated by sensorOrientation degrees, and needs to be
-     * corrected so the image appears upright in the display.
-     */
-    public int getDisplayRotation(Context context) {
-        return context.getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_PORTRAIT
-                ? Surface.ROTATION_0 : Surface.ROTATION_90;
+    public int getDisplayRotation() {
+        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        Display display = wm.getDefaultDisplay();
+        return display.getRotation();
     }
 
     public int getJpegOrientation(int displayRotation) {
-        int rotation = 0;
+        int rotation;
         switch (displayRotation) {
-            case Surface.ROTATION_0:   rotation = 0;   break;
             case Surface.ROTATION_90:  rotation = 90;  break;
             case Surface.ROTATION_180: rotation = 180; break;
             case Surface.ROTATION_270: rotation = 270; break;
+            default:                    rotation = 0;   break;
         }
 
         if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
-            // Front camera: mirrored output, no 360- needed.
             return (sensorOrientation + rotation) % 360;
         } else {
-            // Back camera: straightforward subtraction.
             return (sensorOrientation - rotation + 360) % 360;
         }
-    }
-
-    public interface Callback {
-        void onOpened();
-        void onError(String error);
     }
 
     private static class CompareSizesByArea implements Comparator<Size> {

@@ -3,6 +3,7 @@ import WelcomeView from '../views/WelcomeView.vue'
 import DiagnosisView from '../views/DiagnosisView.vue'
 import FormView from '../views/FormView.vue'
 import MapView from '../views/MapView.vue'
+import LocationView from '../views/LocationView.vue'
 import QuestionView from '../views/QuestionView.vue'
 import CaptureIntroView from '../views/CaptureIntroView.vue'
 import CameraCaptureView from '../views/CameraCaptureView.vue'
@@ -29,6 +30,11 @@ const router = createRouter({
       path: '/map',
       name: 'map',
       component: MapView,
+    },
+    {
+      path: '/location',
+      name: 'location',
+      component: LocationView,
     },
     {
       path: '/question',

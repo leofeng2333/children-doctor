@@ -1,28 +1,13 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { Capacitor } from '@capacitor/core';
 import { DualCamera } from '@/plugins/dual-camera/src/index';
 import type {
   DualCameraPhoto,
-  DualCameraPreviewResult,
   DualCameraDeviceCamera,
 } from '@/plugins/dual-camera/src/definitions';
-import { startAnalysis, uploadPhotos } from '@/utils/service';
-
-interface DeviceInfo {
-  webViewVersion: string;
-  webViewEngine: string;
-}
-
-function getDeviceInfo(): DeviceInfo {
-  const ua = navigator.userAgent;
-  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
-  return {
-    webViewVersion: chromeMatch?.[1] ?? 'unknown',
-    webViewEngine: 'chromium',
-  };
-}
+import { uploadPhotos } from '@/utils/service';
+import { useAnalysisStore } from '@/stores';
 
 const router = useRouter();
 
@@ -55,7 +40,7 @@ onMounted(async () => {
   }
 
   try {
-    const result = await DualCamera.startPreviewWithPermission() as DualCameraPreviewResult;
+    const result = await DualCamera.startPreview();
     isPreviewActive.value = true;
     isConcurrent.value = result.concurrent;
     activeCameras.value = result.cameras;
@@ -80,13 +65,13 @@ const handleCapture = async () => {
   isCapturing.value = true;
   errorMsg.value = '';
   try {
-    const result = await DualCamera.capture();
+    const result = await DualCamera.capture() as Record<string, unknown>;
     photos.value.push({
-      ...result,
-      // @ts-ignore
-      frontCameraUrl: result.cameraPath0,
-      // @ts-ignore
-      backCameraUrl: result.cameraPath1,
+      frontCameraUrl: result.cameraUrl0 as string,
+      backCameraUrl: result.cameraUrl1 as string,
+      frontCameraPath: result.cameraPath0 as string,
+      backCameraPath: result.cameraPath1 as string,
+      timestamp: result.timestamp as number,
     });
     console.log('[DualCamera] 拍照成功:', result);
   } catch (e) {
@@ -103,12 +88,13 @@ const handleStartAnalysis = async () => {
   errorMsg.value = '';
   try {
     console.log('[CameraCapture] 开始分析, 照片数量:', photos.value.length);
-    await DualCamera.closeAll();
+    isPreviewActive.value = false;
     const uploadResult = await uploadPhotos(photos.value);
     console.log('[CameraCapture] 上传结果:', uploadResult);
-    await router.push({
-      path: '/detail-analysis',
-    });
+    const analysisStore = useAnalysisStore();
+    analysisStore.start();
+    await DualCamera.stopPreview();
+    await router.push({ path: '/question' });
   } catch (e) {
     errorMsg.value = (e as Error).message;
     console.error('[CameraCapture] 开始分析失败:', e);
@@ -121,7 +107,6 @@ const handleStartAnalysis = async () => {
 <template>
   <div class="capture-page">
     <div class="capture-content">
-
       <div class="title-tip">
         请正面看向镜头
       </div>
@@ -130,12 +115,10 @@ const handleStartAnalysis = async () => {
     <div class="bottom-section">
       <PrimaryButton v-if="!hasCaptured" text="咔嚓！" :disabled="isCapturing || !!errorMsg" @click="handleCapture" />
       <PrimaryButton v-else text="开始分析" :disabled="isUploading" :loading="isUploading" @click="handleStartAnalysis" />
-      <!-- <PrimaryButton text="开始分析" @click="handleStartAnalysis" /> -->
       <LogoText class="logo" />
     </div>
   </div>
 </template>
-
 
 <style scoped lang="scss">
 .capture-page {
@@ -163,57 +146,6 @@ const handleStartAnalysis = async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-.debug-panel {
-  width: 100%;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  background: #f5f5f5;
-  border-radius: 8px;
-  font-size: 12px;
-  font-family: 'Courier New', monospace;
-}
-
-.debug-divider {
-  border-top: 1px solid #ddd;
-  margin: 6px 0;
-}
-
-.debug-title {
-  font-weight: 700;
-  margin-bottom: 6px;
-  color: #333;
-}
-
-.debug-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 2px 0;
-  color: #555;
-
-  &.debug-sub {
-    padding-left: 12px;
-    font-size: 11px;
-    color: #777;
-  }
-}
-
-.debug-label {
-  color: #666;
-}
-
-.debug-value {
-  color: #333;
-  font-weight: 500;
-
-  &.ok {
-    color: #52c41a;
-  }
-
-  &.warn {
-    color: #fa8c16;
-  }
 }
 
 .title-tip {

@@ -19,8 +19,18 @@ export interface DualCameraPreviewRect {
   height: number;
 }
 
-export interface DualCameraPermissionStatus {
-  camera: 'granted' | 'denied' | 'prompt';
+export interface DualCameraDeviceCamera {
+  cameraId: string;
+  lensFacing: number;
+  previewWidth?: number;
+  previewHeight?: number;
+  captureWidth?: number;
+  captureHeight?: number;
+}
+
+export interface DualCameraPreviewResult {
+  cameras: DualCameraDeviceCamera[];
+  concurrent: boolean;
 }
 
 export interface DualCameraUploadOptions {
@@ -33,33 +43,13 @@ export interface DualCameraUploadResult {
   response: string;
 }
 
-export interface DualCameraUploadProgress {
-  percent: number;
-}
-
-export interface DualCameraDeviceCamera {
-  cameraId: string;
-  deviceId: string;
-  lensFacing: number | null;
-}
-
-export interface DualCameraPreviewResult {
-  cameras: DualCameraDeviceCamera[];
-  concurrent: boolean;
-}
-
 export interface DualCameraPlugin {
-  checkPermissions(): Promise<DualCameraPermissionStatus>;
-  requestPermissions(): Promise<DualCameraPermissionStatus>;
   getAvailableCameras(): Promise<{ cameras: DualCameraDeviceCamera[] }>;
   isDualCameraSupported(): Promise<{ supported: boolean }>;
-  startPreview(options?: DualCameraOptions): Promise<DualCameraPreviewResult>;
-  startPreviewWithPermission(options?: DualCameraOptions): Promise<DualCameraPreviewResult>;
+  startPreview(): Promise<DualCameraPreviewResult>;
   stopPreview(): Promise<void>;
-  closeAll(): Promise<void>;
-  capture(): Promise<DualCameraPhoto>;
-  isPreviewRunning(): Promise<{ running: boolean }>;
+  capture(): Promise<DualCameraPhoto & Record<string, unknown>>;
   uploadPhotos(options: DualCameraUploadOptions): Promise<DualCameraUploadResult>;
-  addListener(eventName: 'captureComplete', listener: (data: DualCameraPhoto) => void): Promise<{ remove: () => void }>;
+  addListener(eventName: 'captureComplete', listener: (data: DualCameraPhoto & Record<string, unknown>) => void): Promise<{ remove: () => void }>;
   addListener(eventName: 'previewError', listener: (data: { error: string }) => void): Promise<{ remove: () => void }>;
 }

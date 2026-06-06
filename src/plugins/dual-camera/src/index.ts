@@ -9,11 +9,11 @@ const DualCamera = registerPlugin<DualCameraPlugin>('DualCamera', {
 export { DualCamera };
 export type {
   DualCameraPlugin,
-  DualCameraOptions,
   DualCameraPhoto,
+  DualCameraDeviceCamera,
+  DualCameraPreviewResult,
+  DualCameraOptions,
   DualCameraPreviewRect,
-  DualCameraPermissionStatus,
   DualCameraUploadOptions,
   DualCameraUploadResult,
-  DualCameraUploadProgress,
 } from './definitions';

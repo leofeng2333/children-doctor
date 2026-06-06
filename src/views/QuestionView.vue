@@ -57,7 +57,7 @@ const goNext = async () => {
     ]
   })
   console.log('tempResponse', tempResponse);
-  router.push('/capture-intro')
+  router.push('/detail-analysis')
 }
 </script>
 

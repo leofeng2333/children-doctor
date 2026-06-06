@@ -8,6 +8,7 @@ import 'swiper/css/effect-cards';
 // import required modules
 import { EffectCards } from 'swiper/modules';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useImageSplit } from '@/composables/useImageSplit';
 
 const emit = defineEmits(['slideChange']);
 
@@ -17,8 +18,15 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const goodImgSrc = computed(() => props.analysisResult?.llmAnalysis.result.predictions.correctedImageUrl)
-const badImgSrc = computed(() => props.analysisResult?.llmAnalysis.result.predictions.futureImageUrl)
+const imgSrc = computed(() => props.analysisResult?.aiAnalysis.result.generatedImageUrls[0]);
+
+const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(
+  () => imgSrc.value,
+  0.5,
+);
+
+const leftUrl = computed(() => leftUrlRef.value);
+const rightUrl = computed(() => rightUrlRef.value);
 
 const swiperInstance = ref<any>(null);
 
@@ -51,10 +59,10 @@ onUnmounted(() => {
     <div class="swiper detail-swiper">
       <div class="swiper-wrapper">
         <div class="swiper-slide">
-          <img :src="goodImgSrc" alt="good-img" srcset="">
+          <img :src="leftUrl" alt="bad-img" srcset="">
         </div>
         <div class="swiper-slide">
-          <img :src="badImgSrc" alt="bad-img" srcset="">
+          <img :src="rightUrl" alt="good-img" srcset="">
         </div>
       </div>
 
@@ -142,14 +150,6 @@ onUnmounted(() => {
     height: 100%;
     object-fit: cover;
   }
-}
-
-.swiper-slide:nth-child(1n) {
-  background-color: rgb(206, 17, 17);
-}
-
-.swiper-slide:nth-child(2n) {
-  background-color: rgb(0, 140, 255);
 }
 
 .custom-pagination {

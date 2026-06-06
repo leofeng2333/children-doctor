@@ -1,29 +1,32 @@
 <script setup lang="ts">
-import { createSubscriptionTask, getSubscriptionStatus } from '@/utils/service';
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
+import { useSubscriptionScan } from '@/composables/useSubscriptionScan';
 
 const hadSubscription = ref(false);
-
 const qrcodeUrl = ref('');
 
-onMounted(async () => {
-  const response = await createSubscriptionTask();
-  qrcodeUrl.value = response.qrcodeUrl;
-  console.log('response', response);
+let cleanup: (() => void) | undefined;
 
-  const timer = setInterval(async () => {
-    const tempHadSubscription = await getSubscriptionStatus(response.followTaskId);
-    console.log('tempHadSubscription', tempHadSubscription);
-    if (tempHadSubscription.status === 1) {
-      clearInterval(timer);
+onMounted(async () => {
+  console.log('[ScanSubscription] onMounted');
+  cleanup = useSubscriptionScan((state) => {
+    console.log('[ScanSubscription] state updated:', state);
+    if (state.isSubscribed) {
       hadSubscription.value = true;
     }
+    if (state.qrcodeUrl) {
+      qrcodeUrl.value = state.qrcodeUrl;
+    }
+  });
 
-    // hadSubscription.value = tempHadSubscription;
-    // if (tempHadSubscription) {
-    // }
-  }, 1000);
-})
+  console.log('[ScanSubscription] calling init...');
+  await useSubscriptionScan();
+  console.log('[ScanSubscription] init done');
+});
+
+onUnmounted(() => {
+  cleanup?.();
+});
 </script>
 
 <template>

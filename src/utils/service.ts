@@ -16,8 +16,8 @@ export const uploadPhotos = async (
 
   console.log('[Upload] 开始上传照片, 数量:', photos.length)
 
-  const frontPaths = photos.map((p) => p.frontCameraUrl)
-  const sidePaths = photos.map((p) => p.backCameraUrl)
+  const frontPaths = photos.map((p) => p.frontCameraPath)
+  const sidePaths = photos.map((p) => p.backCameraPath)
 
   console.log('[Upload] front paths:', frontPaths)
   console.log('[Upload] side paths:', sidePaths)
@@ -71,15 +71,22 @@ export const saveQuestionAnswers = (answers: Record<string, any>) => {
   return post('/api/questionnaire/answer', answers)
 }
 
-export const startAnalysis = () => {
-  return post('/api/ai/analyze')
+export const startAnalysis = async (): Promise<any> => {
+  // Mock: delay 5s then return local JSON
+  await new Promise((resolve) => setTimeout(resolve, 5000))
+  const res = await fetch('/analysis-result.json')
+  return res.json()
 }
 
-export const createSubscriptionTask = () => {
+// export const startAnalysis = () => {
+//   return post('/api/ai/analyze')
+// }
+
+export const createSubscriptionTask = (): Promise<{ qrcodeUrl: string; followTaskId: string }> => {
   return post('/api/wechat/follow-task/create')
 }
 
-export const getSubscriptionStatus = (taskId: string) => {
+export const getSubscriptionStatus = (taskId: string): Promise<{ status: number }> => {
   return post('/api/wechat/follow-status', {
     followTaskId: taskId,
   })

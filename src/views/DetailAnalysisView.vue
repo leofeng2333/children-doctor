@@ -1,27 +1,21 @@
 <script setup lang="ts">
 import LogoText from '@/components/LogoText.vue'
-import PrimaryButton from '@/components/PrimaryButton.vue'
-import { getAnalysisResult, startAnalysis } from '@/utils/service'
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { useAnalysisStore } from '@/stores'
 
 const router = useRouter()
 
-const analysisTaskId = useRoute().query.taskId as string;
-const analysisResult = ref<any>();
-
-const loading = ref(true);
-// const analysisResult = ref<any>({
-//   success: false,
-// });
+const analysisStore = useAnalysisStore()
+const { result: analysisResult, isLoading } = storeToRefs(analysisStore)
 
 const analysisCompleted = computed(() => {
   return !!analysisResult.value;
 })
 
 const analysisResultTag = computed(() => {
-  return analysisResult.value?.llmAnalysis.result.isHealthy;
+  return analysisResult.value?.llmAnalysis?.result?.isHealthy;
 })
 
 const handleReturnReport = () => {
@@ -35,23 +29,16 @@ const handleSlideChange = (index: number) => {
 }
 
 const diagnosisResults = computed(() => {
-  return analysisResult.value?.llmAnalysis.result.issues.join();
+  return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join();
 })
 
-onMounted(async () => {
-  loading.value = true;
-  const result = await startAnalysis().finally(() => {
-    loading.value = false;
-  });
-  console.log('result', result);
-
-  analysisResult.value = result;
+onMounted(() => {
+  analysisStore.start();
 })
-
 </script>
 
 <template>
-  <div v-if="loading" class="detail-analysis-page">
+  <div v-if="isLoading" class="detail-analysis-page">
     <div class="loading-content">
       <div class="loading-icon"></div>
       <p>面容分析中</p>

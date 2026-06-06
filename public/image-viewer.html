@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <title>图片预览</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #ffffff;
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        padding: 0 8vw;
+        padding-top: max(20vw, env(safe-area-inset-top));
+        padding-bottom: calc(6vw + env(safe-area-inset-bottom));
+        overflow: hidden;
+      }
+
+      /* Logo area */
+      .logo-area {
+        text-align: center;
+        font-size: 3.5vw;
+        font-weight: 700;
+        color: #000;
+        margin-bottom: 2vw;
+        letter-spacing: 0.2vw;
+        flex-shrink: 0;
+      }
+
+      .logo-area span {
+        color: #ff9900;
+      }
+
+      /* Image preview area */
+      .preview-area {
+        flex-shrink: 0;
+        aspect-ratio: 6 / 8;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 2vw;
+        background: #f5f5f5;
+        margin-bottom: 12vw;
+      }
+
+      .preview-area img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      /* Error / empty state */
+      .error-hint {
+        flex-shrink: 0;
+        aspect-ratio: 6 / 8;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5vw;
+        color: #666;
+        font-size: 3.5vw;
+        text-align: center;
+        line-height: 1.5;
+        border-radius: 2vw;
+        background: #f5f5f5;
+      }
+
+      .error-hint .icon {
+        font-size: 8vw;
+        color: #bcbcbc;
+      }
+
+      /* Bottom section */
+      .bottom-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5vw;
+        flex-shrink: 0;
+      }
+
+      .download-btn {
+        width: 100%;
+        background: #ff9900;
+        color: #000;
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        font-size: 4vw;
+        font-weight: 700;
+        border: none;
+        border-radius: 50px;
+        line-height: 1;
+        padding: 4vw 6vw;
+        cursor: pointer;
+        box-shadow: 0 1vw 3vw rgba(255, 153, 0, 0.4);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5vw;
+      }
+
+      .download-btn:active {
+        transform: scale(0.98);
+        box-shadow: 0 0.5vw 1.5vw rgba(255, 153, 0, 0.3);
+      }
+
+      .download-btn:disabled {
+        background: #bcbcbc;
+        color: #fff;
+        box-shadow: none;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .download-btn .spinner {
+        display: inline-block;
+        width: 4vw;
+        height: 4vw;
+        border: 0.3vw solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .logo-text {
+        font-size: 3vw;
+        font-weight: 700;
+        color: #bcbcbc;
+        letter-spacing: 0.1vw;
+      }
+
+      .logo-text span {
+        color: #ff9900;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="preview-area" class="preview-area">
+      <!-- filled by JS -->
+    </div>
+
+    <div class="bottom-section">
+      <button id="download-btn" class="download-btn" onclick="handleDownload()">
+        <span id="btn-text">下载到本地</span>
+      </button>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(location.search)
+      const imageUrl = params.get('url')
+      const previewArea = document.getElementById('preview-area')
+      const downloadBtn = document.getElementById('download-btn')
+      const btnText = document.getElementById('btn-text')
+
+      if (!imageUrl) {
+        previewArea.classList.remove('preview-area')
+        previewArea.classList.add('error-hint')
+        previewArea.innerHTML =
+          '<div class="icon">!</div>' +
+          '<div>请在 URL 中传入图片地址<br/><br/>格式：?url=图片链接</div>'
+        downloadBtn.disabled = true
+      } else {
+        const img = document.createElement('img')
+        img.src = imageUrl
+        img.alt = '预览图片'
+        console.log('imageUrl', imageUrl)
+
+        img.onerror = (e) => {
+          console.log('e', e)
+
+          previewArea.innerHTML =
+            '<div class="error-hint">' +
+            '<div class="icon">×</div>' +
+            '<div>图片加载失败</div>' +
+            '</div>'
+        }
+        previewArea.appendChild(img)
+      }
+
+      async function handleDownload() {
+        if (!imageUrl) return
+
+        btnText.innerHTML = '<span class="spinner"></span>'
+        downloadBtn.disabled = true
+
+        try {
+          const res = await fetch(imageUrl)
+          if (!res.ok) throw new Error('fetch failed')
+          const blob = await res.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = objectUrl
+          const rawName = imageUrl.split('/').pop() || 'image.jpg'
+          a.download = decodeURIComponent(rawName.replace(/\?.*$/, ''))
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(objectUrl)
+          btnText.textContent = '下载成功'
+        } catch {
+          window.open(imageUrl, '_blank')
+          btnText.textContent = '下载到本地'
+          downloadBtn.disabled = false
+          return
+        }
+
+        setTimeout(() => {
+          btnText.textContent = '下载到本地'
+          downloadBtn.disabled = false
+        }, 2000)
+      }
+    </script>
+  </body>
+</html>

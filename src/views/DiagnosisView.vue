@@ -8,8 +8,8 @@ const router = useRouter()
 
 const stepsContainerRef = ref<HTMLElement>()
 
-const goToForm = () => {
-  router.push('/question')
+const goNext = () => {
+  router.push('/capture-intro')
 }
 
 const drawConnectors = () => {
@@ -128,7 +128,7 @@ onUnmounted(() => {
 
     <!-- 底部按钮 -->
     <div class="bottom-section">
-      <PrimaryButton text="开始问诊" class="start-button" @click="goToForm">
+      <PrimaryButton text="开始问诊" class="start-button" @click="goNext">
       </PrimaryButton>
       <LogoText class="logo" />
     </div>

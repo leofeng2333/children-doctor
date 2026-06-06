@@ -21,7 +21,6 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -30,28 +29,40 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class Camera2Controller {
 
     private static final String TAG = "Camera2Controller";
+    private static final String PHOTO_DIR_NAME = "dual_camera_photos";
+    private static final int CAPTURE_TIMEOUT_SECONDS = 15;
 
     private final Context context;
     private final Handler mainHandler;
+    private final PreviewCallback callback;
 
     private TextureView[] textureViews;
     private android.widget.ImageView[] photoImageViews;
     private Camera2Session[] sessions;
     private android.widget.LinearLayout containerView;
     private int slotCount;
+    private int screenWidthPx;
 
     private final AtomicBoolean isCapturing = new AtomicBoolean(false);
-    private boolean isPhotoDisplayed = false;
+    private final AtomicBoolean isStopped = new AtomicBoolean(false);
+    private final AtomicBoolean isPhotoDisplayed = new AtomicBoolean(false);
 
-    private final String[] labels = {"正视图", "右侧视图"};
-    private static final String PHOTO_DIR_NAME = "dual_camera_photos";
+    private PluginCall pendingCall;
+    private int openedCount = 0;
+    private int failedCount = 0;
+    private String[] slotErrors;
+
+    private static final String[] CAMERA_LABELS = {"正视图", "右侧视图"};
 
     public interface PreviewCallback {
         void onError(String error);
         void onCaptureComplete(String[] uris, String[] paths, long[] fileSizeKb);
     }
 
-    private PreviewCallback callback;
+    public interface CaptureResultCallback {
+        void onSuccess(String[] uris, String[] paths, long[] fileSizeKb);
+        void onError(String error);
+    }
 
     public Camera2Controller(Context context, PreviewCallback callback) {
         this.context = context;
@@ -71,8 +82,9 @@ public class Camera2Controller {
             Log.w(TAG, "Only " + cameras.size() + " camera(s) found, using single camera mode");
         }
 
-        int slotCount = Math.min(cameras.size(), 2);
+        slotCount = Math.min(cameras.size(), 2);
         textureViews = new TextureView[slotCount];
+        photoImageViews = new android.widget.ImageView[slotCount];
         sessions = new Camera2Session[slotCount];
 
         for (int i = 0; i < slotCount; i++) {
@@ -85,91 +97,61 @@ public class Camera2Controller {
             );
         }
 
+        isStopped.set(false);
         openedCount = 0;
-        this.callReference = call;
+        failedCount = 0;
+        slotErrors = new String[slotCount];
+        pendingCall = call;
         buildTextureViews(rootView, slotCount);
     }
-
-    private int openedCount = 0;
-    private PluginCall callReference;
 
     private void buildTextureViews(ViewGroup rootView, int slotCount) {
         android.widget.LinearLayout container = new android.widget.LinearLayout(context);
         container.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         container.setGravity(android.view.Gravity.CENTER);
+        container.setOrientation(slotCount == 1
+                ? android.widget.LinearLayout.VERTICAL
+                : android.widget.LinearLayout.HORIZONTAL);
 
-        if (slotCount == 1) {
-            container.setOrientation(android.widget.LinearLayout.VERTICAL);
-        } else {
-            container.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        }
-
-        this.containerView = container;
-        this.photoImageViews = new android.widget.ImageView[slotCount];
-
-        int screenWidthPx = context.getResources().getDisplayMetrics().widthPixels;
+        containerView = container;
+        screenWidthPx = context.getResources().getDisplayMetrics().widthPixels;
         int colMargin = dpToPx(16);
 
         for (int i = 0; i < slotCount; i++) {
-            TextureView tv = new TextureView(context);
-            textureViews[i] = tv;
-
             final int slot = i;
+            TextureView textureView = new TextureView(context);
+            textureViews[i] = textureView;
 
-            tv.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-                private android.view.Surface surface;
+            textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                private Surface surface;
+                private SurfaceTexture surfaceTexture;
 
                 private void openCameraIfReady() {
-                    if (surface == null || sessions[slot] == null) return;
-
-                    Camera2Session session = sessions[slot];
-                    session.getPreviewSize(); // ensure session is valid
-
-                    session.open(surface, new Camera2Session.Callback() {
-                        @Override
-                        public void onOpened() {
-                            synchronized (Camera2Controller.this) {
-                                openedCount++;
-                                if (openedCount == slotCount) {
-                                    onAllCamerasOpened();
-                                }
-                            }
-                        }
-
-                        @Override
-                        public void onError(String error) {
-                            synchronized (Camera2Controller.this) {
-                                Log.e(TAG, "Camera " + slot + " open error: " + error);
-                                openedCount++;
-                                if (openedCount == slotCount) {
-                                    callReference.reject("Failed to open cameras: " + error);
-                                }
-                            }
-                        }
-                    });
+                    if (isStopped.get() || surface == null || surfaceTexture == null
+                            || sessions == null || sessions[slot] == null) {
+                        return;
+                    }
+                    sessions[slot].open(surface, surfaceTexture, buildSessionCallback(slot));
                 }
 
                 @Override
-                public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surfaceTexture, int width, int height) {
+                public void onSurfaceTextureAvailable(@NonNull SurfaceTexture st, int width, int height) {
                     Log.d(TAG, "SurfaceTexture available: " + width + "x" + height + ", slot=" + slot);
-                    Camera2Session session = sessions[slot];
-                    if (session == null) return;
+                    if (sessions == null || sessions[slot] == null) return;
 
-                    surfaceTexture.setDefaultBufferSize(
-                            session.getPreviewSize().getHeight(), session.getPreviewSize().getWidth());
-                    // Use TextureView's owned Surface, not new Surface(texture).
-                    surface = new android.view.Surface(surfaceTexture);
-
-                    // Post to main thread to avoid opening multiple cameras simultaneously.
-                    mainHandler.post(() -> openCameraIfReady());
+                    Size preview = sessions[slot].getPreviewSize();
+                    st.setDefaultBufferSize(preview.getWidth(), preview.getHeight());
+                    surfaceTexture = st;
+                    surface = new Surface(surfaceTexture);
+                    mainHandler.post(this::openCameraIfReady);
                 }
 
                 @Override
-                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surfaceTexture, int width, int height) {}
+                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture st, int width, int height) {}
 
                 @Override
-                public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surfaceTexture) {
+                public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture st) {
                     if (sessions != null && sessions[slot] != null) {
                         sessions[slot].close();
                     }
@@ -177,111 +159,183 @@ public class Camera2Controller {
                         surface.release();
                         surface = null;
                     }
+                    if (surfaceTexture != null) {
+                        surfaceTexture.release();
+                        surfaceTexture = null;
+                    }
                     return true;
                 }
 
                 @Override
-                public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surfaceTexture) {}
+                public void onSurfaceTextureUpdated(@NonNull SurfaceTexture st) {}
             });
 
-            android.widget.TextView label = new android.widget.TextView(context);
-            label.setText(labels[i]);
-            label.setTextSize(14);
-            label.setTextColor(0xFF333333);
-            label.setGravity(android.view.Gravity.CENTER);
-            label.setPadding(0, dpToPx(4), 0, dpToPx(8));
-
-            int w = slotCount == 1 ? (int) (screenWidthPx * 0.85f)
-                                   : (int) (screenWidthPx * 0.415f);
-            int h = (int) (w * 4f / 3f);
-
-            android.widget.LinearLayout col = new android.widget.LinearLayout(context);
-            col.setOrientation(android.widget.LinearLayout.VERTICAL);
-            col.setGravity(android.view.Gravity.CENTER);
-
-            android.widget.LinearLayout.LayoutParams colParams =
-                    new android.widget.LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
-            int marginStart = slotCount == 1 ? colMargin
-                                : (i == 0 ? colMargin : colMargin / 2);
-            int marginEnd = slotCount == 1 ? colMargin
-                                : (i == slotCount - 1 ? colMargin : colMargin / 2);
-            colParams.setMargins(marginStart, 0, marginEnd, 0);
-            col.setLayoutParams(colParams);
-
-            android.widget.FrameLayout.LayoutParams tvParams =
-                    new android.widget.FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, h);
-            tvParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
-            tv.setLayoutParams(tvParams);
-            tv.setVisibility(android.view.View.VISIBLE);
-
-            android.widget.ImageView photoView = new android.widget.ImageView(context);
-            photoImageViews[i] = photoView;
-            android.widget.FrameLayout.LayoutParams photoParams =
-                    new android.widget.FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, h);
-            photoParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
-            photoView.setLayoutParams(photoParams);
-            photoView.setVisibility(android.view.View.GONE);
-
-            label.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            android.widget.FrameLayout previewWrapper = new android.widget.FrameLayout(context);
-            previewWrapper.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, h + dpToPx(24)));
-            previewWrapper.addView(tv);
-            previewWrapper.addView(photoView);
-
-            col.addView(label);
-            col.addView(previewWrapper);
-            container.addView(col);
+            ViewGroup root = buildCameraSlotView(slot, textureView, colMargin);
+            container.addView(root);
         }
 
         rootView.addView(container);
     }
 
+    private ViewGroup buildCameraSlotView(int index, TextureView textureView, int colMargin) {
+        int w = slotCount == 1
+                ? (int) (screenWidthPx * 0.85f)
+                : (int) (screenWidthPx * 0.415f);
+        int h = (int) (w * 4f / 3f);
+
+        android.widget.TextView label = new android.widget.TextView(context);
+        label.setText(CAMERA_LABELS[index]);
+        label.setTextSize(14);
+        label.setTextColor(0xFF333333);
+        label.setGravity(android.view.Gravity.CENTER);
+        label.setPadding(0, dpToPx(4), 0, dpToPx(8));
+        label.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        android.widget.FrameLayout.LayoutParams tvParams =
+                new android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, h);
+        tvParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
+        textureView.setLayoutParams(tvParams);
+        textureView.setVisibility(android.view.View.VISIBLE);
+
+        android.widget.ImageView photoView = new android.widget.ImageView(context);
+        photoImageViews[index] = photoView;
+        android.widget.FrameLayout.LayoutParams photoParams =
+                new android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, h);
+        photoParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
+        photoView.setLayoutParams(photoParams);
+        photoView.setVisibility(android.view.View.GONE);
+
+        android.widget.FrameLayout previewWrapper = new android.widget.FrameLayout(context);
+        previewWrapper.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, h + dpToPx(24)));
+        previewWrapper.addView(textureView);
+        previewWrapper.addView(photoView);
+
+        android.widget.LinearLayout col = new android.widget.LinearLayout(context);
+        col.setOrientation(android.widget.LinearLayout.VERTICAL);
+        col.setGravity(android.view.Gravity.CENTER);
+
+        android.widget.LinearLayout.LayoutParams colParams =
+                new android.widget.LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        int marginStart = slotCount == 1 ? colMargin
+                : (index == 0 ? colMargin : colMargin / 2);
+        int marginEnd = slotCount == 1 ? colMargin
+                : (index == slotCount - 1 ? colMargin : colMargin / 2);
+        colParams.setMargins(marginStart, 0, marginEnd, 0);
+        col.setLayoutParams(colParams);
+
+        col.addView(label);
+        col.addView(previewWrapper);
+        return col;
+    }
+
+    private Camera2Session.Callback buildSessionCallback(int slot) {
+        return new Camera2Session.Callback() {
+            @Override
+            public void onOpened() {
+                if (isStopped.get()) return;
+                synchronized (Camera2Controller.this) {
+                    openedCount++;
+                    Log.d(TAG, "Camera slot " + slot + " opened (opened=" + openedCount + "/" + slotCount + ")");
+                    if (openedCount == slotCount) {
+                        onAllCamerasOpened();
+                    }
+                }
+            }
+
+            @Override
+            public void onDisconnected() {
+                if (isStopped.get()) return;
+                synchronized (Camera2Controller.this) {
+                    Log.w(TAG, "Camera slot " + slot + " disconnected");
+                    slotErrors[slot] = "Camera disconnected";
+                    failedCount++;
+                    if (openedCount + failedCount == slotCount) {
+                        if (openedCount > 0) {
+                            onAllCamerasOpened();
+                        } else {
+                            rejectPendingCall("All cameras disconnected");
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                if (isStopped.get()) return;
+                synchronized (Camera2Controller.this) {
+                    Log.e(TAG, "Camera slot " + slot + " failed permanently: " + error);
+                    slotErrors[slot] = error;
+                    failedCount++;
+                    if (openedCount + failedCount == slotCount) {
+                        if (openedCount > 0) {
+                            Log.w(TAG, "Some cameras failed to open, proceeding with " + openedCount + " camera(s)");
+                            for (int i = 0; i < slotCount; i++) {
+                                if (slotErrors[i] != null) {
+                                    Log.w(TAG, "  Slot " + i + " failed: " + slotErrors[i]);
+                                }
+                            }
+                            onAllCamerasOpened();
+                        } else {
+                            rejectPendingCall("Failed to open all cameras: " + slotErrors[0]);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
     private void onAllCamerasOpened() {
+        if (isStopped.get()) return;
         mainHandler.post(() -> {
+            if (isStopped.get() || sessions == null) return;
             try {
                 JSArray camList = new JSArray();
-                for (int i = 0; i < sessions.length; i++) {
+                for (Camera2Session session : sessions) {
                     JSObject camJson = new JSObject();
-                    camJson.put("cameraId", sessions[i].getCameraId());
-                    camJson.put("lensFacing", sessions[i].getLensFacing());
+                    camJson.put("cameraId", session.getCameraId());
+                    camJson.put("lensFacing", session.getLensFacing());
                     camList.put(camJson);
                 }
                 JSObject ret = new JSObject();
                 ret.put("cameras", camList);
                 ret.put("concurrent", sessions.length >= 2);
-                callReference.resolve(ret);
+                resolvePendingCall(ret);
             } catch (Exception e) {
-                callReference.reject("Failed to build result", e);
+                rejectPendingCall("Failed to build result: " + e.getMessage());
             }
         });
     }
 
     public void capture(CaptureResultCallback resultCallback) {
-        if (isCapturing.get()) {
+        if (!isCapturing.compareAndSet(false, true)) {
             resultCallback.onError("Capture already in progress");
             return;
         }
         if (sessions == null || sessions.length == 0) {
+            isCapturing.set(false);
             resultCallback.onError("Camera not initialized");
             return;
         }
 
-        isCapturing.set(true);
-
         File photoDir = new File(context.getCacheDir(), PHOTO_DIR_NAME);
-        if (!photoDir.exists()) {
-            photoDir.mkdirs();
+        if (!photoDir.exists() && !photoDir.mkdirs()) {
+            isCapturing.set(false);
+            resultCallback.onError("Failed to create photo directory");
+            return;
         }
 
         String timestamp = String.valueOf(System.currentTimeMillis());
-        String[] captureLabels = {"front", "back"};
-        String[] filePaths = new String[sessions.length];
+        String[] captureLabels = new String[sessions.length];
+        for (int i = 0; i < sessions.length; i++) {
+            captureLabels[i] = sessions[i].getLensFacing() == CameraCharacteristics.LENS_FACING_FRONT
+                    ? "front" : "back";
+        }
 
+        String[] filePaths = new String[sessions.length];
         for (int i = 0; i < sessions.length; i++) {
             filePaths[i] = new File(photoDir, captureLabels[i] + "_" + timestamp + ".jpg").getAbsolutePath();
         }
@@ -293,7 +347,7 @@ public class Camera2Controller {
 
         for (int i = 0; i < sessions.length; i++) {
             final int slot = i;
-            sessions[i].capture(filePaths[i], new Camera2Session.CaptureCallback() {
+            sessions[i].capture(filePaths[i], latch, new Camera2Session.CaptureCallback() {
                 @Override
                 public void onCaptureSuccess(String filePath, long fileSizeKb) {
                     capturedPaths[slot] = filePath;
@@ -314,7 +368,7 @@ public class Camera2Controller {
 
         new Thread(() -> {
             try {
-                boolean completed = latch.await(15, TimeUnit.SECONDS);
+                boolean completed = latch.await(CAPTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 isCapturing.set(false);
 
                 if (!completed) {
@@ -327,24 +381,11 @@ public class Camera2Controller {
                     return;
                 }
 
-                String[] uris = new String[sessions.length];
-                for (int i = 0; i < sessions.length; i++) {
-                    if (capturedPaths[i] != null) {
-                        File f = new File(capturedPaths[i]);
-                        uris[i] = FileProvider.getUriForFile(
-                                context,
-                                context.getPackageName() + ".fileprovider",
-                                f
-                        ).toString();
-                    }
+                String[] uris = buildFileUris(capturedPaths);
+                mainHandler.post(() -> resultCallback.onSuccess(uris, capturedPaths, capturedSizes));
+                if (callback != null) {
+                    callback.onCaptureComplete(uris, capturedPaths, capturedSizes);
                 }
-
-                mainHandler.post(() -> {
-                    resultCallback.onSuccess(uris, capturedPaths, capturedSizes);
-                    if (callback != null) {
-                        callback.onCaptureComplete(uris, capturedPaths, capturedSizes);
-                    }
-                });
             } catch (InterruptedException e) {
                 isCapturing.set(false);
                 mainHandler.post(() -> resultCallback.onError("Capture interrupted"));
@@ -352,41 +393,25 @@ public class Camera2Controller {
         }).start();
     }
 
-    public interface CaptureResultCallback {
-        void onSuccess(String[] uris, String[] paths, long[] fileSizeKb);
-        void onError(String error);
-    }
-
-    public void stopPreview() {
-        mainHandler.post(() -> {
-            if (sessions != null) {
-                for (Camera2Session session : sessions) {
-                    if (session != null) {
-                        session.shutdown();
-                    }
-                }
-                sessions = null;
+    private String[] buildFileUris(String[] paths) {
+        String[] uris = new String[paths.length];
+        for (int i = 0; i < paths.length; i++) {
+            if (paths[i] != null) {
+                uris[i] = FileProvider.getUriForFile(
+                        context,
+                        context.getPackageName() + ".fileprovider",
+                        new File(paths[i])
+                ).toString();
             }
-            isCapturing.set(false);
-
-            if (containerView != null) {
-                ViewGroup rootView = (ViewGroup) ((android.app.Activity) context).getWindow().getDecorView().findViewById(android.R.id.content);
-                if (rootView != null) {
-                    rootView.removeView(containerView);
-                }
-                containerView = null;
-            }
-
-            Log.d(TAG, "Preview stopped, camera resources and views released");
-        });
+        }
+        return uris;
     }
 
     public void displayPhotos(String[] photoPaths) {
-        if (isPhotoDisplayed) {
+        if (!isPhotoDisplayed.compareAndSet(false, true)) {
             Log.w(TAG, "displayPhotos: already displayed, ignoring duplicate call");
             return;
         }
-        isPhotoDisplayed = true;
 
         mainHandler.post(() -> {
             if (photoImageViews == null || photoPaths == null) return;
@@ -395,48 +420,49 @@ public class Camera2Controller {
 
             for (int i = 0; i < photoImageViews.length; i++) {
                 if (photoImageViews[i] == null || photoPaths[i] == null) continue;
-
-                boolean isFront = sessions != null && sessions[i] != null
-                        && sessions[i].getLensFacing() == CameraCharacteristics.LENS_FACING_FRONT;
-
-                Log.d(TAG, "Slot " + i + ": decoding " + photoPaths[i]);
-
-                Bitmap rawBmp = android.graphics.BitmapFactory.decodeFile(photoPaths[i]);
-                if (rawBmp == null) {
-                    Log.e(TAG, "Slot " + i + ": BitmapFactory.decodeFile returned null");
-                    continue;
-                }
-
-                Log.d(TAG, "Slot " + i + ": rawBitmap=" + rawBmp.getWidth() + "x" + rawBmp.getHeight()
-                        + ", isFront=" + isFront);
-
-                final int slot = i;
-                final Bitmap bmpToShow = rawBmp;
-                final TextureView tvRef = textureViews[i];
-                final android.widget.ImageView photoView = photoImageViews[i];
-
-                photoView.post(() -> {
-                    photoView.setImageBitmap(bmpToShow);
-                    photoView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-                    showPhotoWithFade(slot, tvRef);
-                });
+                displaySinglePhoto(i, photoPaths[i]);
             }
 
-            // Shut down sessions AFTER posting the bitmap display tasks.
-            if (sessions != null) {
-                for (Camera2Session session : sessions) {
-                    if (session != null) {
-                        session.shutdown();
-                    }
-                }
-                sessions = null;
-            }
-
+            shutdownSessions();
             Log.d(TAG, "displayPhotos done");
         });
     }
 
-    private void showPhotoWithFade(int slot, TextureView tvRef) {
+    private void displaySinglePhoto(int index, String path) {
+        int targetW = textureViews != null && textureViews[index] != null && textureViews[index].getWidth() > 0
+                ? textureViews[index].getWidth()
+                : (int) (screenWidthPx * 0.415f);
+        int targetH = (int) (targetW * 4f / 3f);
+
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, opts);
+        opts.inSampleSize = calculateInSampleSize(opts, targetW, targetH);
+        opts.inJustDecodeBounds = false;
+
+        Bitmap rawBmp = BitmapFactory.decodeFile(path, opts);
+        if (rawBmp == null) {
+            Log.e(TAG, "Slot " + index + ": BitmapFactory.decodeFile returned null");
+            return;
+        }
+
+        Log.d(TAG, "Slot " + index + ": rawBitmap=" + rawBmp.getWidth() + "x" + rawBmp.getHeight());
+
+        final int slot = index;
+        final Bitmap bmpToShow = rawBmp;
+        final TextureView tvRef = textureViews != null ? textureViews[index] : null;
+        final android.widget.ImageView photoView = photoImageViews[index];
+
+        photoView.post(() -> {
+            if (photoView.getVisibility() == android.view.View.GONE) {
+                photoView.setImageBitmap(bmpToShow);
+                photoView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                animatePhotoTransition(slot, tvRef);
+            }
+        });
+    }
+
+    private void animatePhotoTransition(int slot, TextureView tvRef) {
         photoImageViews[slot].setAlpha(0f);
         photoImageViews[slot].setVisibility(android.view.View.VISIBLE);
 
@@ -454,42 +480,88 @@ public class Camera2Controller {
                 .start();
     }
 
-    public void shutdown() {
-        mainHandler.post(() -> {
-            if (sessions != null) {
-                for (Camera2Session session : sessions) {
-                    if (session != null) {
-                        session.shutdown();
-                    }
+    private void shutdownSessions() {
+        if (sessions != null) {
+            for (Camera2Session session : sessions) {
+                if (session != null) {
+                    session.shutdown();
                 }
-                sessions = null;
             }
+            sessions = null;
+        }
+    }
+
+    public void stopPreview() {
+        isStopped.set(true);
+        mainHandler.post(() -> {
+            shutdownSessions();
+            isCapturing.set(false);
+
+            if (containerView != null && context instanceof android.app.Activity) {
+                ViewGroup rootView = (ViewGroup) ((android.app.Activity) context)
+                        .getWindow().getDecorView().findViewById(android.R.id.content);
+                if (rootView != null) {
+                    rootView.removeView(containerView);
+                }
+                containerView = null;
+            }
+
+            textureViews = null;
+            photoImageViews = null;
+            Log.d(TAG, "Preview stopped, camera resources and views released");
+        });
+    }
+
+    public void pausePreview() {
+        mainHandler.post(() -> {
+            if (sessions == null || isStopped.get()) return;
+            for (Camera2Session session : sessions) {
+                if (session != null) {
+                    session.pausePreview();
+                }
+            }
+            Log.d(TAG, "Preview paused");
+        });
+    }
+
+    public void resumePreview() {
+        mainHandler.post(() -> {
+            if (sessions == null || isStopped.get()) return;
+            for (Camera2Session session : sessions) {
+                if (session != null) {
+                    session.resumePreview();
+                }
+            }
+            Log.d(TAG, "Preview resumed");
+        });
+    }
+
+    public void shutdown() {
+        isStopped.set(true);
+        mainHandler.post(() -> {
+            shutdownSessions();
             textureViews = null;
             photoImageViews = null;
             Log.d(TAG, "Shutdown complete");
         });
     }
 
-    public Camera2Session[] getSessions() {
-        return sessions;
-    }
-
     public TextureView[] getTextureViews() {
         return textureViews;
+    }
+
+    public ViewGroup getContainerView() {
+        return containerView;
     }
 
     public android.graphics.Rect[] getPreviewRects() {
         if (containerView == null) return null;
         int[] location = new int[2];
         containerView.getLocationOnScreen(location);
-        android.graphics.Rect containerRect = new android.graphics.Rect(
-                location[0], location[1],
-                location[0] + containerView.getWidth(),
-                location[1] + containerView.getHeight());
 
         android.graphics.Rect[] rects = new android.graphics.Rect[slotCount];
         for (int i = 0; i < slotCount; i++) {
-            if (textureViews[i] != null) {
+            if (textureViews != null && textureViews[i] != null) {
                 int[] tvLoc = new int[2];
                 textureViews[i].getLocationOnScreen(tvLoc);
                 rects[i] = new android.graphics.Rect(
@@ -501,11 +573,35 @@ public class Camera2Controller {
         return rects;
     }
 
-    public ViewGroup getContainerView() {
-        return containerView;
+    private void resolvePendingCall(JSObject result) {
+        if (pendingCall != null) {
+            pendingCall.resolve(result);
+            pendingCall = null;
+        }
+    }
+
+    private void rejectPendingCall(String error) {
+        if (pendingCall != null) {
+            pendingCall.reject(error);
+            pendingCall = null;
+        }
     }
 
     private int dpToPx(int dp) {
         return (int) (dp * context.getResources().getDisplayMetrics().density);
+    }
+
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
     }
 }
