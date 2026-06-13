@@ -1,32 +1,32 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
-import { useSubscriptionScan } from '@/composables/useSubscriptionScan';
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useSubscriptionScan } from '@/composables/useSubscriptionScan'
 
-const hadSubscription = ref(false);
-const qrcodeUrl = ref('');
+const hadSubscription = ref(false)
+const qrcodeUrl = ref('')
 
-let cleanup: (() => void) | undefined;
+let cleanup: (() => void) | undefined
 
 onMounted(async () => {
-  console.log('[ScanSubscription] onMounted');
+  console.log('[ScanSubscription] onMounted')
   cleanup = useSubscriptionScan((state) => {
-    console.log('[ScanSubscription] state updated:', state);
+    console.log('[ScanSubscription] state updated:', state)
     if (state.isSubscribed) {
-      hadSubscription.value = true;
+      hadSubscription.value = true
     }
     if (state.qrcodeUrl) {
-      qrcodeUrl.value = state.qrcodeUrl;
+      qrcodeUrl.value = state.qrcodeUrl
     }
-  });
+  })
 
-  console.log('[ScanSubscription] calling init...');
-  await useSubscriptionScan();
-  console.log('[ScanSubscription] init done');
-});
+  console.log('[ScanSubscription] calling init...')
+  await useSubscriptionScan()
+  console.log('[ScanSubscription] init done')
+})
 
 onUnmounted(() => {
-  cleanup?.();
-});
+  cleanup?.()
+})
 </script>
 
 <template>
@@ -41,8 +41,10 @@ onUnmounted(() => {
   </div>
   <div v-else class="had-subscription-container">
     <div class="qrcode-container">
-      <img src="https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=mock_ticket_follow_df491d7637184388_1776492749873"
-        alt="qrcode" />
+      <img
+        src="https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=mock_ticket_follow_df491d7637184388_1776492749873"
+        alt="qrcode"
+      />
     </div>
 
     <div class="had-subscription-content">
@@ -109,7 +111,7 @@ onUnmounted(() => {
     padding: 8px 18px;
     color: #000;
     font-size: 14px;
-    background: #D9D9D9;
+    background: #d9d9d9;
     border-radius: 50px;
     line-height: 1;
     box-sizing: border-box;
@@ -123,7 +125,7 @@ onUnmounted(() => {
     font-size: 32px;
     line-height: 52px;
     font-weight: 700;
-    background: #D9D9D9;
+    background: #d9d9d9;
     border-radius: 50px;
     line-height: 1;
     box-sizing: border-box;

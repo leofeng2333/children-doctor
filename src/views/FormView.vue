@@ -40,20 +40,26 @@ const btnDisabled = computed(() => {
   return !userStore.nickname.trim() || !userStore.phone.trim()
 })
 
-watch(() => userStore.phone, (newVal) => {
-  validatePhone(newVal)
-})
+watch(
+  () => userStore.phone,
+  (newVal) => {
+    validatePhone(newVal)
+  },
+)
 
-watch(() => userStore.nickname, (newVal) => {
-  validateNickname(newVal)
-})
+watch(
+  () => userStore.nickname,
+  (newVal) => {
+    validateNickname(newVal)
+  },
+)
 
 const goNext = () => {
   if (!validateNickname(userStore.nickname)) {
-    return;
+    return
   }
   if (!validatePhone(userStore.phone)) {
-    return;
+    return
   }
   router.push('/location')
   userStore.update(userStore.nickname.trim(), userStore.phone.trim())
@@ -62,11 +68,8 @@ const goNext = () => {
 
 <template>
   <div class="form-container">
-
     <!-- 欢迎语 -->
-    <div class="welcome-text">
-      Hi，<br />我是你的AI口腔医生！
-    </div>
+    <div class="welcome-text">Hi，<br />我是你的AI口腔医生！</div>
 
     <!-- 标题 -->
     <h1 class="form-title">我们先来填写用户的问诊单吧。</h1>
@@ -76,15 +79,26 @@ const goNext = () => {
       <!-- 名字输入 -->
       <div class="input-group">
         <label class="input-label">我该怎么称呼你呢？</label>
-        <input v-model="userStore.nickname" type="text" :maxlength="20" class="input-field"
-          :class="{ 'input-field-error': nicknameError }" placeholder="请输入用户全名/昵称" />
+        <input
+          v-model="userStore.nickname"
+          type="text"
+          :maxlength="20"
+          class="input-field"
+          :class="{ 'input-field-error': nicknameError }"
+          placeholder="请输入用户全名/昵称"
+        />
         <p v-if="nicknameError" class="error-text">{{ nicknameError }}</p>
       </div>
       <!-- 电话输入 -->
       <div class="input-group">
         <label class="input-label">你的联系方式？</label>
-        <input v-model="userStore.phone" type="tel" class="input-field" :class="{ 'input-field-error': phoneError }"
-          placeholder="请输入手机号" />
+        <input
+          v-model="userStore.phone"
+          type="tel"
+          class="input-field"
+          :class="{ 'input-field-error': phoneError }"
+          placeholder="请输入手机号"
+        />
         <p v-if="phoneError" class="error-text">{{ phoneError }}</p>
       </div>
     </div>
@@ -108,7 +122,7 @@ const goNext = () => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -122,12 +136,16 @@ const goNext = () => {
   text-align: center;
   font-family: 'Inter', sans-serif;
   font-size: 24px;
-  color: #BCBCBC;
+  color: #bcbcbc;
 }
 
 /* 欢迎语 */
 .welcome-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -136,7 +154,11 @@ const goNext = () => {
 
 /* 标题 */
 .form-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -157,7 +179,11 @@ const goNext = () => {
 
 .input-label {
   display: block;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   line-height: 52px;
   font-weight: 400;
@@ -168,32 +194,36 @@ const goNext = () => {
 .input-field {
   width: 100%;
   height: 75px;
-  background: #D9D9D9;
+  background: #d9d9d9;
   border: none;
   border-radius: 12px;
   padding: 0 24px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 20px;
   color: #000;
 }
 
 .input-field::placeholder {
-  color: #BCBCBC;
+  color: #bcbcbc;
 }
 
 .input-field:focus {
   outline: none;
-  background: #E5E5E5;
+  background: #e5e5e5;
 }
 
 .input-field-error {
-  background: #FFE4E4 !important;
-  border: 2px solid #FF4D4F;
+  background: #ffe4e4 !important;
+  border: 2px solid #ff4d4f;
 }
 
 .error-text {
   font-size: 18px;
-  color: #FF4D4F;
+  color: #ff4d4f;
   margin: 8px 0 0 0;
 }
 

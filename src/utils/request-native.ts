@@ -3,10 +3,7 @@ import { createSession } from './service'
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
-const request = async <T>(
-  url: string,
-  options: Omit<HttpOptions, 'url'> = {},
-): Promise<T> => {
+const request = async <T>(url: string, options: Omit<HttpOptions, 'url'> = {}): Promise<T> => {
   const response = await CapacitorHttp.request({
     url: `${baseUrl}${url}`,
     ...options,
@@ -83,10 +80,12 @@ function buildFormData(
 ): FormData {
   const formData = new FormData()
   files.forEach((file) => {
-  const base64Data = file.data ?? ''
-  const byteCharacters = atob(base64Data)
-  const byteNumbers = Array.from({ length: byteCharacters.length }, (_, i) => byteCharacters.charCodeAt(i))
-  const byteArray = new Uint8Array(byteNumbers)
+    const base64Data = file.data ?? ''
+    const byteCharacters = atob(base64Data)
+    const byteNumbers = Array.from({ length: byteCharacters.length }, (_, i) =>
+      byteCharacters.charCodeAt(i),
+    )
+    const byteArray = new Uint8Array(byteNumbers)
     const blob = new Blob([byteArray], { type: file.type })
     formData.append(fieldName, blob, file.name)
   })

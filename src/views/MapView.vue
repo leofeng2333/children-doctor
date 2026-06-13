@@ -12,72 +12,74 @@ const router = useRouter()
 
 const chartRef = ref<HTMLDivElement | null>(null)
 
-const echartsInstance = ref<echarts.ECharts | null>(null);
+const echartsInstance = ref<echarts.ECharts | null>(null)
 const currentMapName = ref('浙江省')
 
-const locationList = ref<any[]>([]);
+const locationList = ref<any[]>([])
 
-const cityMap: Record<string, { key: string; name: string; center: [number, number]; zoom: number }> = {
-  '杭州市': { key: '330100', name: '杭州市', center: [119.5, 29.8], zoom: 1.2 },
-  '绍兴市': { key: '330600', name: '绍兴市', center: [120.6, 29.8], zoom: 1.1 },
-  '金华市': { key: '330700', name: '金华市', center: [120.0, 29.1], zoom: 1.1 },
-  '义乌市': { key: '330782', name: '义乌市', center: [120.05, 29.3], zoom: 1.1 },
+const cityMap: Record<
+  string,
+  { key: string; name: string; center: [number, number]; zoom: number }
+> = {
+  杭州市: { key: '330100', name: '杭州市', center: [119.5, 29.8], zoom: 1.2 },
+  绍兴市: { key: '330600', name: '绍兴市', center: [120.6, 29.8], zoom: 1.1 },
+  金华市: { key: '330700', name: '金华市', center: [120.0, 29.1], zoom: 1.1 },
+  义乌市: { key: '330782', name: '义乌市', center: [120.05, 29.3], zoom: 1.1 },
 }
 
-const btnLoading = ref(false);
+const btnLoading = ref(false)
 const goNext = async () => {
   if (!locationList.value.length || cityMap[locationList.value.lastItem.name]) {
     Toast.show({
       text: '请选择县市区',
-      position: 'center'
+      position: 'center',
     })
-    return;
+    return
   }
-  const { nickname, phone } = useUserStore();
+  const { nickname, phone } = useUserStore()
   const params: Record<string, string> = {
     nickname: nickname,
     phone: phone,
     province: '浙江省',
   }
-  params.city = locationList.value[0].name;
-  params.district = locationList.value[1]?.name;
-  btnLoading.value = true;
+  params.city = locationList.value[0].name
+  params.district = locationList.value[1]?.name
+  btnLoading.value = true
   const tempResponse = await saveUserInfo(params).finally(() => {
-    btnLoading.value = false;
+    btnLoading.value = false
   })
-  console.log('tempResponse', tempResponse);
+  console.log('tempResponse', tempResponse)
   router.push('/diagnosis')
 }
 
 const showReturn = computed(() => {
-  return currentMapName.value !== '浙江省';
+  return currentMapName.value !== '浙江省'
 })
 
 const handleReturn = () => {
   if (locationList.value.length === 3 || locationList.value.lastItem.name === '义乌市') {
-    locationList.value.length = 1;
-    currentMapName.value = '金华市';
-    const cityInfo = cityMap['金华市']!;
-    initMap(cityInfo.key, cityInfo.name, cityInfo.center, cityInfo.zoom);
-  }
-  else {
-    locationList.value = [];
-    currentMapName.value = '浙江省';
-    initMap('330000', '浙江省', [120.4, 29.1], 1.1);
+    locationList.value.length = 1
+    currentMapName.value = '金华市'
+    const cityInfo = cityMap['金华市']!
+    initMap(cityInfo.key, cityInfo.name, cityInfo.center, cityInfo.zoom)
+  } else {
+    locationList.value = []
+    currentMapName.value = '浙江省'
+    initMap('330000', '浙江省', [120.4, 29.1], 1.1)
   }
 }
 
 const initMap = async (mapKey: string, mapName: string, center: [number, number], zoom: number) => {
   if (!chartRef.value) return
-  const url = `/${mapKey}.json`;
+  const url = `/${mapKey}.json`
   const response = await fetch(url)
   const geoJson = await response.json()
-  console.log('geoJson', geoJson);
+  console.log('geoJson', geoJson)
 
   if (!echartsInstance.value) {
     echartsInstance.value = echarts.init(chartRef.value)
   }
-  const chart = echarts.getInstanceByDom(chartRef.value)!;
+  const chart = echarts.getInstanceByDom(chartRef.value)!
   echarts.registerMap(mapName, geoJson)
 
   const option = {
@@ -127,19 +129,19 @@ const initMap = async (mapKey: string, mapName: string, center: [number, number]
 }
 
 onMounted(async () => {
-  await initMap('330000', '浙江省', [120.4, 29.1], 1.1);
-  await nextTick();
+  await initMap('330000', '浙江省', [120.4, 29.1], 1.1)
+  await nextTick()
   echartsInstance.value!.on('click', (params: any) => {
-    console.log('city', params);
+    console.log('city', params)
 
     const cityInfo = cityMap[params.name]
 
     if (!locationList.value.length) {
-      locationList.value.push(params);
+      locationList.value.push(params)
     }
 
     if (params.seriesName === '浙江省') {
-      locationList.value = [params];
+      locationList.value = [params]
     }
 
     if (cityInfo) {
@@ -148,10 +150,9 @@ onMounted(async () => {
     }
 
     while (locationList.value.length && locationList.value.lastItem.name !== params.seriesName) {
-      locationList.value.pop();
+      locationList.value.pop()
     }
-    locationList.value.push(params);
-
+    locationList.value.push(params)
   })
 })
 
@@ -163,18 +164,13 @@ onUnmounted(() => {
 
 <template>
   <div class="form-container">
-
     <div class="page-top-container">
-      <div class="welcome-text">
-        Hi，<br />我是你的AI口腔医生！
-      </div>
+      <div class="welcome-text">Hi，<br />我是你的AI口腔医生！</div>
 
       <h1 class="form-title">我们先来填写用户的问诊单吧。</h1>
 
       <div class="page-content">
-        <h2 class="map-title">
-          你现居住在哪里？
-        </h2>
+        <h2 class="map-title">你现居住在哪里？</h2>
 
         <div class="position-list">
           <div class="position-item">浙江省</div>
@@ -185,11 +181,16 @@ onUnmounted(() => {
         </div>
 
         <div class="map-area">
-          <img v-show="showReturn" src="@/assets/return.svg" alt="返回" class="return-icon" @click="handleReturn">
+          <img
+            v-show="showReturn"
+            src="@/assets/return.svg"
+            alt="返回"
+            class="return-icon"
+            @click="handleReturn"
+          />
           <div ref="chartRef" class="map-container"></div>
         </div>
       </div>
-
     </div>
 
     <div class="bottom-section-buttons">
@@ -207,7 +208,7 @@ onUnmounted(() => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -218,7 +219,11 @@ onUnmounted(() => {
 }
 
 .welcome-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -226,7 +231,11 @@ onUnmounted(() => {
 }
 
 .form-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -235,7 +244,11 @@ onUnmounted(() => {
 }
 
 .map-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -259,7 +272,7 @@ onUnmounted(() => {
     padding: 12px 26px;
     color: #000;
     font-size: 24px;
-    background: #D9D9D9;
+    background: #d9d9d9;
     border-radius: 50px;
     line-height: 1;
     box-sizing: border-box;

@@ -6,7 +6,7 @@ const router = useRouter()
 const goToCapture = () => {
   // TODO: 跳转到拍摄页面
   console.log('开始拍摄')
-  router.push('/capture');
+  router.push('/capture')
 }
 </script>
 
@@ -15,9 +15,7 @@ const goToCapture = () => {
     <!-- 页面内容 -->
     <div class="content">
       <!-- 标题 -->
-      <h1 class="title">
-        你的表现太棒了！<br />现在进入拍照环节吧！
-      </h1>
+      <h1 class="title">你的表现太棒了！<br />现在进入拍照环节吧！</h1>
 
       <!-- 说明文字 -->
       <p class="description">
@@ -34,7 +32,11 @@ const goToCapture = () => {
             <div class="corner top-right"></div>
             <div class="corner bottom-left"></div>
             <div class="corner bottom-right"></div>
-            <img src="@/assets/images/front-view-sample-3aceb1.png" alt="正视图示例" class="sample-image" />
+            <img
+              src="@/assets/images/front-view-sample-3aceb1.png"
+              alt="正视图示例"
+              class="sample-image"
+            />
           </div>
           <span class="sample-label">正视图</span>
         </div>
@@ -46,7 +48,11 @@ const goToCapture = () => {
             <div class="corner top-right"></div>
             <div class="corner bottom-left"></div>
             <div class="corner bottom-right"></div>
-            <img src="@/assets/images/side-view-sample-7b1ece.png" alt="右侧视图示例" class="sample-image" />
+            <img
+              src="@/assets/images/side-view-sample-7b1ece.png"
+              alt="右侧视图示例"
+              class="sample-image"
+            />
           </div>
           <span class="sample-label">右侧视图</span>
         </div>
@@ -69,7 +75,7 @@ const goToCapture = () => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -87,7 +93,11 @@ const goToCapture = () => {
 }
 
 .title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -96,7 +106,11 @@ const goToCapture = () => {
 }
 
 .description {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -179,7 +193,11 @@ const goToCapture = () => {
 }
 
 .sample-label {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.625;

@@ -16,24 +16,45 @@ export const uploadPhotos = async (
 
   console.log('[Upload] 开始上传照片, 数量:', photos.length)
 
-  const frontPaths = photos.map((p) => p.frontCameraPath)
-  const sidePaths = photos.map((p) => p.backCameraPath)
+  const frontSmileFiles = photos[0] ? [photos[0].frontCameraPath] : []
+  const sideSmileFiles = photos[0] ? [photos[0].backCameraPath] : []
+  const frontClosedFiles = photos[1] ? [photos[1].frontCameraPath] : []
+  const sideClosedFiles = photos[1] ? [photos[1].backCameraPath] : []
 
-  console.log('[Upload] front paths:', frontPaths)
-  console.log('[Upload] side paths:', sidePaths)
+  console.log('[Upload] frontSmileFiles:', frontSmileFiles)
+  console.log('[Upload] sideSmileFiles:', sideSmileFiles)
+  console.log('[Upload] frontClosedFiles:', frontClosedFiles)
+  console.log('[Upload] sideClosedFiles:', sideClosedFiles)
 
-  const result = await DualCamera.uploadPhotos({
+  const sessionId = (await createSession()).sessionId
+
+  const uploadOptions = {
     uploadUrl: 'https://aiqc.hzyk.com.cn/promotion/api/photo/upload-batch',
     files: {
-      front: frontPaths,
-      side: sidePaths,
+      frontSmileFiles,
+      sideSmileFiles,
+      frontClosedFiles,
+      sideClosedFiles,
     },
-    extraData: {
-      sessionId: (await createSession()).sessionId,
-    },
-  })
+    extraData: { sessionId },
+  }
 
-  console.log('[Upload] 上传完成, 响应:', result.response)
+  console.log('[Upload] ========== 上传参数完整快照 ==========')
+  console.log('[Upload] uploadUrl:', uploadOptions.uploadUrl)
+  console.log('[Upload] sessionId:', sessionId)
+  console.log('[Upload] files:')
+  console.log('  frontSmileFiles  =', JSON.stringify(frontSmileFiles))
+  console.log('  sideSmileFiles   =', JSON.stringify(sideSmileFiles))
+  console.log('  frontClosedFiles =', JSON.stringify(frontClosedFiles))
+  console.log('  sideClosedFiles  =', JSON.stringify(sideClosedFiles))
+  console.log('[Upload] 完整 JSON:')
+  console.log(JSON.stringify(uploadOptions, null, 2))
+  console.log('[Upload] ========================================')
+
+  const result = await DualCamera.uploadPhotos(uploadOptions)
+
+  console.log('[Upload] 上传完成, 响应长度:', result.response?.length)
+  console.log('[Upload] 响应内容:', result.response)
 
   let parsed: { frontUrls?: string[]; sideUrls?: string[] } = {}
   try {

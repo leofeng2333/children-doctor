@@ -55,13 +55,16 @@ public class Camera2Session {
 
     private Surface previewSurface;
     private SurfaceTexture previewSurfaceTexture;
+    private boolean surfaceOwnedBySession = false;
 
     private final AtomicBoolean isOpen = new AtomicBoolean(false);
     private final AtomicBoolean isCapturing = new AtomicBoolean(false);
     private final AtomicBoolean isPreviewActive = new AtomicBoolean(false);
+    private volatile boolean isShutdown = false;
 
-    private final String cameraId;
+    private String cameraId;
     private final int lensFacing;
+    private final int targetLensFacing;
     private final int sensorOrientation;
     private final Size previewSize;
     private final Size captureSize;
@@ -99,6 +102,7 @@ public class Camera2Session {
     public Camera2Session(Context context, String cameraId, int lensFacing, Size previewSize, Size captureSize) {
         this.context = context;
         this.cameraId = cameraId;
+        this.targetLensFacing = lensFacing;
         this.lensFacing = lensFacing;
         this.previewSize = (previewSize != null && previewSize.getWidth() > 0 && previewSize.getHeight() > 0)
                 ? previewSize : DEFAULT_PREVIEW_SIZE;
@@ -133,21 +137,47 @@ public class Camera2Session {
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             for (String id : manager.getCameraIdList()) {
-                CameraCharacteristics chars = manager.getCameraCharacteristics(id);
-                Integer facing = chars.get(CameraCharacteristics.LENS_FACING);
-                int lensFacing = (facing != null) ? facing : CameraCharacteristics.LENS_FACING_BACK;
+                try {
+                    CameraCharacteristics chars = manager.getCameraCharacteristics(id);
+                    Integer facing = chars.get(CameraCharacteristics.LENS_FACING);
+                    int lensFacing = (facing != null) ? facing : CameraCharacteristics.LENS_FACING_BACK;
 
-                Size capture = chooseOptimalSize(context, id, true);
-                Size preview = chooseOptimalSize(context, id, false);
+                    Size capture = chooseOptimalSize(context, id, true);
+                    Size preview = chooseOptimalSize(context, id, false);
 
-                result.add(new Camera2Info(id, lensFacing, preview, capture));
-                Log.d(TAG, "Camera2Enum: id=" + id + ", facing=" + lensFacing
-                        + ", preview=" + preview + ", capture=" + capture);
+                    result.add(new Camera2Info(id, lensFacing, preview, capture));
+                    Log.d(TAG, "Camera2Enum: id=" + id + ", facing=" + lensFacing
+                            + ", preview=" + preview + ", capture=" + capture);
+                } catch (Exception e) {
+                    Log.w(TAG, "Skipping camera id=" + id + ": " + e.getMessage());
+                }
             }
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to enumerate cameras", e);
         }
         return result;
+    }
+
+    private String findCameraIdByLensFacing(int facing) {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            for (String id : manager.getCameraIdList()) {
+                try {
+                    CameraCharacteristics chars = manager.getCameraCharacteristics(id);
+                    Integer f = chars.get(CameraCharacteristics.LENS_FACING);
+                    int lensFacing = (f != null) ? f : CameraCharacteristics.LENS_FACING_BACK;
+                    if (lensFacing == facing) {
+                        Log.d(TAG, "findCameraIdByLensFacing: found " + id + " for lensFacing=" + facing);
+                        return id;
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "getCameraCharacteristics failed for id=" + id + ", skipping: " + e.getMessage());
+                }
+            }
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "Failed to enumerate cameras", e);
+        }
+        return null;
     }
 
     private static Size chooseOptimalSize(Context ctx, String cameraId, boolean forCapture) {
@@ -212,6 +242,7 @@ public class Camera2Session {
 
         this.previewSurface = previewSurface;
         this.previewSurfaceTexture = surfaceTexture;
+        this.surfaceOwnedBySession = false;
         this.imageReader = ImageReader.newInstance(
                 captureSize.getWidth(),
                 captureSize.getHeight(),
@@ -219,15 +250,21 @@ public class Camera2Session {
                 MAX_CAPTURE_BUFFERS
         );
 
-        openWithRetry(previewSurface, 0, callback);
+        openWithRetryImpl(cameraId, previewSurface, 0, callback);
     }
 
-    private void openWithRetry(Surface previewSurface, int attempt, Callback callback) {
+    private void openWithRetryImpl(String idToOpen, Surface previewSurface, int attempt, Callback callback) {
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
-            manager.openCamera(cameraId, new CameraDevice.StateCallback() {
+            manager.openCamera(idToOpen, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
+                    if (isShutdown) {
+                        Log.w(TAG, "Session was shutdown before camera opened");
+                        camera.close();
+                        return;
+                    }
+                    cameraId = idToOpen;
                     cameraDevice = camera;
                     createCaptureSession(callback);
                 }
@@ -237,7 +274,7 @@ public class Camera2Session {
                     camera.close();
                     cameraDevice = null;
                     isOpen.set(false);
-                    Log.w(TAG, "Camera " + cameraId + " disconnected");
+                    Log.w(TAG, "Camera " + idToOpen + " disconnected");
                     callback.onDisconnected();
                 }
 
@@ -246,11 +283,17 @@ public class Camera2Session {
                     camera.close();
                     cameraDevice = null;
                     isOpen.set(false);
-                    Log.e(TAG, "Camera " + cameraId + " error: " + error + ", attempt=" + attempt);
+                    Log.e(TAG, "Camera " + idToOpen + " error: " + error + ", attempt=" + attempt);
 
                     if (attempt < OPEN_RETRY_COUNT) {
-                        Log.d(TAG, "Retrying open for camera " + cameraId + " (attempt " + (attempt + 1) + "/" + (OPEN_RETRY_COUNT + 1) + ")");
-                        cameraHandler.postDelayed(() -> openWithRetry(previewSurface, attempt + 1, callback),
+                        Log.d(TAG, "Retrying open for camera " + idToOpen + " (attempt " + (attempt + 1) + "/" + (OPEN_RETRY_COUNT + 1) + ")");
+                        String nextId = findCameraIdByLensFacing(targetLensFacing);
+                        if (nextId != null && !nextId.equals(idToOpen)) {
+                            Log.d(TAG, "Re-enumerating, found new ID: " + nextId);
+                        }
+                        String idToUse = (nextId != null) ? nextId : idToOpen;
+                        final String finalId = idToUse;
+                        cameraHandler.postDelayed(() -> openWithRetryImpl(finalId, previewSurface, attempt + 1, callback),
                                 OPEN_RETRY_DELAY_MS);
                     } else {
                         callback.onError("Camera error: " + error);
@@ -258,10 +301,14 @@ public class Camera2Session {
                 }
             }, cameraHandler);
         } catch (CameraAccessException | SecurityException e) {
-            Log.e(TAG, "Failed to open camera " + cameraId, e);
-            if (attempt < OPEN_RETRY_COUNT) {
-                Log.d(TAG, "Retrying open after exception for camera " + cameraId);
-                cameraHandler.postDelayed(() -> openWithRetry(previewSurface, attempt + 1, callback),
+            Log.e(TAG, "Failed to open camera " + idToOpen, e);
+            String nextId = findCameraIdByLensFacing(targetLensFacing);
+            if (nextId != null && !nextId.equals(idToOpen)) {
+                Log.d(TAG, "Re-enumerating camera, found new ID: " + nextId + ", retrying...");
+                cameraHandler.postDelayed(() -> openWithRetryImpl(nextId, previewSurface, attempt + 1, callback), OPEN_RETRY_DELAY_MS);
+            } else if (attempt < OPEN_RETRY_COUNT) {
+                Log.d(TAG, "Retrying open after exception for camera " + idToOpen);
+                cameraHandler.postDelayed(() -> openWithRetryImpl(idToOpen, previewSurface, attempt + 1, callback),
                         OPEN_RETRY_DELAY_MS);
             } else {
                 callback.onError("Failed to open camera: " + e.getMessage());
@@ -278,6 +325,18 @@ public class Camera2Session {
             cameraDevice.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
+                    Log.d(TAG, "Session onConfigured: cameraDevice=" + cameraDevice);
+                    if (isShutdown) {
+                        Log.w(TAG, "Session shutdown during onConfigured, dropping session");
+                        try { session.close(); } catch (Exception ignored) {}
+                        return;
+                    }
+                    if (cameraDevice == null) {
+                        Log.w(TAG, "CameraDevice already closed when session configured");
+                        try { session.close(); } catch (Exception ignored) {}
+                        callback.onError("Camera closed before session configured");
+                        return;
+                    }
                     captureSession = session;
                     startPreview();
                     isOpen.set(true);
@@ -297,7 +356,18 @@ public class Camera2Session {
     }
 
     private void startPreview() {
-        if (captureSession == null || cameraDevice == null) return;
+        if (isShutdown) {
+            Log.w(TAG, "startPreview: session is shutdown, skipping");
+            return;
+        }
+        if (captureSession == null || cameraDevice == null) {
+            Log.w(TAG, "startPreview: session=" + captureSession + ", device=" + cameraDevice);
+            return;
+        }
+        if (!isPreviewActive.compareAndSet(false, true)) {
+            Log.d(TAG, "startPreview: preview already active");
+            return;
+        }
 
         try {
             previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
@@ -310,9 +380,9 @@ public class Camera2Session {
 
             captureSession.setRepeatingRequest(previewRequestBuilder.build(),
                     null, cameraHandler);
-            isPreviewActive.set(true);
-        } catch (CameraAccessException e) {
+        } catch (CameraAccessException | IllegalStateException e) {
             Log.e(TAG, "Failed to start preview", e);
+            isPreviewActive.set(false);
         }
     }
 
@@ -327,8 +397,54 @@ public class Camera2Session {
     }
 
     public void resumePreview() {
-        if (!isOpen.get() || !isPreviewActive.compareAndSet(false, true)) return;
+        if (!isOpen.get() || isPreviewActive.get() || isShutdown) return;
         startPreview();
+    }
+
+    public void restartPreviewWithExistingSurface(SurfaceTexture surfaceTexture, Callback callback) {
+        if (isShutdown) {
+            Log.w(TAG, "Session is shutdown, skipping restartPreviewWithExistingSurface");
+            return;
+        }
+        closeCaptureSession();
+        isOpen.set(false);
+        isCapturing.set(false);
+        isPreviewActive.set(false);
+
+        previewSurfaceTexture = surfaceTexture;
+        previewSurface = new Surface(surfaceTexture);
+        surfaceOwnedBySession = true;
+        this.imageReader = ImageReader.newInstance(
+                captureSize.getWidth(),
+                captureSize.getHeight(),
+                ImageFormat.JPEG,
+                MAX_CAPTURE_BUFFERS
+        );
+
+        openWithRetryImpl(cameraId, previewSurface, 0, callback);
+    }
+
+    private void closeCaptureSession() {
+        try {
+            if (captureSession != null) {
+                captureSession.close();
+                captureSession = null;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing capture session", e);
+        }
+        try {
+            if (cameraDevice != null) {
+                cameraDevice.close();
+                cameraDevice = null;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing camera device", e);
+        }
+        if (imageReader != null) {
+            imageReader.close();
+            imageReader = null;
+        }
     }
 
     public void capture(String filePath, CountDownLatch latch, CaptureCallback callback) {
@@ -454,12 +570,12 @@ public class Camera2Session {
             imageReader = null;
         }
 
-        if (previewSurface != null) {
+        if (previewSurface != null && surfaceOwnedBySession) {
             previewSurface.release();
             previewSurface = null;
         }
 
-        if (previewSurfaceTexture != null) {
+        if (previewSurfaceTexture != null && surfaceOwnedBySession) {
             previewSurfaceTexture.release();
             previewSurfaceTexture = null;
         }
@@ -467,9 +583,11 @@ public class Camera2Session {
         isOpen.set(false);
         isCapturing.set(false);
         isPreviewActive.set(false);
+        isShutdown = true;
     }
 
     public void shutdown() {
+        isShutdown = true;
         close();
         if (cameraThread != null) {
             cameraThread.quitSafely();

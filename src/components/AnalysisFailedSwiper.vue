@@ -1,41 +1,38 @@
 <script setup lang="ts">
-import Swiper from 'swiper';
+import Swiper from 'swiper'
 import 'swiper/css'
-import 'swiper/css/effect-cards';
+import 'swiper/css/effect-cards'
 
 // import './style.css';
 
 // import required modules
-import { EffectCards } from 'swiper/modules';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useImageSplit } from '@/composables/useImageSplit';
+import { EffectCards } from 'swiper/modules'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useImageSplit } from '@/composables/useImageSplit'
 
-const emit = defineEmits(['slideChange']);
+const emit = defineEmits(['slideChange'])
 
 interface Props {
-  analysisResult: any;
+  analysisResult: any
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
-const imgSrc = computed(() => props.analysisResult?.aiAnalysis.result.generatedImageUrls[0]);
+const imgSrc = computed(() => props.analysisResult?.aiAnalysis.result.generatedImageUrls[0])
 
-const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(
-  () => imgSrc.value,
-  0.5,
-);
+const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(() => imgSrc.value, 0.5)
 
-const leftUrl = computed(() => leftUrlRef.value);
-const rightUrl = computed(() => rightUrlRef.value);
+const leftUrl = computed(() => leftUrlRef.value)
+const rightUrl = computed(() => rightUrlRef.value)
 
-const swiperInstance = ref<any>(null);
+const swiperInstance = ref<any>(null)
 
-const swiperIndex = ref(0);
+const swiperIndex = ref(0)
 
 const onSlideChange = (e: any) => {
-  console.log('slide change', e.activeIndex);
-  swiperIndex.value = e.activeIndex;
-  emit('slideChange', e.activeIndex);
+  console.log('slide change', e.activeIndex)
+  swiperIndex.value = e.activeIndex
+  emit('slideChange', e.activeIndex)
 }
 
 onMounted(() => {
@@ -45,27 +42,24 @@ onMounted(() => {
     modules: [EffectCards],
   })
 
-  swiperInstance.value.on('slideChange', onSlideChange);
+  swiperInstance.value.on('slideChange', onSlideChange)
 })
 
 onUnmounted(() => {
-  swiperInstance.value.destroy();
+  swiperInstance.value.destroy()
 })
-
-
 </script>
 <template>
   <div class="swiper-container">
     <div class="swiper detail-swiper">
       <div class="swiper-wrapper">
         <div class="swiper-slide">
-          <img :src="leftUrl" alt="bad-img" srcset="">
+          <img :src="leftUrl" alt="bad-img" srcset="" />
         </div>
         <div class="swiper-slide">
-          <img :src="rightUrl" alt="good-img" srcset="">
+          <img :src="rightUrl" alt="good-img" srcset="" />
         </div>
       </div>
-
     </div>
     <div class="swiper-prev button-icon">
       <img src="@/assets/return.svg" alt="swiper-prev" @click="swiperInstance.slidePrev()" />
@@ -74,8 +68,14 @@ onUnmounted(() => {
       <img src="@/assets/go-right.svg" alt="swiper-next" @click="swiperInstance.slideNext()" />
     </div>
     <div class="custom-pagination">
-      <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 0 }"></div>
-      <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 1 }"></div>
+      <div
+        class="custom-pagination-bullet"
+        :class="{ 'custom-pagination-bullet-active': swiperIndex === 0 }"
+      ></div>
+      <div
+        class="custom-pagination-bullet"
+        :class="{ 'custom-pagination-bullet-active': swiperIndex === 1 }"
+      ></div>
     </div>
   </div>
 </template>
@@ -128,7 +128,6 @@ onUnmounted(() => {
   //   box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
   // }
 }
-
 
 .swiper {
   width: 485px;

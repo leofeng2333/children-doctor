@@ -11,29 +11,29 @@ const analysisStore = useAnalysisStore()
 const { result: analysisResult, isLoading } = storeToRefs(analysisStore)
 
 const analysisCompleted = computed(() => {
-  return !!analysisResult.value;
+  return !!analysisResult.value
 })
 
 const analysisResultTag = computed(() => {
-  return analysisResult.value?.llmAnalysis?.result?.isHealthy;
+  return analysisResult.value?.llmAnalysis?.result?.isHealthy
 })
 
 const handleReturnReport = () => {
   router.back()
 }
 
-const swiperIndex = ref(0);
+const swiperIndex = ref(0)
 
 const handleSlideChange = (index: number) => {
-  swiperIndex.value = index;
+  swiperIndex.value = index
 }
 
 const diagnosisResults = computed(() => {
-  return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join();
+  return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join()
 })
 
 onMounted(() => {
-  analysisStore.start();
+  analysisStore.start()
 })
 </script>
 
@@ -49,38 +49,38 @@ onMounted(() => {
     <!-- 页面内容 -->
     <div class="page-content">
       <template v-if="analysisResultTag">
-        <h1 class="page-title">真棒，<br />
-          你的颌面非常健康！</h1>
+        <h1 class="page-title">
+          真棒，<br />
+          你的颌面非常健康！
+        </h1>
         <!-- 说明文字 -->
-        <p class="description">
-          16年后，你的长相是这样的
-        </p>
+        <p class="description">16年后，你的长相是这样的</p>
       </template>
       <template v-else-if="swiperIndex === 0">
-        <h1 class="page-title">啊哦，<br />
-          颌面发育似乎不太妙！</h1>
+        <h1 class="page-title">
+          啊哦，<br />
+          颌面发育似乎不太妙！
+        </h1>
         <!-- 说明文字 -->
-        <p class="description">
-          16年后，你的长相是这样的
-        </p>
+        <p class="description">16年后，你的长相是这样的</p>
       </template>
       <template v-else-if="swiperIndex === 1">
-        <h1 class="page-title">但是不用担心，<br />
-          矫正后面容会变成这样！</h1>
+        <h1 class="page-title">
+          但是不用担心，<br />
+          矫正后面容会变成这样！
+        </h1>
         <!-- 说明文字 -->
-        <p class="description">
-          通过科学手段干预，颌面会被修复为：
-        </p>
+        <p class="description">通过科学手段干预，颌面会被修复为：</p>
       </template>
-
-
 
       <div class="analysis-result">
         <div class="analysis-success" v-if="analysisResultTag">
           <div class="analysis-success-tips">
             <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
-            <h3 class="tips-title">健康小贴士: </h3>
-            <p class="tips-content">你的长相是这样的你的长相是这样的你的长相是这样的你的长相是这样的</p>
+            <h3 class="tips-title">健康小贴士:</h3>
+            <p class="tips-content">
+              你的长相是这样的你的长相是这样的你的长相是这样的你的长相是这样的
+            </p>
           </div>
           <div class="analysis-success-img">
             <img src="@/assets/images/analysis-success.png" alt="analysis-success" />
@@ -91,12 +91,11 @@ onMounted(() => {
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0" class="analysis-failed-tips">
-              <h3 class="tips-title">问题诊断: </h3>
+              <h3 class="tips-title">问题诊断:</h3>
               <p class="tips-content">{{ diagnosisResults }}</p>
             </div>
             <ScanSubscription v-show="swiperIndex === 1" />
           </div>
-
         </div>
       </div>
     </div>
@@ -117,7 +116,7 @@ onMounted(() => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -138,7 +137,11 @@ onMounted(() => {
     }
 
     p {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family:
+        'Inter',
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
       font-size: 14px;
       font-weight: 400;
       line-height: 26px;
@@ -149,7 +152,11 @@ onMounted(() => {
 }
 
 .page-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -158,7 +165,11 @@ onMounted(() => {
 }
 
 .description {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -198,7 +209,11 @@ onMounted(() => {
       }
 
       .analysis-success-tips {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
         font-size: 16px;
         font-weight: 400;
         color: #000;
@@ -247,7 +262,11 @@ onMounted(() => {
       }
 
       .analysis-failed-tips {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
         font-size: 16px;
         font-weight: 400;
         color: #000;

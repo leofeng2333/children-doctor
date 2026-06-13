@@ -26,7 +26,7 @@ const drawConnectors = () => {
 
     const prev = prevCircle.getBoundingClientRect()
     const curr = circle.getBoundingClientRect()
-    let x1, y1, x2, y2: number;
+    let x1, y1, x2, y2: number
     if (i === 1) {
       x1 = prev.right - containerRect.left + 15
       y1 = prev.top + prev.height / 2 - containerRect.top + 20
@@ -75,9 +75,7 @@ onUnmounted(() => {
   <div class="diagnosis-container">
     <div class="page-top-container">
       <!-- 欢迎语 -->
-      <div class="welcome-text">
-        Hi，<br />我是你的AI口腔医生！
-      </div>
+      <div class="welcome-text">Hi，<br />我是你的AI口腔医生！</div>
 
       <!-- 说明文字 -->
       <p class="description">
@@ -89,7 +87,14 @@ onUnmounted(() => {
         <!-- SVG 连接线层 -->
         <svg class="connectors-svg" aria-hidden="true">
           <defs>
-            <marker id="arrowhead" markerWidth="3.75" markerHeight="3.75" refX="3.375" refY="1.875" orient="auto">
+            <marker
+              id="arrowhead"
+              markerWidth="3.75"
+              markerHeight="3.75"
+              refX="3.375"
+              refY="1.875"
+              orient="auto"
+            >
               <path d="M 0 0 L 3.75 1.875 L 0 3.75 z" fill="#D9D9D9" />
             </marker>
           </defs>
@@ -128,8 +133,7 @@ onUnmounted(() => {
 
     <!-- 底部按钮 -->
     <div class="bottom-section">
-      <PrimaryButton text="开始问诊" class="start-button" @click="goNext">
-      </PrimaryButton>
+      <PrimaryButton text="开始问诊" class="start-button" @click="goNext"> </PrimaryButton>
       <LogoText class="logo" />
     </div>
   </div>
@@ -143,7 +147,7 @@ onUnmounted(() => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -155,7 +159,11 @@ onUnmounted(() => {
 
 /* 欢迎语 */
 .welcome-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -164,7 +172,11 @@ onUnmounted(() => {
 
 /* 说明文字 */
 .description {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -209,7 +221,7 @@ onUnmounted(() => {
 
 .connector-path {
   fill: none;
-  stroke: #D9D9D9;
+  stroke: #d9d9d9;
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -247,7 +259,7 @@ onUnmounted(() => {
   width: 172px;
   height: 172px;
   border-radius: 50%;
-  background: #D9D9D9;
+  background: #d9d9d9;
   flex-shrink: 0;
   align-self: center;
 }
@@ -258,14 +270,17 @@ onUnmounted(() => {
   flex-grow: 1;
   flex-shrink: 1;
   flex-basis: 0%;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-weight: 400;
   color: #000;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   margin-left: 16px;
-
 
   .step-text-title {
     font-size: 24px;

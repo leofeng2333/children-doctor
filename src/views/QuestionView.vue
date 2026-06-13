@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { saveQuestionAnswers } from '@/utils/service';
+import { saveQuestionAnswers } from '@/utils/service'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -13,24 +13,24 @@ const questionTexts = [
   '你是否有吐舌头或者舔牙齿的习惯？',
   '你是否有长期张嘴呼吸的习惯，特别是在睡着后？',
   '你是否长期只用一边牙齿咀嚼食物？',
-  '你是否有啃铅笔、啃筷子等物品或者有咬手指的习惯？'
-];
+  '你是否有啃铅笔、啃筷子等物品或者有咬手指的习惯？',
+]
 
-const currentQuestionText = computed(() => questionTexts[currentQuestion.value - 1]);
-const answers = ref<number[]>([]);
+const currentQuestionText = computed(() => questionTexts[currentQuestion.value - 1])
+const answers = ref<number[]>([])
 
 const goBack = () => {
   if (currentQuestion.value > 1) {
-    currentQuestion.value--;
-    answers.value.length = currentQuestion.value;
+    currentQuestion.value--
+    answers.value.length = currentQuestion.value
   } else {
     router.back()
   }
 }
 
 const selectOption = (index: number) => {
-  answers.value[currentQuestion.value - 1] = index;
-  nextQuestion();
+  answers.value[currentQuestion.value - 1] = index
+  nextQuestion()
 }
 
 const nextQuestion = () => {
@@ -41,22 +41,22 @@ const nextQuestion = () => {
 
 const goNext = async () => {
   const tempResponse = await saveQuestionAnswers({
-    "answers": [
+    answers: [
       {
-        "questionNo": "1",
-        "answer": "是"
+        questionNo: '1',
+        answer: '是',
       },
       {
-        "questionNo": "2",
-        "answer": "偶尔疼痛"
+        questionNo: '2',
+        answer: '偶尔疼痛',
       },
       {
-        "questionNo": "3",
-        "answer": "有家族史"
-      }
-    ]
+        questionNo: '3',
+        answer: '有家族史',
+      },
+    ],
   })
-  console.log('tempResponse', tempResponse);
+  console.log('tempResponse', tempResponse)
   router.push('/detail-analysis')
 }
 </script>
@@ -93,7 +93,11 @@ const goNext = async () => {
 
     <!-- 底部导航 -->
     <div class="bottom-nav">
-      <PrimaryButton v-show="currentQuestion === questionTexts.length" text="已完成，进入拍摄室！" @click="goNext" />
+      <PrimaryButton
+        v-show="currentQuestion === questionTexts.length"
+        text="已完成，进入拍摄室！"
+        @click="goNext"
+      />
       <LogoText class="logo" />
     </div>
   </div>
@@ -107,7 +111,7 @@ const goNext = async () => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -140,7 +144,11 @@ const goNext = async () => {
 }
 
 .title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -149,7 +157,11 @@ const goNext = async () => {
 }
 
 .progress {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 36px;
   font-weight: 700;
   line-height: 80px;
@@ -169,7 +181,11 @@ const goNext = async () => {
 }
 
 .question-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 36px;
   font-weight: 400;
   line-height: 52px;
@@ -180,7 +196,6 @@ const goNext = async () => {
 .options {
   display: flex;
   margin-top: 75px;
-
 }
 
 .option-button {
@@ -190,7 +205,7 @@ const goNext = async () => {
   justify-content: center;
   padding: 0;
   border: none;
-  background: #D9D9D9;
+  background: #d9d9d9;
   border-radius: 73.5px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -198,7 +213,7 @@ const goNext = async () => {
   height: 130px;
 
   &.selected {
-    background: #4CAF50;
+    background: #4caf50;
   }
 
   &:first-child {
@@ -214,7 +229,11 @@ const goNext = async () => {
 }
 
 .option-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 700;
   line-height: 52px;

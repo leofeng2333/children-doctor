@@ -113,7 +113,11 @@ const handleClose = () => {
 }
 
 .dialog-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 38px;
   font-weight: 700;
   color: #000;
@@ -229,7 +233,9 @@ const handleClose = () => {
   transition: opacity 0.25s ease;
 
   .dialog-card {
-    transition: transform 0.25s ease, opacity 0.25s ease;
+    transition:
+      transform 0.25s ease,
+      opacity 0.25s ease;
   }
 }
 

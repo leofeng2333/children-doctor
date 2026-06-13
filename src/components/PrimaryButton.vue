@@ -1,27 +1,37 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  text: string
-  disabled?: boolean
-  loading?: boolean
-  color?: string
-}>(), {
-  color: '#000'
-})
+const props = withDefaults(
+  defineProps<{
+    text?: string
+    disabled?: boolean
+    loading?: boolean
+    color?: string
+  }>(),
+  {
+    color: '#000',
+  },
+)
 
 const emit = defineEmits<{
   click: []
 }>()
 
 const handleClick = () => {
-  if (props.disabled || props.loading) return;
+  if (props.disabled || props.loading) return
   emit('click')
 }
 </script>
 
 <template>
-  <button class="primary-btn" :class="{ 'disabled': disabled }" :disabled="disabled || loading" @click="handleClick">
+  <button
+    class="primary-btn"
+    :class="{ disabled: disabled }"
+    :disabled="disabled || loading"
+    @click="handleClick"
+  >
     <span v-if="loading" class="loading-dot"></span>
-    <span v-else>{{ text }}</span>
+    <slot v-else>
+      <span>{{ text }}</span>
+    </slot>
   </button>
 </template>
 
@@ -29,9 +39,13 @@ const handleClick = () => {
 .primary-btn {
   width: 90%;
   margin: 0 auto;
-  background: #FF9900;
+  background: #ff9900;
   color: v-bind(color);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   border: none;
   border-radius: 50px;
@@ -41,9 +55,8 @@ const handleClick = () => {
   box-shadow: 0 8px 24px rgba(255, 153, 0, 0.4);
   transition: all 0.3s ease;
 
-  &>span {
+  & > span {
     font-weight: 700;
-
   }
 }
 
@@ -53,7 +66,7 @@ const handleClick = () => {
 }
 
 .primary-btn.disabled {
-  background: #BCBCBC;
+  background: #bcbcbc;
   color: #fff;
   box-shadow: none;
   cursor: not-allowed;

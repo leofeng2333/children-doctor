@@ -89,8 +89,6 @@ public class DualCameraManager {
                 public void onSuccess(String[] uris, String[] paths, long[] fileSizeKb) {
                     isCapturing = false;
 
-                    controller.displayPhotos(paths);
-
                     JSObject result = new JSObject();
                     for (int i = 0; i < uris.length; i++) {
                         result.put("cameraUrl" + i, uris[i]);
@@ -139,6 +137,22 @@ public class DualCameraManager {
         mainHandler.post(() -> {
             if (controller != null) {
                 controller.resumePreview();
+            }
+        });
+    }
+
+    public void displayPhotos(String[] photoPaths) {
+        mainHandler.post(() -> {
+            if (controller != null) {
+                controller.displayPhotos(photoPaths);
+            }
+        });
+    }
+
+    public void resumePreviewFromPhotos() {
+        mainHandler.post(() -> {
+            if (controller != null) {
+                controller.resumePreviewFromPhotos();
             }
         });
     }

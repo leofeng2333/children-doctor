@@ -1,5 +1,4 @@
-<script setup lang="ts">
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <div class="logo">logo</div>
@@ -9,6 +8,6 @@
 .logo {
   font-family: 'Inter', sans-serif;
   font-size: 24px;
-  color: #BCBCBC;
+  color: #bcbcbc;
 }
 </style>

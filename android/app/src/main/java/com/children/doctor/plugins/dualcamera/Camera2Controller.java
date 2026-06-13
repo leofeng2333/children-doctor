@@ -45,7 +45,6 @@ public class Camera2Controller {
 
     private final AtomicBoolean isCapturing = new AtomicBoolean(false);
     private final AtomicBoolean isStopped = new AtomicBoolean(false);
-    private final AtomicBoolean isPhotoDisplayed = new AtomicBoolean(false);
 
     private PluginCall pendingCall;
     private int openedCount = 0;
@@ -382,10 +381,12 @@ public class Camera2Controller {
                 }
 
                 String[] uris = buildFileUris(capturedPaths);
-                mainHandler.post(() -> resultCallback.onSuccess(uris, capturedPaths, capturedSizes));
-                if (callback != null) {
-                    callback.onCaptureComplete(uris, capturedPaths, capturedSizes);
-                }
+                mainHandler.post(() -> {
+                    resultCallback.onSuccess(uris, capturedPaths, capturedSizes);
+                    if (callback != null) {
+                        callback.onCaptureComplete(uris, capturedPaths, capturedSizes);
+                    }
+                });
             } catch (InterruptedException e) {
                 isCapturing.set(false);
                 mainHandler.post(() -> resultCallback.onError("Capture interrupted"));
@@ -408,11 +409,6 @@ public class Camera2Controller {
     }
 
     public void displayPhotos(String[] photoPaths) {
-        if (!isPhotoDisplayed.compareAndSet(false, true)) {
-            Log.w(TAG, "displayPhotos: already displayed, ignoring duplicate call");
-            return;
-        }
-
         mainHandler.post(() -> {
             if (photoImageViews == null || photoPaths == null) return;
 
@@ -422,8 +418,6 @@ public class Camera2Controller {
                 if (photoImageViews[i] == null || photoPaths[i] == null) continue;
                 displaySinglePhoto(i, photoPaths[i]);
             }
-
-            shutdownSessions();
             Log.d(TAG, "displayPhotos done");
         });
     }
@@ -478,6 +472,70 @@ public class Camera2Controller {
                 .alpha(1f)
                 .setDuration(200)
                 .start();
+    }
+
+    public void resumePreviewFromPhotos() {
+        mainHandler.post(() -> {
+            Log.d(TAG, "resumePreviewFromPhotos, isStopped=" + isStopped.get());
+
+            if (isStopped.get()) {
+                Log.w(TAG, "Camera is already stopped, skipping resumePreviewFromPhotos");
+                return;
+            }
+
+            if (photoImageViews != null) {
+                for (int i = 0; i < photoImageViews.length; i++) {
+                    if (photoImageViews[i] == null) continue;
+
+                    final int slot = i;
+                    photoImageViews[i].animate()
+                            .alpha(0f)
+                            .setDuration(150)
+                            .withEndAction(() -> {
+                                if (photoImageViews != null && photoImageViews[slot] != null) {
+                                    photoImageViews[slot].setVisibility(android.view.View.GONE);
+                                    photoImageViews[slot].setImageBitmap(null);
+                                }
+                            })
+                            .start();
+
+                    if (textureViews != null && textureViews[i] != null) {
+                        textureViews[i].setAlpha(0f);
+                        textureViews[i].setVisibility(android.view.View.VISIBLE);
+                        textureViews[i].animate()
+                                .alpha(1f)
+                                .setDuration(150)
+                                .start();
+                    }
+                }
+            } else if (textureViews != null) {
+                for (int i = 0; i < textureViews.length; i++) {
+                    if (textureViews[i] != null) {
+                        textureViews[i].setAlpha(1f);
+                        textureViews[i].setVisibility(android.view.View.VISIBLE);
+                    }
+                }
+            }
+
+            if (sessions != null) {
+                for (int i = 0; i < sessions.length; i++) {
+                    Camera2Session session = sessions[i];
+                    if (session == null) continue;
+
+                    TextureView tv = (textureViews != null) ? textureViews[i] : null;
+                    if (tv != null && tv.getSurfaceTexture() != null) {
+                        SurfaceTexture st = tv.getSurfaceTexture();
+                        Size preview = session.getPreviewSize();
+                        st.setDefaultBufferSize(preview.getWidth(), preview.getHeight());
+                        Log.d(TAG, "Restarting session " + i);
+                        session.restartPreviewWithExistingSurface(st, buildSessionCallback(i));
+                    } else {
+                        Log.w(TAG, "Cannot restart session " + i + ": no TextureView or SurfaceTexture");
+                        session.resumePreview();
+                    }
+                }
+            }
+        });
     }
 
     private void shutdownSessions() {

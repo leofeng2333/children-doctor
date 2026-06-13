@@ -44,7 +44,6 @@ onMounted(async () => {
 
     <!-- 底部黄色区域 -->
     <div class="bottom-section">
-
       <div class="bottom-section-content">
         <!-- 小图标 -->
         <div class="small-icon">
@@ -52,13 +51,10 @@ onMounted(async () => {
         </div>
 
         <!-- 主标题 -->
-        <h1 class="main-title">
-          儿童颜面发育<br />AI预诊断
-        </h1>
+        <h1 class="main-title">儿童颜面发育<br />AI预诊断</h1>
 
         <!-- 副标题 -->
         <p class="sub-title">识别诊断 × AI预测 × 专家建议</p>
-
       </div>
       <!-- 按钮 -->
       <div class="bottom-section-buttons">
@@ -71,8 +67,11 @@ onMounted(async () => {
     </div>
 
     <!-- 密码验证弹窗 -->
-    <PasswordDialog :visible="showPasswordDialog" @close="showPasswordDialog = false"
-      @success="handlePasswordSuccess" />
+    <PasswordDialog
+      :visible="showPasswordDialog"
+      @close="showPasswordDialog = false"
+      @success="handlePasswordSuccess"
+    />
   </div>
 </template>
 
@@ -85,7 +84,7 @@ onMounted(async () => {
     height: 100dvh;
   }
 
-  background: #FDFDFD;
+  background: #fdfdfd;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -132,7 +131,7 @@ onMounted(async () => {
   flex-grow: 1;
   flex-shrink: 1;
   flex-basis: 0%;
-  background: linear-gradient(180deg, #FFE361 0%, #FFD93D 100%);
+  background: linear-gradient(180deg, #ffe361 0%, #ffd93d 100%);
   border-radius: 0 500px 0 0;
   padding: 85px;
   padding-top: 120px;
@@ -143,7 +142,6 @@ onMounted(async () => {
   justify-content: space-between;
   position: relative;
   z-index: 11;
-
 
   .bottom-section-buttons {
     width: 100%;
@@ -174,7 +172,11 @@ onMounted(async () => {
 }
 
 .main-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 96px;
   font-weight: 700;
   line-height: 120px;
@@ -183,7 +185,11 @@ onMounted(async () => {
 }
 
 .sub-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 1.8;

@@ -2,6 +2,7 @@ package com.children.doctor.plugins.dualcamera;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
@@ -15,6 +16,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,6 +214,96 @@ public class DualCameraPlugin extends Plugin {
     }
 
     @PluginMethod()
+    public void copyImageToExternalCache(PluginCall call) {
+        String uriString = call.getString("uri");
+        Log.d(TAG, "copyImageToExternalCache called, uri=" + uriString + ", data=" + call.getData());
+        if (uriString == null || uriString.isEmpty()) {
+            call.reject("uri is required");
+            return;
+        }
+
+        try {
+            Uri sourceUri = Uri.parse(uriString);
+            File cacheDir = getContext().getExternalCacheDir();
+            if (cacheDir == null) {
+                call.reject("External cache dir not available");
+                return;
+            }
+
+            String mimeType = getContext().getContentResolver().getType(sourceUri);
+            String extension;
+            if (mimeType == null) {
+                extension = "jpg";
+            } else {
+                switch (mimeType) {
+                    case "image/png": extension = "png"; break;
+                    case "image/gif": extension = "gif"; break;
+                    case "image/webp": extension = "webp"; break;
+                    default: extension = "jpg";
+                }
+            }
+
+            File destFile = new File(cacheDir, "display_" + System.currentTimeMillis() + "." + extension);
+            FileOutputStream out = new FileOutputStream(destFile);
+            InputStream in = getContext().getContentResolver().openInputStream(sourceUri);
+            if (in == null) {
+                out.close();
+                call.reject("Cannot open input stream for uri: " + uriString);
+                return;
+            }
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+            }
+            in.close();
+            out.close();
+
+            JSObject result = new JSObject();
+            result.put("path", destFile.getAbsolutePath());
+            // File.toURI() returns "file:/..." (single slash) on some Android versions,
+            // which Capacitor.convertFileSrc() fails to recognize. Normalize to "file:///"
+            // so the WebView's local server can serve it via http://localhost/_capacitor_file_/...
+            String displayUri = "file://" + destFile.getAbsolutePath();
+            result.put("uri", displayUri);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to copy image: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod()
+    public void displayPhotos(PluginCall call) {
+        if (cameraManager == null) {
+            call.reject("Camera not initialized");
+            return;
+        }
+        JSObject filesObj = call.getObject("files");
+        if (filesObj == null) {
+            call.reject("files is required");
+            return;
+        }
+        String[] frontPaths = parseStringArray(filesObj, "front");
+        String[] backPaths = parseStringArray(filesObj, "back");
+        if (frontPaths == null || backPaths == null) {
+            call.reject("files.front and files.back are required");
+            return;
+        }
+        cameraManager.displayPhotos(new String[]{frontPaths[0], backPaths[0]});
+        call.resolve();
+    }
+
+    @PluginMethod()
+    public void resumePreviewFromPhotos(PluginCall call) {
+        if (cameraManager == null) {
+            call.reject("Camera not initialized");
+            return;
+        }
+        cameraManager.resumePreviewFromPhotos();
+        call.resolve();
+    }
+
+    @PluginMethod()
     public void capture(PluginCall call) {
         if (cameraManager == null) {
             call.reject("Preview is not running. Call startPreview first.");
@@ -240,6 +334,11 @@ public class DualCameraPlugin extends Plugin {
 
         JSObject extraDataObj = call.getObject("extraData");
         Map<String, String> extraData = parseExtraDataObject(extraDataObj);
+
+        Log.d(TAG, "[DualCamera] uploadPhotos called");
+        Log.d(TAG, "[DualCamera]   uploadUrl = " + uploadUrl);
+        Log.d(TAG, "[DualCamera]   files fields = " + (files == null ? "null" : files.keySet().toString()));
+        Log.d(TAG, "[DualCamera]   extraData = " + (extraData == null ? "null" : extraData.toString()));
 
         photoUploader.upload(uploadUrl, files, extraData, new PhotoUploader.UploadCallback() {
             @Override
@@ -288,5 +387,19 @@ public class DualCameraPlugin extends Plugin {
             // ignore malformed entries
         }
         return extraData;
+    }
+
+    private String[] parseStringArray(JSObject obj, String key) {
+        try {
+            org.json.JSONArray arr = (org.json.JSONArray) obj.get(key);
+            if (arr == null || arr.length() == 0) return null;
+            String[] result = new String[arr.length()];
+            for (int i = 0; i < arr.length(); i++) {
+                result[i] = arr.getString(i);
+            }
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

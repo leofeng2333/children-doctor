@@ -25,15 +25,11 @@ const handleSelect = async (isOutOfProvince: boolean) => {
 <template>
   <div class="form-container">
     <div class="page-top-container">
-      <div class="welcome-text">
-        Hi，<br />我是你的AI口腔医生！
-      </div>
+      <div class="welcome-text">Hi，<br />我是你的AI口腔医生！</div>
       <h1 class="form-title">我们先来填写用户的问诊单吧。</h1>
 
       <div class="page-content">
-        <h2 class="location-title">
-          你现居住在哪里？
-        </h2>
+        <h2 class="location-title">你现居住在哪里？</h2>
 
         <div class="location-selects">
           <div class="location-select-item" @click="handleSelect(false)">我在浙江省内</div>
@@ -56,7 +52,7 @@ const handleSelect = async (isOutOfProvince: boolean) => {
     height: 100dvh;
   }
 
-  background: #FFFFFF;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -67,7 +63,11 @@ const handleSelect = async (isOutOfProvince: boolean) => {
 }
 
 .welcome-text {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 64px;
   font-weight: 700;
   line-height: 80px;
@@ -75,7 +75,11 @@ const handleSelect = async (isOutOfProvince: boolean) => {
 }
 
 .form-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -88,7 +92,11 @@ const handleSelect = async (isOutOfProvince: boolean) => {
 }
 
 .location-title {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 52px;
@@ -109,7 +117,7 @@ const handleSelect = async (isOutOfProvince: boolean) => {
     font-weight: 700;
     font-size: 32px;
     line-height: 85px;
-    background-color: #D9D9D9;
+    background-color: #d9d9d9;
     text-align: center;
 
     &:first-child {

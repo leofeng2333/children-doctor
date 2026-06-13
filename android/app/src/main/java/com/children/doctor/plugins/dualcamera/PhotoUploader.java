@@ -33,6 +33,34 @@ public class PhotoUploader {
     }
 
     public void upload(String uploadUrl, Map<String, String[]> files, Map<String, String> extraData, UploadCallback callback) {
+        // ========== 上传参数完整快照（入口）==========
+        Log.d(TAG, "========== [Upload] 上传参数完整快照 ==========");
+        Log.d(TAG, "[Upload] uploadUrl = " + uploadUrl);
+        Log.d(TAG, "[Upload] extraData = " + extraData);
+
+        if (files != null && !files.isEmpty()) {
+            Log.d(TAG, "[Upload] files 字段数 = " + files.size());
+            for (Map.Entry<String, String[]> fieldEntry : files.entrySet()) {
+                String fieldName = fieldEntry.getKey();
+                String[] paths = fieldEntry.getValue();
+                Log.d(TAG, "[Upload]   - fieldName = " + fieldName + ", 路径数 = " + (paths == null ? 0 : paths.length));
+                if (paths != null) {
+                    for (int i = 0; i < paths.length; i++) {
+                        String p = paths[i];
+                        File f = (p == null) ? null : new File(p);
+                        boolean exists = (f != null && f.exists());
+                        long size = (exists) ? f.length() : -1L;
+                        Log.d(TAG, "[Upload]     [" + i + "] path = " + p
+                                + " | exists = " + exists
+                                + " | size = " + size + " bytes");
+                    }
+                }
+            }
+        } else {
+            Log.w(TAG, "[Upload] files 为空或 null");
+        }
+        Log.d(TAG, "[Upload] ========================================");
+
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
@@ -47,9 +75,13 @@ public class PhotoUploader {
                 connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(READ_TIMEOUT_MS);
 
+                Log.d(TAG, "[Upload] 开始写 multipart body, boundary = " + boundary);
                 writeMultipartBody(connection, boundary, files, extraData);
+                Log.d(TAG, "[Upload] multipart body 写入完成, 发送请求...");
 
                 int responseCode = connection.getResponseCode();
+                Log.d(TAG, "[Upload] HTTP 状态码 = " + responseCode);
+
                 BufferedReader reader;
                 if (responseCode >= 200 && responseCode < 300) {
                     reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
@@ -65,6 +97,9 @@ public class PhotoUploader {
                 reader.close();
 
                 String responseBody = response.toString();
+                Log.d(TAG, "[Upload] 响应长度 = " + responseBody.length());
+                Log.d(TAG, "[Upload] 响应内容 = " + responseBody);
+
                 if (responseCode >= 200 && responseCode < 300) {
                     mainHandler.post(() -> callback.onSuccess(responseBody));
                 } else {
