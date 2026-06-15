@@ -8,6 +8,7 @@ import QuestionView from '../views/QuestionView.vue'
 import CaptureIntroView from '../views/CaptureIntroView.vue'
 import CameraCaptureView from '../views/CameraCaptureView.vue'
 import DetailAnalysisView from '../views/DetailAnalysisView.vue'
+import QuizView from '../views/QuizView.vue'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -55,6 +56,11 @@ const router = createRouter({
       path: '/detail-analysis',
       name: 'detail-analysis',
       component: DetailAnalysisView,
+    },
+    {
+      path: '/quiz',
+      name: 'quiz',
+      component: QuizView,
     },
   ],
 })

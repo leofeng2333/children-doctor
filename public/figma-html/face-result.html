@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <title>口腔-面容变化 · 结果</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+      }
+
+      body {
+        background: #f2684e;
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          'Microsoft YaHei',
+          sans-serif;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        color: #ffffff;
+      }
+
+      :root {
+        --page-w: 807;
+        --unit: calc(100vw / var(--page-w));
+      }
+
+      .page {
+        position: relative;
+        width: 100vw;
+        min-height: 100dvh;
+        padding-top: max(env(safe-area-inset-top), 0px);
+        padding-bottom: calc(env(safe-area-inset-bottom) + 6vw);
+        overflow: hidden;
+      }
+
+      /* 3 个粉色块装饰（与 input.html 一致） */
+      .bg-deco {
+        position: absolute;
+        pointer-events: none;
+        background: #f2a4a2;
+        border-radius: 50%;
+        z-index: 0;
+      }
+
+      .bg-deco.d1 {
+        top: calc(-3.96 * var(--unit));
+        left: calc(45.23 * var(--unit));
+        width: calc(66.6 * var(--unit));
+        height: calc(71.25 * var(--unit));
+        border-radius: 50% 50% 45% 55% / 60% 40% 60% 40%;
+      }
+
+      .bg-deco.d2 {
+        top: calc(153.41 * var(--unit));
+        left: calc(-32.42 * var(--unit));
+        width: calc(114.72 * var(--unit));
+        height: calc(120.5 * var(--unit));
+        border-radius: 60% 40% 55% 45% / 50% 50% 50% 50%;
+      }
+
+      .bg-deco.d3 {
+        top: calc(296.65 * var(--unit));
+        left: calc(-1.74 * var(--unit));
+        width: calc(145.57 * var(--unit));
+        height: calc(144.7 * var(--unit));
+        border-radius: 40% 60% 50% 50% / 50% 50% 60% 40%;
+      }
+
+      .content {
+        position: relative;
+        z-index: 1;
+        padding: 0 7.68vw;
+      }
+
+      /* 标题1: 改正后... */
+      .title-after {
+        font-size: 5.95vw;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #ffffff;
+        width: 60.47vw;
+        text-align: left;
+        margin-top: 160.34vw;
+        margin-bottom: 15vw;
+      }
+
+      /* 卡片1: 改正后的样子（Group 16）*/
+      .card {
+        position: relative;
+        width: 87.49vw;
+        margin: 0 auto;
+        height: 115.71vw;
+      }
+
+      .card .card-base {
+        position: absolute;
+        top: 15.61vw;
+        left: 0;
+        width: 79.28vw;
+        height: 100.09vw;
+        background: #eefaff;
+        border-radius: 4.96vw;
+        box-shadow: 0 2vw 6vw rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+
+      .card .card-img-wrap {
+        position: absolute;
+        top: 20.41vw;
+        left: 3.9vw;
+        width: 71.71vw;
+        height: 90.52vw;
+        border-radius: 2.48vw;
+        background: #e9e9e9;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .card .card-img {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #e9e9e9 0%, #d4d4d4 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32vw;
+        line-height: 1;
+      }
+
+      .card .sticker {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 39.16vw;
+        height: 34.57vw;
+        background: #ffe361;
+        border-radius: 1.24vw;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18vw;
+        line-height: 1;
+        box-shadow: 0 1vw 3vw rgba(0, 0, 0, 0.15);
+        transform: rotate(6deg);
+      }
+
+      .card .sticker-text {
+        position: absolute;
+        top: 1vw;
+        right: 1vw;
+        font-size: 3.2vw;
+        font-weight: 700;
+        color: #000;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 0.5vw 1.5vw;
+        border-radius: 1vw;
+        z-index: 2;
+      }
+
+      /* 标题2: 啊哦... */
+      .title-warning {
+        font-size: 5.95vw;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #ffffff;
+        width: 67.66vw;
+        text-align: right;
+        margin-left: auto;
+        margin-top: 15vw;
+        margin-bottom: 15vw;
+      }
+
+      /* 卡片2: 当前的样子 */
+      .card2 .card-base {
+        background: #eefaff;
+      }
+
+      .card2 .card-img {
+        background: linear-gradient(135deg, #ffd5cd 0%, #f7a89b 100%);
+      }
+
+      /* 描述文字 */
+      .description {
+        font-size: 2.48vw;
+        font-weight: 400;
+        line-height: 2.5;
+        color: #000000;
+        width: 72.74vw;
+        margin: 60vw auto 0;
+        background: #ffffff;
+        border-radius: 4.96vw;
+        padding: 4vw 4vw;
+        min-height: 50vw;
+      }
+
+      /* 底部 */
+      .footer {
+        margin-top: 8vw;
+        text-align: center;
+      }
+
+      .logo {
+        display: inline-block;
+        font-size: 3.97vw;
+        font-weight: 700;
+        line-height: 1;
+        color: #000000;
+        background: #d9d9d9;
+        padding: 2.2vw 4vw;
+        border-radius: 2.2vw;
+        margin-bottom: 2.5vw;
+      }
+
+      .save-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 84.51vw;
+        height: 9.79vw;
+        margin: 0 auto;
+        background: #ffffff;
+        color: #000000;
+        border: none;
+        border-radius: 4.96vw;
+        font-size: 2.98vw;
+        font-weight: 700;
+        letter-spacing: 0.3vw;
+        cursor: pointer;
+      }
+
+      .save-btn:active {
+        transform: scale(0.98);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="bg-deco d1"></div>
+      <div class="bg-deco d2"></div>
+      <div class="bg-deco d3"></div>
+
+      <div class="content">
+        <h1 class="title-after">
+          改正不良习惯后，<br />
+          16岁时孩子将长这样！
+        </h1>
+
+        <div class="card card1">
+          <span class="sticker-text">改正后</span>
+          <div class="card-base">
+            <div class="card-img-wrap">
+              <div class="card-img">😊</div>
+            </div>
+          </div>
+          <div class="sticker">⭐</div>
+        </div>
+
+        <h2 class="title-warning">
+          啊哦，你有××不良习惯，<br />
+          不改正可能会有<br />
+          ××面型发育问题哦！
+        </h2>
+
+        <div class="card card2">
+          <span class="sticker-text">现在</span>
+          <div class="card-base">
+            <div class="card-img-wrap">
+              <div class="card-img">😟</div>
+            </div>
+          </div>
+          <div class="sticker">⚠️</div>
+        </div>
+
+        <div class="description">
+          测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容测试内容
+        </div>
+
+        <div class="footer">
+          <div class="logo">logo</div>
+          <button class="save-btn" onclick="handleSave()">长 按 保 存 到 手 机</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function handleSave() {
+        // 提示用户长按保存（移动端系统会弹出保存图片）
+        const msg = document.createElement('div')
+        msg.textContent = '请长按照片保存'
+        msg.style.cssText =
+          'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:#fff;padding:3vw 6vw;border-radius:2vw;font-size:3.5vw;z-index:9999;'
+        document.body.appendChild(msg)
+        setTimeout(() => msg.remove(), 1800)
+      }
+    </script>
+  </body>
+</html>
