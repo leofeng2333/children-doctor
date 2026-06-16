@@ -46,6 +46,20 @@ export interface DualCameraUploadResult {
   response: string
 }
 
+export interface ImageSplitOptions {
+  imageUrl: string
+  splitRatio?: number
+}
+
+export interface ImageSplitResult {
+  /** File path or data URL; WebView can render directly when it starts with file:// or http(s)://. */
+  leftUrl: string
+  rightUrl: string
+  leftWidth?: number
+  rightWidth?: number
+  height?: number
+}
+
 export interface DualCameraPlugin {
   getAvailableCameras(): Promise<{ cameras: DualCameraDeviceCamera[] }>
   isDualCameraSupported(): Promise<{ supported: boolean }>
@@ -56,6 +70,8 @@ export interface DualCameraPlugin {
   capture(): Promise<DualCameraPhoto & Record<string, unknown>>
   uploadPhotos(options: DualCameraUploadOptions): Promise<DualCameraUploadResult>
   copyImageToExternalCache(options: { uri: string }): Promise<{ path: string; uri: string }>
+  splitImage(options: ImageSplitOptions): Promise<ImageSplitResult>
+  clearImageCache(): Promise<{ removed: number }>
   addListener(
     eventName: 'captureComplete',
     listener: (data: DualCameraPhoto & Record<string, unknown>) => void,

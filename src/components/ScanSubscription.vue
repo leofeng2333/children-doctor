@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSubscriptionScan } from '@/composables/useSubscriptionScan'
+import { DualCamera } from '@/plugins/dual-camera'
+
+const router = useRouter()
 
 const hadSubscription = ref(false)
 const qrcodeUrl = ref('')
+const isFinishing = ref(false)
 
 let cleanup: (() => void) | undefined
 
@@ -27,112 +32,123 @@ onMounted(async () => {
 onUnmounted(() => {
   cleanup?.()
 })
+
+async function onFinish() {
+  if (isFinishing.value) return
+  isFinishing.value = true
+  try {
+    // Always navigate first so the user isn't blocked on I/O.
+    await router.push('/')
+  } finally {
+    try {
+      const result = await DualCamera.clearImageCache()
+      console.log('[ScanSubscription] image cache cleared, removed:', result.removed)
+    } catch (err) {
+      console.warn('[ScanSubscription] clearImageCache failed (non-fatal):', err)
+    }
+    isFinishing.value = false
+  }
+}
 </script>
 
 <template>
-  <div v-if="!hadSubscription" class="scan-container">
-    <div class="qrcode-container">
-      <img :src="qrcodeUrl" alt="qrcode" />
-    </div>
-    <div class="subscription-container">
-      扫码关注<br />
-      带走高清照片
-    </div>
-  </div>
-  <div v-else class="had-subscription-container">
-    <div class="qrcode-container">
-      <img
-        src="https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=mock_ticket_follow_df491d7637184388_1776492749873"
-        alt="qrcode"
-      />
+  <!-- 未关注态: 左 QR + 描述 / 右 两按钮上下排 -->
+  <div class="scan-row">
+    <div class="qrcode-block">
+      <div class="qrcode-container">
+        <img :src="qrcodeUrl" alt="qrcode" />
+      </div>
+      <div class="qrcode-desc">扫一扫获取电子版</div>
     </div>
 
-    <div class="had-subscription-content">
-      <div class="scan-save-photo-container">
-        <img src="@/assets/arrow-left.svg" alt="scan-save-photo" />
-        扫一扫保存照片
-      </div>
-      <button class="status-tag-btn">完成诊断</button>
+    <div class="action-buttons">
+      <PrimaryButton class="action-btn primary" type="button">打印带走宝贝照片</PrimaryButton>
+      <PrimaryButton
+        class="action-btn secondary"
+        type="button"
+        :disabled="isFinishing"
+        @click="onFinish"
+      >完成诊断</PrimaryButton>
     </div>
   </div>
+
+  <!-- 已关注态 -->
 </template>
 
 <style scoped lang="scss">
-.scan-container {
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+.qrcode-block {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .qrcode-container {
-  width: 185px;
-  height: 185px;
+  width: 200px;
+  height: 200px;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
   }
 }
 
-.subscription-container {
-  font-size: 32px;
-  line-height: 42px;
-  margin-top: 12px;
+.qrcode-desc {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #000;
+  white-space: nowrap;
   text-align: center;
 }
 
-.had-subscription-container {
+.action-buttons {
   display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex-shrink: 0;
+}
 
-  .had-subscription-content {
-    margin-left: 30px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+.action-btn {
+  width: 425px;
+  height: 95px;
+  font-family: inherit;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 
-    .scan-save-photo-container {
-      font-size: 32px;
-      line-height: 52px;
-      display: flex;
-      align-items: center;
-      padding-left: 12px;
-      margin-bottom: 6px;
-
-      img {
-        width: 24px;
-        height: 24px;
-        margin-right: 12px;
-      }
-    }
+  &:active {
+    transform: scale(0.98);
   }
+}
 
-  .status-tag {
-    padding: 8px 18px;
-    color: #000;
-    font-size: 14px;
-    background: #d9d9d9;
-    border-radius: 50px;
-    line-height: 1;
-    box-sizing: border-box;
-    min-height: 32px;
-    min-width: 48px;
-  }
+.action-btn.primary {}
 
-  .status-tag-btn {
-    padding: 10px 18px;
-    color: #000;
-    font-size: 32px;
-    line-height: 52px;
-    font-weight: 700;
-    background: #d9d9d9;
-    border-radius: 50px;
-    line-height: 1;
-    box-sizing: border-box;
-    min-height: 70px;
-    min-width: 369px;
-    width: 160px;
-    border-color: transparent;
-  }
+.action-btn.secondary {}
+
+.btn-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 </style>

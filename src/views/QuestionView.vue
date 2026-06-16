@@ -57,7 +57,7 @@ const goNext = async () => {
     ],
   })
   console.log('tempResponse', tempResponse)
-  router.push('/detail-analysis')
+  router.push({ name: 'quiz-intro' })
 }
 </script>
 
@@ -65,7 +65,7 @@ const goNext = async () => {
   <div class="question-page">
     <div class="question-content">
       <!-- 返回按钮 -->
-      <div class="back-button">
+      <div class="back-button" @click="goBack">
         <!-- <img src="@/assets/images/back-button.png" alt="返回" /> -->
       </div>
 
@@ -93,11 +93,7 @@ const goNext = async () => {
 
     <!-- 底部导航 -->
     <div class="bottom-nav">
-      <PrimaryButton
-        v-show="currentQuestion === questionTexts.length"
-        text="已完成，进入拍摄室！"
-        @click="goNext"
-      />
+      <PrimaryButton v-show="currentQuestion === questionTexts.length" text="下一步" @click="goNext" />
       <LogoText class="logo" />
     </div>
   </div>

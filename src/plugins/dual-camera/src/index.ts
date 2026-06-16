@@ -16,4 +16,6 @@ export type {
   DualCameraPreviewRect,
   DualCameraUploadOptions,
   DualCameraUploadResult,
+  ImageSplitOptions,
+  ImageSplitResult,
 } from './definitions'

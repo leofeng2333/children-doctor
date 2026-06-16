@@ -31,10 +31,6 @@ const handleSlideChange = (index: number) => {
 const diagnosisResults = computed(() => {
   return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join()
 })
-
-onMounted(() => {
-  analysisStore.start()
-})
 </script>
 
 <template>

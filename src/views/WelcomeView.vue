@@ -16,8 +16,14 @@ const goToForm = () => {
   router.push('/form')
 }
 
+const goToPrintTest = () => {
+  router.push('/print-test')
+}
+
 const handlePasswordSuccess = () => {
   console.log('管理员密码验证通过')
+  // 密码入口同时跳转到打印测试页, 方便快捷验证
+  router.push('/print-test')
 }
 
 const handleAdminButtonClick = () => {
@@ -59,6 +65,12 @@ onMounted(async () => {
       <!-- 按钮 -->
       <div class="bottom-section-buttons">
         <PrimaryButton text="走进诊所" color="#fff" @click="goToForm" />
+        <PrimaryButton
+          class="print-test-btn"
+          text="打印测试"
+          color="#fff"
+          @click="goToPrintTest"
+        />
 
         <div class="support-text">本AI诊断系统由杭州儿童口腔医院专业支持</div>
         <!-- Logo -->
@@ -199,5 +211,18 @@ onMounted(async () => {
 
 .logo {
   margin-top: 20px;
+}
+
+// "打印测试" 按钮 - 次级视觉权重, 不抢主 CTA 颜色
+.print-test-btn {
+  margin-top: 24px !important;
+  background: #fff !important;
+  color: #ff9900 !important;
+  border: 2px solid #ff9900 !important;
+  box-shadow: none !important;
+
+  &:active {
+    background: #fff7e6 !important;
+  }
 }
 </style>

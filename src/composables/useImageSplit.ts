@@ -1,9 +1,26 @@
 import { ref, watch } from 'vue'
+import { Capacitor } from '@capacitor/core'
+import { DualCamera } from '@/plugins/dual-camera'
 
 export interface ImageSplitResult {
   leftUrl: ReturnType<typeof ref<string>>
   rightUrl: ReturnType<typeof ref<string>>
   isLoading: ReturnType<typeof ref<boolean>>
+}
+
+/**
+ * Returns a WebView-friendly URL. On native platforms `file://` paths must
+ * be rewritten to the local server URL so the WebView can load them.
+ */
+function toDisplayUrl(path: string): string {
+  if (!path) return ''
+  if (path.startsWith('https://') || path.startsWith('data:')) {
+    return path
+  }
+  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    return Capacitor.convertFileSrc(path)
+  }
+  return path
 }
 
 export function useImageSplit(
@@ -14,68 +31,38 @@ export function useImageSplit(
   const rightUrl = ref<string>('')
   const isLoading = ref(false)
 
-  let currentController: AbortController | null = null
+  let token = 0
 
-  function splitImage(url: string) {
+  async function splitImage(url: string) {
     if (!url) {
       leftUrl.value = ''
       rightUrl.value = ''
       return
     }
 
+    const current = ++token
     isLoading.value = true
 
-    // Cancel any in-flight image load
-    if (currentController) {
-      currentController.abort()
+    try {
+      const { leftUrl: l, rightUrl: r } = await DualCamera.splitImage({
+        imageUrl: url,
+        splitRatio,
+      })
+      if (current !== token) return
+      leftUrl.value = toDisplayUrl(l)
+      rightUrl.value = toDisplayUrl(r)
+    } catch (err) {
+      if (current !== token) return
+      console.warn('[useImageSplit] split failed', err)
+      leftUrl.value = ''
+      rightUrl.value = ''
+    } finally {
+      if (current === token) {
+        isLoading.value = false
+      }
     }
-    currentController = new AbortController()
-
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-
-    img.onload = () => {
-      const halfWidth = Math.floor(img.width * splitRatio)
-
-      // Left half
-      const canvasL = document.createElement('canvas')
-      canvasL.width = halfWidth
-      canvasL.height = img.height
-      const ctxL = canvasL.getContext('2d')!
-      ctxL.drawImage(img, 0, 0, halfWidth, img.height, 0, 0, halfWidth, img.height)
-      leftUrl.value = canvasL.toDataURL('image/jpeg', 0.95)
-
-      // Right half
-      const canvasR = document.createElement('canvas')
-      canvasR.width = img.width - halfWidth
-      canvasR.height = img.height
-      const ctxR = canvasR.getContext('2d')!
-      ctxR.drawImage(
-        img,
-        halfWidth,
-        0,
-        img.width - halfWidth,
-        img.height,
-        0,
-        0,
-        img.width - halfWidth,
-        img.height,
-      )
-      rightUrl.value = canvasR.toDataURL('image/jpeg', 0.95)
-
-      isLoading.value = false
-      img.remove()
-    }
-
-    img.onerror = () => {
-      isLoading.value = false
-      img.remove()
-    }
-
-    img.src = url
   }
 
-  // Support both plain string and getter function (for computed compatibility)
   watch(
     () => (typeof imageUrl === 'function' ? imageUrl() : imageUrl),
     (url) => {

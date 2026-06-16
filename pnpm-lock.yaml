@@ -20,6 +20,9 @@ importers:
       '@capacitor/toast':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.3.0)
+      '@capgo/capacitor-printer':
+        specifier: ^8.0.14
+        version: 8.0.14(@capacitor/core@8.3.0)
       '@children-doctor/dual-camera':
         specifier: file:./src/plugins/dual-camera
         version: file:src/plugins/dual-camera(@capacitor/core@8.3.0)
@@ -279,6 +282,11 @@ packages:
 
   '@capacitor/toast@8.0.1':
     resolution: {integrity: sha512-0uoyftoAeFjtOMiozBo7YXEo+zcpQCAxtBONSvrljJ05SKdlb1A8OFHaV/DZfIpGt+19kzUGaEaUemLdll4wUw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capgo/capacitor-printer@8.0.14':
+    resolution: {integrity: sha512-jIt8niXBndTYQE8enqW8SAALy+7ku0yHfSAJdB1G4apCd9O1cZF3mwsyiNmMGvKLaIo6Qf/9bjs/Vzo4PxKbMg==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
@@ -2666,6 +2674,10 @@ snapshots:
       tslib: 2.8.1
 
   '@capacitor/toast@8.0.1(@capacitor/core@8.3.0)':
+    dependencies:
+      '@capacitor/core': 8.3.0
+
+  '@capgo/capacitor-printer@8.0.14(@capacitor/core@8.3.0)':
     dependencies:
       '@capacitor/core': 8.3.0
 

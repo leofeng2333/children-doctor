@@ -48,10 +48,10 @@ public class Camera2Session {
     private final HandlerThread cameraThread;
     private final Handler cameraHandler;
 
-    private CameraDevice cameraDevice;
-    private CameraCaptureSession captureSession;
-    private CaptureRequest.Builder previewRequestBuilder;
-    private ImageReader imageReader;
+    private volatile CameraDevice cameraDevice;
+    private volatile CameraCaptureSession captureSession;
+    private volatile CaptureRequest.Builder previewRequestBuilder;
+    private volatile ImageReader imageReader;
 
     private Surface previewSurface;
     private SurfaceTexture previewSurfaceTexture;
@@ -338,8 +338,8 @@ public class Camera2Session {
                         return;
                     }
                     captureSession = session;
-                    startPreview();
                     isOpen.set(true);
+                    startPreview();
                     callback.onOpened();
                 }
 
@@ -360,8 +360,12 @@ public class Camera2Session {
             Log.w(TAG, "startPreview: session is shutdown, skipping");
             return;
         }
-        if (captureSession == null || cameraDevice == null) {
-            Log.w(TAG, "startPreview: session=" + captureSession + ", device=" + cameraDevice);
+        // Snapshot the references so a concurrent close() on another thread
+        // can't null them out between the guard and the use (would NPE).
+        final CameraCaptureSession session = captureSession;
+        final CameraDevice device = cameraDevice;
+        if (session == null || device == null) {
+            Log.w(TAG, "startPreview: session=" + session + ", device=" + device);
             return;
         }
         if (!isPreviewActive.compareAndSet(false, true)) {
@@ -370,18 +374,22 @@ public class Camera2Session {
         }
 
         try {
-            previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            previewRequestBuilder.addTarget(previewSurface);
+            CaptureRequest.Builder builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            builder.addTarget(previewSurface);
 
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+            builder.set(CaptureRequest.CONTROL_AF_MODE,
                     CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+            builder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
 
-            captureSession.setRepeatingRequest(previewRequestBuilder.build(),
-                    null, cameraHandler);
+            session.setRepeatingRequest(builder.build(), null, cameraHandler);
         } catch (CameraAccessException | IllegalStateException e) {
             Log.e(TAG, "Failed to start preview", e);
+            isPreviewActive.set(false);
+        } catch (NullPointerException e) {
+            // Defensive: captureSession/cameraDevice were nulled by a
+            // concurrent close() between the snapshot and native call.
+            Log.w(TAG, "startPreview: NPE after snapshot, session was closed concurrently", e);
             isPreviewActive.set(false);
         }
     }
@@ -425,26 +433,47 @@ public class Camera2Session {
     }
 
     private void closeCaptureSession() {
-        try {
-            if (captureSession != null) {
-                captureSession.close();
-                captureSession = null;
+        // Must run on cameraHandler so the close + null-out is serialized
+        // with onConfigured / startPreview messages on the same looper.
+        // If the thread is already shut down, fall back to direct call.
+        if (cameraHandler != null && cameraThread != null && cameraThread.isAlive()) {
+            final CountDownLatch done = new CountDownLatch(1);
+            cameraHandler.post(() -> {
+                closeCaptureSessionInternal();
+                done.countDown();
+            });
+            try {
+                if (!done.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    Log.w(TAG, "closeCaptureSession: timed out waiting for cameraHandler, forcing direct close");
+                    closeCaptureSessionInternal();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                closeCaptureSessionInternal();
             }
+        } else {
+            closeCaptureSessionInternal();
+        }
+    }
+
+    private void closeCaptureSessionInternal() {
+        try {
+            CameraCaptureSession s = captureSession;
+            captureSession = null;
+            if (s != null) s.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing capture session", e);
         }
         try {
-            if (cameraDevice != null) {
-                cameraDevice.close();
-                cameraDevice = null;
-            }
+            CameraDevice d = cameraDevice;
+            cameraDevice = null;
+            if (d != null) d.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing camera device", e);
         }
-        if (imageReader != null) {
-            imageReader.close();
-            imageReader = null;
-        }
+        ImageReader r = imageReader;
+        imageReader = null;
+        if (r != null) r.close();
     }
 
     public void capture(String filePath, CountDownLatch latch, CaptureCallback callback) {
@@ -547,28 +576,58 @@ public class Camera2Session {
     }
 
     public void close() {
-        try {
-            if (captureSession != null) {
-                captureSession.close();
-                captureSession = null;
+        // Mark shutdown first so any in-flight onConfigured / startPreview
+        // messages see it and bail out before we tear down references.
+        isShutdown = true;
+
+        // If the camera thread is still alive, perform the actual teardown
+        // on it so it serializes with onConfigured / startPreview messages.
+        // The teardown itself is idempotent, so posting is always safe.
+        if (cameraHandler != null && cameraThread != null && cameraThread.isAlive()) {
+            final CountDownLatch done = new CountDownLatch(1);
+            boolean posted = cameraHandler.post(() -> {
+                try {
+                    closeInternal();
+                } finally {
+                    done.countDown();
+                }
+            });
+            if (posted) {
+                try {
+                    if (!done.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        Log.w(TAG, "close: timed out waiting for cameraHandler, forcing direct close");
+                        closeInternal();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    closeInternal();
+                }
+                return;
             }
+        }
+        closeInternal();
+    }
+
+    private void closeInternal() {
+        try {
+            CameraCaptureSession s = captureSession;
+            captureSession = null;
+            if (s != null) s.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing capture session", e);
         }
 
         try {
-            if (cameraDevice != null) {
-                cameraDevice.close();
-                cameraDevice = null;
-            }
+            CameraDevice d = cameraDevice;
+            cameraDevice = null;
+            if (d != null) d.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing camera device", e);
         }
 
-        if (imageReader != null) {
-            imageReader.close();
-            imageReader = null;
-        }
+        ImageReader r = imageReader;
+        imageReader = null;
+        if (r != null) r.close();
 
         if (previewSurface != null && surfaceOwnedBySession) {
             previewSurface.release();
@@ -583,7 +642,6 @@ public class Camera2Session {
         isOpen.set(false);
         isCapturing.set(false);
         isPreviewActive.set(false);
-        isShutdown = true;
     }
 
     public void shutdown() {

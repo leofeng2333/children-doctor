@@ -20,6 +20,7 @@
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@capacitor/toast": "^8.0.1",
+    "@capgo/capacitor-printer": "^8.0.14",
     "@children-doctor/dual-camera": "file:./src/plugins/dual-camera",
     "echarts": "^6.0.0",
     "install": "^0.13.0",

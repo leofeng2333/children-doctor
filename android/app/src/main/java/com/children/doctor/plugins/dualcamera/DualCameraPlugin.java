@@ -32,11 +32,13 @@ public class DualCameraPlugin extends Plugin {
 
     private DualCameraManager cameraManager;
     private PhotoUploader photoUploader;
+    private ImageSplitter imageSplitter;
 
     @Override
     public void load() {
         super.load();
         photoUploader = new PhotoUploader();
+        imageSplitter = new ImageSplitter(getContext());
         Log.d(TAG, "DualCamera plugin loaded");
     }
 
@@ -44,6 +46,10 @@ public class DualCameraPlugin extends Plugin {
     protected void handleOnDestroy() {
         super.handleOnDestroy();
         shutdownManager();
+        if (imageSplitter != null) {
+            imageSplitter.shutdown();
+            imageSplitter = null;
+        }
     }
 
     @Override
@@ -269,6 +275,56 @@ public class DualCameraPlugin extends Plugin {
             call.resolve(result);
         } catch (Exception e) {
             call.reject("Failed to copy image: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod()
+    public void splitImage(PluginCall call) {
+        if (imageSplitter == null) {
+            imageSplitter = new ImageSplitter(getContext());
+        }
+        String imageUrl = call.getString("imageUrl");
+        Double splitRatio = call.getDouble("splitRatio");
+        if (imageUrl == null || imageUrl.isEmpty()) {
+            call.reject("imageUrl is required");
+            return;
+        }
+
+        final double ratio = splitRatio != null ? splitRatio : 0.5;
+        Log.d(TAG, "splitImage called, ratio=" + ratio);
+
+        imageSplitter.split(imageUrl, ratio, new ImageSplitter.SplitCallback() {
+            @Override
+            public void onSuccess(String leftPath, String rightPath, int leftWidth, int rightWidth, int height) {
+                JSObject result = new JSObject();
+                result.put("leftUrl", leftPath);
+                result.put("rightUrl", rightPath);
+                result.put("leftWidth", leftWidth);
+                result.put("rightWidth", rightWidth);
+                result.put("height", height);
+                call.resolve(result);
+            }
+
+            @Override
+            public void onError(String error) {
+                call.reject(error);
+            }
+        });
+    }
+
+    @PluginMethod()
+    public void clearImageCache(PluginCall call) {
+        if (imageSplitter == null) {
+            imageSplitter = new ImageSplitter(getContext());
+        }
+        try {
+            int removed = imageSplitter.clearCache();
+            JSObject result = new JSObject();
+            result.put("removed", removed);
+            call.resolve(result);
+        } catch (Exception e) {
+            Log.e(TAG, "clearImageCache failed", e);
+            call.reject("Failed to clear image cache: " + e.getMessage(), e);
         }
     }
 

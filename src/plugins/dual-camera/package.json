@@ -1,18 +1,19 @@
 {
   "name": "@children-doctor/dual-camera",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Dual camera preview and capture plugin for Capacitor Android",
   "license": "MIT",
   "files": [
     "dist/",
     "src/"
   ],
-  "main": "dist/index.cjs.js",
-  "module": "dist/esm/index.js",
-  "types": "dist/esm/index.d.ts",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
       "require": "./dist/index.cjs.js"
     }
   },
