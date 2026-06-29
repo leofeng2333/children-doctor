@@ -136,11 +136,46 @@ public class Camera2Session {
         List<Camera2Info> result = new ArrayList<>();
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
-            for (String id : manager.getCameraIdList()) {
+            String[] cameraIds = manager.getCameraIdList();
+            Log.d(TAG, "=== Camera enumeration start === device cameras: " + cameraIds.length);
+
+            for (int i = 0; i < cameraIds.length; i++) {
+                String id = cameraIds[i];
                 try {
                     CameraCharacteristics chars = manager.getCameraCharacteristics(id);
+
                     Integer facing = chars.get(CameraCharacteristics.LENS_FACING);
                     int lensFacing = (facing != null) ? facing : CameraCharacteristics.LENS_FACING_BACK;
+                    String facingStr = lensFacingToString(lensFacing);
+
+                    Integer hwLevel = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+                    String hwLevelStr = hwLevelToString(hwLevel);
+
+                    int[] capabilities = chars.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+                    String capsStr = capabilitiesToString(capabilities);
+
+                    boolean isLogicalMultiCamera = false;
+                    if (capabilities != null) {
+                        for (int c : capabilities) {
+                            if (c == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) {
+                                isLogicalMultiCamera = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    android.hardware.camera2.params.StreamConfigurationMap map =
+                            chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                    Size[] jpegSizes = (map != null) ? map.getOutputSizes(ImageFormat.JPEG) : null;
+                    Size[] previewSizes = (map != null) ? map.getOutputSizes(SurfaceTexture.class) : null;
+
+                    Log.d(TAG, String.format(
+                            "[CAMERA ENUM] index=%d id=%s facing=%s hwLevel=%s isLogicalMulti=%s jpegSizes=%d previewSizes=%d caps=[%s]",
+                            i, id, facingStr, hwLevelStr, isLogicalMultiCamera,
+                            jpegSizes != null ? jpegSizes.length : 0,
+                            previewSizes != null ? previewSizes.length : 0,
+                            capsStr
+                    ));
 
                     Size capture = chooseOptimalSize(context, id, true);
                     Size preview = chooseOptimalSize(context, id, false);
@@ -152,10 +187,63 @@ public class Camera2Session {
                     Log.w(TAG, "Skipping camera id=" + id + ": " + e.getMessage());
                 }
             }
+            Log.d(TAG, "=== Camera enumeration end === enumerable: " + result.size() + " / " + cameraIds.length);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to enumerate cameras", e);
         }
         return result;
+    }
+
+    private static String lensFacingToString(int facing) {
+        switch (facing) {
+            case CameraCharacteristics.LENS_FACING_FRONT:  return "FRONT";
+            case CameraCharacteristics.LENS_FACING_BACK:   return "BACK";
+            case CameraCharacteristics.LENS_FACING_EXTERNAL: return "EXTERNAL";
+            default: return "UNKNOWN(" + facing + ")";
+        }
+    }
+
+    private static String hwLevelToString(Integer hwLevel) {
+        if (hwLevel == null) return "NULL";
+        switch (hwLevel) {
+            case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY:        return "LEGACY";
+            case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED:       return "LIMITED";
+            case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL:          return "FULL";
+            case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3:             return "LEVEL3";
+            case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL:     return "EXTERNAL";
+            default: return "UNKNOWN(" + hwLevel + ")";
+        }
+    }
+
+    private static String capabilitiesToString(int[] capabilities) {
+        if (capabilities == null || capabilities.length == 0) return "none";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < capabilities.length; i++) {
+            if (i > 0) sb.append(",");
+            switch (capabilities[i]) {
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE:
+                    sb.append("BACKWARD_COMPATIBLE"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR:
+                    sb.append("MANUAL_SENSOR"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING:
+                    sb.append("MANUAL_POST"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW:
+                    sb.append("RAW"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_PRIVATE_REPROCESSING:
+                    sb.append("PRIVATE_REPROCESSING"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_YUV_REPROCESSING:
+                    sb.append("YUV_REPROCESSING"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT:
+                    sb.append("DEPTH_OUTPUT"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MONOCHROME:
+                    sb.append("MONOCHROME"); break;
+                case CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA:
+                    sb.append("LOGICAL_MULTI_CAMERA"); break;
+                default:
+                    sb.append("0x").append(Integer.toHexString(capabilities[i])); break;
+            }
+        }
+        return sb.toString();
     }
 
     private String findCameraIdByLensFacing(int facing) {
@@ -254,11 +342,38 @@ public class Camera2Session {
     }
 
     private void openWithRetryImpl(String idToOpen, Surface previewSurface, int attempt, Callback callback) {
+        Log.d(TAG, String.format(
+                "openWithRetryImpl: id=%s attempt=%d/%d targetLensFacing=%s isShutdown=%s",
+                idToOpen, attempt + 1, OPEN_RETRY_COUNT + 1,
+                (targetLensFacing == CameraCharacteristics.LENS_FACING_FRONT) ? "FRONT" : "BACK",
+                isShutdown
+        ));
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+
+            // Pre-check: some ROMs drop ids from getCameraIdList() while another
+            // process is holding the camera, and openCamera() will then throw
+            // IllegalArgumentException from getCameraCharacteristics(). Detect
+            // that here so we can re-enumerate cleanly.
+            try {
+                String[] knownIds = manager.getCameraIdList();
+                boolean idKnown = false;
+                for (String known : knownIds) {
+                    if (known.equals(idToOpen)) { idKnown = true; break; }
+                }
+                if (!idKnown) {
+                    Log.w(TAG, "openWithRetryImpl: id=" + idToOpen + " is NOT in current getCameraIdList()=" + java.util.Arrays.toString(knownIds));
+                } else {
+                    Log.d(TAG, "openWithRetryImpl: id=" + idToOpen + " verified in current getCameraIdList()=" + java.util.Arrays.toString(knownIds));
+                }
+            } catch (CameraAccessException cae) {
+                Log.w(TAG, "openWithRetryImpl: pre-check getCameraIdList() failed", cae);
+            }
+
             manager.openCamera(idToOpen, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
+                    Log.d(TAG, "onOpened: id=" + idToOpen + " camera=" + camera + " attempt=" + attempt);
                     if (isShutdown) {
                         Log.w(TAG, "Session was shutdown before camera opened");
                         camera.close();
@@ -271,10 +386,10 @@ public class Camera2Session {
 
                 @Override
                 public void onDisconnected(@NonNull CameraDevice camera) {
+                    Log.w(TAG, "onDisconnected: id=" + idToOpen + " attempt=" + attempt);
                     camera.close();
                     cameraDevice = null;
                     isOpen.set(false);
-                    Log.w(TAG, "Camera " + idToOpen + " disconnected");
                     callback.onDisconnected();
                 }
 
@@ -313,6 +428,25 @@ public class Camera2Session {
             } else {
                 callback.onError("Failed to open camera: " + e.getMessage());
             }
+        } catch (IllegalArgumentException e) {
+            // "Unable to retrieve camera characteristics for unknown device" 表明
+            // 上一次 enumerate 的 id 已失效（设备被其他 app 占用、插拔、热插拔等）。
+            // 不应让整个相机线程崩溃，必须转成业务错误。
+            Log.e(TAG, "Camera id " + idToOpen + " is no longer valid (likely released or held by another process)", e);
+            String nextId = findCameraIdByLensFacing(targetLensFacing);
+            if (nextId != null && !nextId.equals(idToOpen) && attempt < OPEN_RETRY_COUNT) {
+                Log.d(TAG, "Re-enumerating after IllegalArgumentException, found new ID: " + nextId);
+                final String finalId = nextId;
+                cameraHandler.postDelayed(() -> openWithRetryImpl(finalId, previewSurface, attempt + 1, callback),
+                        OPEN_RETRY_DELAY_MS);
+            } else {
+                callback.onError("Camera device unavailable: " + e.getMessage());
+            }
+        } catch (RuntimeException e) {
+            // 兜底：camera 框架偶发抛 RuntimeException（状态机、IPC 失败等），
+            // 不能让 Camera2Thread-0 整个挂掉。
+            Log.e(TAG, "Unexpected runtime error opening camera " + idToOpen, e);
+            callback.onError("Unexpected camera error: " + e.getMessage());
         }
     }
 

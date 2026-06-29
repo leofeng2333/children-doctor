@@ -16,25 +16,25 @@ export const uploadPhotos = async (
 
   console.log('[Upload] 开始上传照片, 数量:', photos.length)
 
-  const frontSmileFiles = photos[0] ? [photos[0].frontCameraPath] : []
-  const sideSmileFiles = photos[0] ? [photos[0].backCameraPath] : []
-  const frontClosedFiles = photos[1] ? [photos[1].frontCameraPath] : []
-  const sideClosedFiles = photos[1] ? [photos[1].backCameraPath] : []
+  const front = photos[0] ? [photos[0].frontCameraPath] : []
+  const side = photos[0] ? [photos[0].backCameraPath] : []
+  const frontSmile = photos[1] ? [photos[1].frontCameraPath] : []
+  const sideSmile = photos[1] ? [photos[1].backCameraPath] : []
 
-  console.log('[Upload] frontSmileFiles:', frontSmileFiles)
-  console.log('[Upload] sideSmileFiles:', sideSmileFiles)
-  console.log('[Upload] frontClosedFiles:', frontClosedFiles)
-  console.log('[Upload] sideClosedFiles:', sideClosedFiles)
+  console.log('[Upload] frontSmileFiles:', front)
+  console.log('[Upload] sideSmileFiles:', side)
+  console.log('[Upload] frontClosedFiles:', frontSmile)
+  console.log('[Upload] sideClosedFiles:', sideSmile)
 
   const sessionId = (await createSession()).sessionId
 
   const uploadOptions = {
     uploadUrl: 'https://aiqc.hzyk.com.cn/promotion/api/photo/upload-batch',
     files: {
-      frontSmileFiles,
-      sideSmileFiles,
-      frontClosedFiles,
-      sideClosedFiles,
+      front,
+      side,
+      frontSmile,
+      sideSmile,
     },
     extraData: { sessionId },
   }
@@ -43,10 +43,10 @@ export const uploadPhotos = async (
   console.log('[Upload] uploadUrl:', uploadOptions.uploadUrl)
   console.log('[Upload] sessionId:', sessionId)
   console.log('[Upload] files:')
-  console.log('  frontSmileFiles  =', JSON.stringify(frontSmileFiles))
-  console.log('  sideSmileFiles   =', JSON.stringify(sideSmileFiles))
-  console.log('  frontClosedFiles =', JSON.stringify(frontClosedFiles))
-  console.log('  sideClosedFiles  =', JSON.stringify(sideClosedFiles))
+  console.log('  frontSmileFiles  =', JSON.stringify(front))
+  console.log('  sideSmileFiles   =', JSON.stringify(side))
+  console.log('  frontClosedFiles =', JSON.stringify(frontSmile))
+  console.log('  sideClosedFiles  =', JSON.stringify(sideSmile))
   console.log('[Upload] 完整 JSON:')
   console.log(JSON.stringify(uploadOptions, null, 2))
   console.log('[Upload] ========================================')
@@ -92,16 +92,16 @@ export const saveQuestionAnswers = (answers: Record<string, any>) => {
   return post('/api/questionnaire/answer', answers)
 }
 
-export const startAnalysis = async (): Promise<any> => {
-  // Mock: delay 5s then return local JSON
-  await new Promise((resolve) => setTimeout(resolve, 5000))
-  const res = await fetch('/analysis-result.json')
-  return res.json()
-}
-
-// export const startAnalysis = () => {
-//   return post('/api/ai/analyze')
+// export const startAnalysis = async (): Promise<any> => {
+//   // Mock: delay 5s then return local JSON
+//   await new Promise((resolve) => setTimeout(resolve, 5000))
+//   const res = await fetch('/analysis-result.json')
+//   return res.json()
 // }
+
+export const startAnalysis = () => {
+  return post('/api/ai/analyze')
+}
 
 export const createSubscriptionTask = (): Promise<{ qrcodeUrl: string; followTaskId: string }> => {
   return post('/api/wechat/follow-task/create')

@@ -136,6 +136,10 @@ public class ImageSplitter {
             throw new IOException("Only base64 data URLs are supported");
         }
 
+        if (input.startsWith("http://") || input.startsWith("https://")) {
+            return downloadHttp(input);
+        }
+
         Uri uri = Uri.parse(input);
         InputStream in = context.getContentResolver().openInputStream(uri);
         if (in == null) throw new IOException("Cannot open input stream for " + input);
@@ -149,6 +153,45 @@ public class ImageSplitter {
             return buf.toByteArray();
         } finally {
             try { in.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private byte[] downloadHttp(String url) throws IOException {
+        java.net.HttpURLConnection conn = null;
+        InputStream in = null;
+        try {
+            java.net.URL u = new java.net.URL(url);
+            conn = (java.net.HttpURLConnection) u.openConnection();
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(15_000);
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(true);
+            // Some TOS-style CDNs reject the default HttpURLConnection UA
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)");
+            conn.connect();
+
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                throw new IOException("HTTP " + code + " when downloading " + url);
+            }
+
+            in = conn.getInputStream();
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            int n;
+            while ((n = in.read(chunk)) != -1) {
+                buf.write(chunk, 0, n);
+            }
+            return buf.toByteArray();
+        } catch (java.net.MalformedURLException e) {
+            throw new IOException("Invalid URL: " + url, e);
+        } finally {
+            if (in != null) {
+                try { in.close(); } catch (IOException ignored) {}
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 

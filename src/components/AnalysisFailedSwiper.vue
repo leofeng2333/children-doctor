@@ -30,7 +30,6 @@ const swiperInstance = ref<any>(null)
 const swiperIndex = ref(0)
 
 const onSlideChange = (e: any) => {
-  console.log('slide change', e.activeIndex)
   swiperIndex.value = e.activeIndex
   emit('slideChange', e.activeIndex)
 }
@@ -68,14 +67,8 @@ onUnmounted(() => {
       <img src="@/assets/go-right.svg" alt="swiper-next" @click="swiperInstance.slideNext()" />
     </div>
     <div class="custom-pagination">
-      <div
-        class="custom-pagination-bullet"
-        :class="{ 'custom-pagination-bullet-active': swiperIndex === 0 }"
-      ></div>
-      <div
-        class="custom-pagination-bullet"
-        :class="{ 'custom-pagination-bullet-active': swiperIndex === 1 }"
-      ></div>
+      <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 0 }"></div>
+      <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 1 }"></div>
     </div>
   </div>
 </template>
@@ -130,8 +123,10 @@ onUnmounted(() => {
 }
 
 .swiper {
-  width: 485px;
-  height: 646px;
+  width: 100%;
+  max-width: 485px;
+  height: auto;
+  aspect-ratio: 3 / 4;
 }
 
 .swiper-slide {
@@ -143,11 +138,15 @@ onUnmounted(() => {
   font-weight: bold;
   color: #fff;
   border-radius: 0;
+  background-color: transparent;
 
   img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
   }
 }
 

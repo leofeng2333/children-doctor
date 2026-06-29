@@ -53,7 +53,13 @@ export function useImageSplit(
       rightUrl.value = toDisplayUrl(r)
     } catch (err) {
       if (current !== token) return
-      console.warn('[useImageSplit] split failed', err)
+      console.warn(
+        `[useImageSplit] split failed for ${url}: ${
+          err && typeof err === 'object' && 'message' in err
+            ? (err as { message?: string }).message
+            : String(err)
+        }`,
+      )
       leftUrl.value = ''
       rightUrl.value = ''
     } finally {

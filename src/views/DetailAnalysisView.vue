@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import LogoText from '@/components/LogoText.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import LogoText from '@/components/LogoText.vue'
 import { useAnalysisStore } from '@/stores'
+import { useImageSplit } from '@/composables/useImageSplit'
+import successImg from '@/assets/images/analysis-success.png'
 
 const router = useRouter()
 
@@ -31,6 +33,16 @@ const handleSlideChange = (index: number) => {
 const diagnosisResults = computed(() => {
   return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join()
 })
+
+/** 不健康面型路径：后端生成的矫正后预测图，经 split 后右半部分（good-img） */
+const aiImageUrl = computed(
+  () => analysisResult.value?.aiAnalysis?.result?.generatedImageUrls?.[0] ?? '',
+)
+const { rightUrl: goodImgRightUrl } = useImageSplit(() => aiImageUrl.value, 0.5)
+const goodImgUrl = computed(() => goodImgRightUrl.value)
+
+/** 健康面型路径：静态 success 图（Vite 资源会被打包成 /assets/...） */
+const healthyImgUrl = successImg
 </script>
 
 <template>
@@ -81,7 +93,7 @@ const diagnosisResults = computed(() => {
           <div class="analysis-success-img">
             <img src="@/assets/images/analysis-success.png" alt="analysis-success" />
           </div>
-          <ScanSubscription />
+          <ScanSubscription v-show="swiperIndex === 1" :good-img-url="healthyImgUrl" />
         </div>
         <div class="analysis-failed" v-else>
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
@@ -90,7 +102,7 @@ const diagnosisResults = computed(() => {
               <h3 class="tips-title">问题诊断:</h3>
               <p class="tips-content">{{ diagnosisResults }}</p>
             </div>
-            <ScanSubscription v-show="swiperIndex === 1" />
+            <ScanSubscription v-show="swiperIndex === 1" :good-img-url="goodImgUrl" />
           </div>
         </div>
       </div>
@@ -250,6 +262,7 @@ const diagnosisResults = computed(() => {
     .analysis-failed {
       width: 100%;
       height: 100%;
+      background: transparent;
 
       .analysis-failed-content {
         margin-top: 36px;

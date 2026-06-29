@@ -145,13 +145,14 @@ const startAnalysis = async () => {
           </div>
         </div>
       </div>
-      <!-- uploading -->
-      <!-- v-else-if="captureState === 'uploading'" -->
-      <!-- <div class="uploading-state">
-        <div class="uploading-icon"></div>
-        <p class="uploading-text">正在上传...</p>
-        <p class="uploading-sub">请稍候</p>
-      </div> -->
+      <!-- uploading: 由全屏遮罩 .uploading-overlay 统一处理，此处不需要重复 -->
+    </div>
+
+    <!-- 全屏遮罩：上传中锁屏，防误触 -->
+    <div v-if="isUploading" class="uploading-overlay">
+      <div class="uploading-icon"></div>
+      <p class="uploading-text">正在上传照片...</p>
+      <p class="uploading-sub">请稍候，不要退出</p>
     </div>
 
     <!-- 底部区域 -->
@@ -221,34 +222,47 @@ const startAnalysis = async () => {
   font-size: 13px;
 }
 
-.uploading-state {
-  width: 100%;
-  height: 100%;
+/** 全屏遮罩：防止用户在上传中点其他区域 */
+.uploading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 20px;
+  pointer-events: auto;
 
   .uploading-icon {
-    width: 48px;
-    height: 48px;
-    border: 3px solid #ff9900;
-    border-top-color: transparent;
+    width: 80px;
+    height: 80px;
+    border: 6px solid rgba(255, 153, 0, 0.2);
+    border-top-color: #ff9900;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
-    margin-bottom: 16px;
   }
 
   .uploading-text {
-    font-size: 20px;
-    color: #000;
+    font-size: 32px;
+    color: #1a1a1a;
     font-weight: 700;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
+    margin: 0;
   }
 
   .uploading-sub {
-    margin-top: 8px;
-    font-size: 14px;
+    font-size: 18px;
     color: #999;
+    font-weight: 400;
+    margin: 0;
   }
 }
 
