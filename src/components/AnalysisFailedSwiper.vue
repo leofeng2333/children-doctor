@@ -150,6 +150,19 @@ onUnmounted(() => {
   }
 }
 
+/**
+ * swiper effect-cards 会在下一张卡片上插入 .swiper-slide-shadow 系列元素
+ * 用于模拟层叠卡片阴影。去除背景色，保留阴影本身的视觉层次。
+ *
+ * 注：swiper 在运行时注入这些 class（不在模板静态出现），
+ * 必须用 :deep() 穿透 scoped 才能命中。
+ */
+:deep(.swiper-slide-shadow),
+:deep(.swiper-slide-shadow-cards),
+:deep(.swiper-slide-shadow-coverflow) {
+  background: transparent !important;
+}
+
 .custom-pagination {
   display: flex;
   justify-content: center;

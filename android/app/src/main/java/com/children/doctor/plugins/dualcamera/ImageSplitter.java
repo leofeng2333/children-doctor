@@ -125,6 +125,10 @@ public class ImageSplitter {
     }
 
     private byte[] readAllBytes(String input) throws IOException {
+        if (input == null || input.isEmpty()) {
+            throw new IOException("input is null or empty");
+        }
+
         if (input.startsWith("data:")) {
             int comma = input.indexOf(',');
             if (comma < 0) throw new IOException("Malformed data URL");
@@ -137,7 +141,16 @@ public class ImageSplitter {
         }
 
         if (input.startsWith("http://") || input.startsWith("https://")) {
-            return downloadHttp(input);
+            return readCapacitorFileOrDownload(input);
+        }
+
+        if (input.startsWith("file://")) {
+            String path = input.substring("file://".length());
+            File file = new File(path);
+            if (!file.exists() || !file.isFile()) {
+                throw new IOException("File not found: " + input);
+            }
+            return java.nio.file.Files.readAllBytes(file.toPath());
         }
 
         Uri uri = Uri.parse(input);
@@ -195,6 +208,34 @@ public class ImageSplitter {
         }
     }
 
+    /**
+     * Reads the bytes of an http(s) URL, with awareness of Capacitor's local
+     * file server scheme.
+     *
+     * <p>Capacitor routes {@code file:///foo} through {@code
+     * Capacitor.convertFileSrc()} into {@code https://<host>/_capacitor_file_/foo}
+     * so the main WebView can fetch local files. Those URLs only resolve
+     * inside the WebView (via the Bridge's asset loader); a plain
+     * {@link java.net.HttpURLConnection} from plugin code cannot reach them.
+     * We detect that shape and read the underlying file directly, which is
+     * what the WebView would have done anyway.
+     */
+    private byte[] readCapacitorFileOrDownload(String url) throws IOException {
+        Uri parsed = Uri.parse(url);
+        String path = parsed.getPath();
+        if (path != null && path.startsWith("/_capacitor_file_/")) {
+            String localPath = "/" + path.substring("/_capacitor_file_/".length());
+            File file = new File(localPath);
+            if (file.exists() && file.isFile()) {
+                return java.nio.file.Files.readAllBytes(file.toPath());
+            }
+            // File missing: surface a clearer error than the generic HTTP
+            // failure that would follow otherwise.
+            throw new IOException("Capacitor local file not found on disk: " + localPath);
+        }
+        return downloadHttp(url);
+    }
+
     private void closeQuietly(FileOutputStream out) {
         if (out == null) return;
         try { out.close(); } catch (IOException ignored) {}
@@ -202,6 +243,26 @@ public class ImageSplitter {
 
     public void shutdown() {
         executor.shutdown();
+    }
+
+    /**
+     * Reads an image from any supported source and returns it as a base64 string
+     * (without the "data:" URL prefix). Returns null on failure.
+     *
+     * <p>Used by the print pipeline: the Android WebView backing the print
+     * dialog runs in a null/data: origin and refuses to load {@code file://}
+     * resources (Same-Origin Policy). Inlining the image as a
+     * {@code data:image/jpeg;base64,...} URL sidesteps that restriction.
+     */
+    public String readImageAsBase64(String input) {
+        if (input == null || input.isEmpty()) return null;
+        try {
+            byte[] bytes = readAllBytes(input);
+            return Base64.encodeToString(bytes, Base64.NO_WRAP);
+        } catch (Exception e) {
+            Log.e(TAG, "readImageAsBase64 failed for " + input, e);
+            return null;
+        }
     }
 
     /**

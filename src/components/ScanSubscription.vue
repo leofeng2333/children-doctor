@@ -68,17 +68,20 @@ async function onPrint(goodImgUrl: string) {
     printError.value = '主图尚未就绪，请稍后再试'
     return
   }
-  if (!qrcodeUrl.value) {
-    printError.value = '公众号二维码尚未就绪，请稍后再试'
-    return
-  }
   printError.value = ''
   isPrinting.value = true
   try {
-    console.log('[ScanSubscription] onPrint: goodImg=', goodImgUrl, 'qrcode=', qrcodeUrl.value)
+    // 二维码未就绪时也允许打印：模板里只占位即可
+    const finalQrcodeUrl = qrcodeUrl.value || ''
+    console.log(
+      '[ScanSubscription] onPrint: goodImg=',
+      goodImgUrl,
+      'qrcode=',
+      finalQrcodeUrl || '(empty)',
+    )
     await printPhotoWithQrcode({
       goodImgUrl,
-      qrcodeUrl: qrcodeUrl.value,
+      qrcodeUrl: finalQrcodeUrl,
       jobName: '宝贝照片',
     })
   } catch (e) {

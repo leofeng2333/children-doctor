@@ -9,6 +9,19 @@ import type {
   ImageSplitResult,
 } from './definitions'
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 /**
  * Web-side fallback for the DualCamera plugin.
  *
@@ -56,6 +69,45 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
 
   async clearImageCache(): Promise<{ removed: number }> {
     throw this.unavailable('clearImageCache is only available on Android.')
+  }
+
+  /**
+   * Reads an image from any supported source and returns base64.
+   *
+   * Used by the print pipeline: the native WebView backing the print dialog
+   * runs in a null/data: origin and refuses to load file:// resources. By
+   * inlining the image as data:image/jpeg;base64,... we sidestep the
+   * Same-Origin Policy. The web fallback here lets the same code path run
+   * during dev/testing in the browser.
+   */
+  async readImageAsBase64(options: { input: string }): Promise<{ base64: string }> {
+    const { input } = options
+    if (!input) throw new Error('input is required')
+
+    if (input.startsWith('data:')) {
+      const comma = input.indexOf(',')
+      if (comma < 0) throw new Error('Malformed data URL')
+      return { base64: input.slice(comma + 1) }
+    }
+
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      const res = await fetch(input)
+      if (!res.ok) throw new Error(`HTTP ${res.status} when fetching ${input}`)
+      const blob = await res.blob()
+      return { base64: await blobToBase64(blob) }
+    }
+
+    if (typeof fetch === 'function' && input.startsWith('file://')) {
+      const res = await fetch(input)
+      if (!res.ok) throw new Error(`HTTP ${res.status} when fetching ${input}`)
+      const blob = await res.blob()
+      return { base64: await blobToBase64(blob) }
+    }
+
+    throw new Error(
+      `readImageAsBase64 cannot resolve "${input}" on this platform. ` +
+        'Use a data:, http(s)://, or file:// URL.',
+    )
   }
 
   async splitImage(options: ImageSplitOptions): Promise<ImageSplitResult> {

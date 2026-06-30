@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
 import { useAnalysisStore } from '@/stores'
 import { useImageSplit } from '@/composables/useImageSplit'
 import successImg from '@/assets/images/analysis-success.png'
+import {
+  getDiagnosisCopyFromLLMResult,
+  getDiagnosisCopy,
+  type DiagnosisCopy,
+} from '@/utils/diagnosisCopy'
 
 const router = useRouter()
 
@@ -16,8 +21,21 @@ const analysisCompleted = computed(() => {
   return !!analysisResult.value
 })
 
-const analysisResultTag = computed(() => {
-  return analysisResult.value?.llmAnalysis?.result?.isHealthy
+/**
+ * 当前面型是否健康（正常面容）。
+ *
+ * 判断标准：后端 `llmAnalysis.result.categoryCode === 0` (NORMAL)。
+ *
+ * 与 `diagnosisCopy` 共用同一份 `categoryCode` 读取路径，
+ * 通过 `getDiagnosisCopyFromLLMResult` 的解析规则保证一致性：
+ *  - 合法整数 0~7 命中 → 用对应分类
+ *  - 缺失 / 非法值 → 视为 NORMAL
+ *
+ * 但为了避免误判健康分支（风险较高），这里**直接读 categoryCode**，
+ * 只在显式为 0 时才视为健康；其余情况（含缺失）一律视为不健康。
+ */
+const isHealthyFace = computed(() => {
+  return analysisResult.value?.llmAnalysis?.result?.categoryCode === 0
 })
 
 const handleReturnReport = () => {
@@ -30,9 +48,27 @@ const handleSlideChange = (index: number) => {
   swiperIndex.value = index
 }
 
-const diagnosisResults = computed(() => {
-  return analysisResult.value?.llmAnalysis?.result?.diagnosis?.issues?.join()
+/** 根据后端 categoryCode 优先 / issues 兜底 获取的诊断文案（牙性优先） */
+const diagnosisCopy = computed<DiagnosisCopy>(() => {
+  const llmResult = analysisResult.value?.llmAnalysis?.result
+  return getDiagnosisCopyFromLLMResult(llmResult)
 })
+
+/** 健康面型文案 */
+const healthyCopy = computed<DiagnosisCopy>(() => getDiagnosisCopy(0))
+
+/**
+ * 当前不健康分支对应的中文章节名（与 diagnosisCopy.title 一致）
+ *   - 0 NORMAL              -> 正常面容
+ *   - 1 ASYMMETRY           -> 偏颌/大小脸
+ *   - 2 ANTERIOR_CROSSBITE  -> 反颌（地包天）
+ *   - 3 OPEN_BITE           -> 开颌
+ *   - 4 GUMMY_SMILE         -> 露龈笑
+ *   - 5 UPPER_PROTRUSION    -> 牙齿前突（龅牙）/ 上颌前突/下颌后缩
+ *   - 6 CROWDING            -> 牙列拥挤
+ *   - 7 SPACING             -> 牙列稀疏
+ */
+const diagnosisName = computed(() => diagnosisCopy.value.title)
 
 /** 不健康面型路径：后端生成的矫正后预测图，经 split 后右半部分（good-img） */
 const aiImageUrl = computed(
@@ -56,11 +92,8 @@ const healthyImgUrl = successImg
   <div v-else class="detail-analysis-page">
     <!-- 页面内容 -->
     <div class="page-content">
-      <template v-if="analysisResultTag">
-        <h1 class="page-title">
-          真棒，<br />
-          你的颌面非常健康！
-        </h1>
+      <template v-if="isHealthyFace">
+        <h1 class="page-title">{{ healthyCopy.opening }}</h1>
         <!-- 说明文字 -->
         <p class="description">16年后，你的长相是这样的</p>
       </template>
@@ -70,7 +103,11 @@ const healthyImgUrl = successImg
           颌面发育似乎不太妙！
         </h1>
         <!-- 说明文字 -->
-        <p class="description">16年后，你的长相是这样的</p>
+        <p class="description">
+          根据预判结果，你可能会有
+          <span class="diagnosis-name">{{ diagnosisName }}</span>
+          的问题，请爸爸妈妈尽早带你去医院详细检查哦！
+        </p>
       </template>
       <template v-else-if="swiperIndex === 1">
         <h1 class="page-title">
@@ -82,13 +119,11 @@ const healthyImgUrl = successImg
       </template>
 
       <div class="analysis-result">
-        <div class="analysis-success" v-if="analysisResultTag">
+        <div class="analysis-success" v-if="isHealthyFace">
           <div class="analysis-success-tips">
             <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
-            <h3 class="tips-title">健康小贴士:</h3>
-            <p class="tips-content">
-              你的长相是这样的你的长相是这样的你的长相是这样的你的长相是这样的
-            </p>
+            <h3 class="tips-title">{{ healthyCopy.opening }}</h3>
+            <p class="tips-content">{{ healthyCopy.careTips }}</p>
           </div>
           <div class="analysis-success-img">
             <img src="@/assets/images/analysis-success.png" alt="analysis-success" />
@@ -99,8 +134,29 @@ const healthyImgUrl = successImg
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0" class="analysis-failed-tips">
-              <h3 class="tips-title">问题诊断:</h3>
-              <p class="tips-content">{{ diagnosisResults }}</p>
+              <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
+              <p
+                v-for="(paragraph, idx) in diagnosisCopy.body"
+                :key="idx"
+                class="tips-content"
+                style="margin-bottom: 12px"
+              >
+                {{ paragraph }}
+              </p>
+              <p
+                v-if="diagnosisCopy.careTips"
+                class="tips-content"
+                style="margin-top: 16px"
+              >
+                <strong>日常护理小贴士：</strong>{{ diagnosisCopy.careTips }}
+              </p>
+              <p
+                v-if="diagnosisCopy.habitNote"
+                class="tips-content"
+                style="margin-top: 12px; color: #c0392b"
+              >
+                {{ diagnosisCopy.habitNote }}
+              </p>
             </div>
             <ScanSubscription v-show="swiperIndex === 1" :good-img-url="goodImgUrl" />
           </div>
@@ -183,6 +239,10 @@ const healthyImgUrl = successImg
   line-height: 52px;
   color: #000;
   margin: 16px 0 32px 0;
+
+  .diagnosis-name {
+    font-weight: 700;
+  }
 }
 
 .page-content {

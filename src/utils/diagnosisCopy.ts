@@ -2,26 +2,32 @@
  * AI 预测面型诊断文案
  *
  * 来源：`AI预测面型诊断文案.docx`
- * 用途：通过 `DiagnosisCode` 枚举匹配到对应的诊断文案，
+ * 用途：通过 `DiagnosisCode` 枚举（0~7）匹配到对应的诊断文案，
  *      渲染在拍照后即时反馈页 / 扫码后详情页。
  *
  * 每个诊断项由 4 个字段组成：
- *  - title:       章节标题（如 "②牙列拥挤"）
+ *  - title:       章节标题（如 "牙列拥挤"）
  *  - opening:     引导句（"宝贝可能..." / "宝贝有点..."）
  *  - body:        危害描述 + 干预建议（多段）
  *  - careTips:    日常护理小贴士（多行）
  *  - habitNote:   若由"不良口腔习惯"导致的，列出对应习惯；否则空字符串
  *
  * 与 `DiagnosisCode` 的对应关系：
- *  - 0 NORMAL              -> ①正常面容
- *  - 1 ASYMMETRY           -> ⑨偏颌/大小脸
- *  - 2 ANTERIOR_CROSSBITE  -> ⑤反颌（地包天）
- *  - 3 OPEN_BITE           -> ⑥开颌
- *  - 4 GUMMY_SMILE         -> ⑦露龈笑
- *  - 5 UPPER_PROTRUSION    -> ④牙齿前突（龅牙）/ ⑧上颌前突/下颌后缩
- *                            （牙性 + 骨性统一为上颌前突，文档中拆为两段）
- *  - 6 CROWDING            -> ②牙列拥挤
- *  - 7 SPACING             -> ③牙列稀疏
+ *  - 0 NORMAL              -> 正常面容
+ *  - 1 ASYMMETRY           -> 偏颌/大小脸
+ *  - 2 ANTERIOR_CROSSBITE  -> 反颌（地包天）
+ *  - 3 OPEN_BITE           -> 开颌
+ *  - 4 GUMMY_SMILE         -> 露龈笑
+ *  - 5 UPPER_PROTRUSION    -> 牙齿前突（龅牙，牙性，儿童更常见）
+ *                            （骨性版本：UPPER_PROTRUSION_BONE，即上颌前突/下颌后缩）
+ *  - 6 CROWDING            -> 牙列拥挤
+ *  - 7 SPACING             -> 牙列稀疏
+ *
+ * 数据来源约定（来自 `/api/ai/analyze` 接口）：
+ *   `analysisResult.llmAnalysis.result.categoryCode` 为数字 0~7，
+ *   表示对应的面型诊断分类。读取入口：
+ *     `getDiagnosisCopyFromLLMResult(llmResult)`
+ *   非法 / 缺失值统一回退到 NORMAL 文案。
  */
 
 /** 后端返回的诊断编码枚举 */
@@ -37,7 +43,7 @@ export enum DiagnosisCode {
 }
 
 export interface DiagnosisCopy {
-  /** 章节标题（含圈数字序号） */
+  /** 章节标题（不含圈数字序号） */
   title: string
   /** 引导句（粗体小标题之后的第 1 句） */
   opening: string
@@ -50,7 +56,7 @@ export interface DiagnosisCopy {
 }
 
 const NORMAL: DiagnosisCopy = {
-  title: '①正常面容',
+  title: '正常面容',
   opening: '恭喜宝贝！根据拍摄的照片分析，你的面型发育正常，五官协调，棒棒哒！',
   body: [
     '温馨提醒：线上评估仅供参考，牙齿和面型也会随着成长发生变化，建议每6个月做一次口腔检查，继续好好爱护牙齿，保持健康习惯，给快乐成长持续护航哦~',
@@ -61,7 +67,7 @@ const NORMAL: DiagnosisCopy = {
 }
 
 const CROWDING: DiagnosisCopy = {
-  title: '②牙列拥挤',
+  title: '牙列拥挤',
   opening: '宝贝可能存在牙列拥挤的情况哦～',
   body: [
     '牙列拥挤容易造成牙齿清洁不到位，滋生蛀牙、牙结石，还会影响牙齿整齐度、面部美观，严重时还会干扰正常咬合。',
@@ -73,7 +79,7 @@ const CROWDING: DiagnosisCopy = {
 }
 
 const SPACING: DiagnosisCopy = {
-  title: '③牙列稀疏',
+  title: '牙列稀疏',
   opening: '宝贝可能有牙列稀疏的问题哦～',
   body: [
     '牙缝过大容易卡住食物残渣，引发蛀牙、牙周问题，牙齿稳定性变差，还可能伴随咬合异常，影响面部发育。',
@@ -86,7 +92,7 @@ const SPACING: DiagnosisCopy = {
 }
 
 const ANTERIOR_PROTRUSION: DiagnosisCopy = {
-  title: '④牙齿前突（龅牙）',
+  title: '牙齿前突（龅牙）',
   opening: '宝贝可能有点牙齿前突（龅牙）哦。',
   body: [
     '这种情况大多是由于口呼吸、咬下唇、吮指、不当喂养习惯或遗传因素引发，容易导致嘴唇闭合不全，影响面部美观和容貌自信，长此以往还会加重咬合紊乱。',
@@ -97,7 +103,7 @@ const ANTERIOR_PROTRUSION: DiagnosisCopy = {
 }
 
 const ANTERIOR_CROSSBITE: DiagnosisCopy = {
-  title: '⑤反颌（地包天）',
+  title: '反颌（地包天）',
   opening: '宝贝出现反颌（地包天），要重视啦！',
   body: [
     '下牙包住上牙，长期会导致下巴前伸、面中部凹陷，形成"月牙脸"，还会损伤牙齿、颞下颌关节，严重时还会影响面部骨骼发育。',
@@ -109,7 +115,7 @@ const ANTERIOR_CROSSBITE: DiagnosisCopy = {
 }
 
 const OPEN_BITE: DiagnosisCopy = {
-  title: '⑥开颌',
+  title: '开颌',
   opening: '宝贝可能存在开颌问题哦～',
   body: [
     '上下牙齿无法正常咬合对齐，影响咀嚼、发音，长期会导致面部发育异常，还可能伴随颞下颌关节问题。',
@@ -121,7 +127,7 @@ const OPEN_BITE: DiagnosisCopy = {
 }
 
 const GUMMY_SMILE: DiagnosisCopy = {
-  title: '⑦露龈笑',
+  title: '露龈笑',
   opening: '宝贝有点露龈笑哦~',
   body: [
     '孩子微笑或大笑时，牙龈会明显外露，这种表现就叫做露龈笑。通常是由于上唇过短或上唇肌肉力量过强/门牙萌出不足或牙龈增生/上颌骨发育过度等原因导致。',
@@ -132,7 +138,7 @@ const GUMMY_SMILE: DiagnosisCopy = {
 }
 
 const UPPER_PROTRUSION: DiagnosisCopy = {
-  title: '⑧上颌前突/下颌后缩',
+  title: '上颌前突/下颌后缩',
   opening: '宝贝存在上颌前突 / 下颌后缩情况哦～',
   body: [
     '这通常是由长期口呼吸、咬唇、吮指、腺样体问题导致，让脸型悄悄变成凸嘴、下巴又短又缩。更麻烦的是，它还会影响孩子的呼吸和睡眠，白天注意力不集中，甚至耽误生长发育。',
@@ -144,7 +150,7 @@ const UPPER_PROTRUSION: DiagnosisCopy = {
 }
 
 const ASYMMETRY: DiagnosisCopy = {
-  title: '⑨偏颌/大小脸',
+  title: '偏颌/大小脸',
   opening: '宝贝有偏颌、大小脸的迹象啦～',
   body: [
     '通常是由于蛀牙疼痛、单侧咀嚼、咬合偏斜、不良睡姿引发，长期会加重面部不对称，损伤颞下颌关节。若是由于蛀牙或牙痛导致偏侧咀嚼，一定要尽早治疗；如果治疗后仍然偏斜，则需要到正畸科调整咬合，防止面部对称的问题持续加重。',
@@ -161,14 +167,17 @@ export const DIAGNOSIS_COPY_MAP: Record<DiagnosisCode, DiagnosisCopy> = {
   [DiagnosisCode.OPEN_BITE]: OPEN_BITE,
   [DiagnosisCode.GUMMY_SMILE]: GUMMY_SMILE,
   /**
-   * 文档中"牙性前突 ④"与"骨性上颌前突/下颌后缩 ⑧"被拆成两段，
-   * 此处统一返回"骨性"版本（更全面）。如需区分牙性/骨性，
-   * 建议后端 DiagnosisCode 增加细分枚举（如 5a / 5b）。
+   * 编码 5 默认使用牙性版本（儿童期更常见的"牙齿前突/龅牙"）。
+   * 如需展示骨性版本（上颌前突/下颌后缩），可访问 UPPER_PROTRUSION_BONE。
+   * 后续若后端把 5 拆分为 5a / 5b，再分别映射即可。
    */
-  [DiagnosisCode.UPPER_PROTRUSION]: UPPER_PROTRUSION,
+  [DiagnosisCode.UPPER_PROTRUSION]: ANTERIOR_PROTRUSION,
   [DiagnosisCode.CROWDING]: CROWDING,
   [DiagnosisCode.SPACING]: SPACING,
 }
+
+/** 编码 5 的骨性版本（上颌前突/下颌后缩），按需取用 */
+export const UPPER_PROTRUSION_BONE = UPPER_PROTRUSION
 
 /**
  * 根据诊断编码获取文案。
@@ -178,6 +187,89 @@ export function getDiagnosisCopy(code: number | null | undefined): DiagnosisCopy
   if (code == null) return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
   const found = DIAGNOSIS_COPY_MAP[code as DiagnosisCode]
   return found ?? DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
+}
+
+/**
+ * 中文 issue 文本 -> DiagnosisCode 的模糊匹配表（**已弃用**）
+ *
+ * 后端不再返回 `llmAnalysis.result.diagnosis.issues` 字段，
+ * 文案匹配仅依赖 `categoryCode`。本表与下方的 `parseIssueCode` /
+ * `getDiagnosisCopyFromIssues` 仅作历史兼容保留，调用方应改为
+ * 使用 `getDiagnosisCopyFromLLMResult`。
+ *
+ * @deprecated 后端已去掉 issues 字段，2026-07 之后可删除。
+ */
+const ISSUE_KEYWORDS: Array<{ keys: string[]; code: DiagnosisCode }> = [
+  { keys: ['拥挤'], code: DiagnosisCode.CROWDING },
+  { keys: ['稀疏', '间隙', '牙缝'], code: DiagnosisCode.SPACING },
+  { keys: ['反颌', '地包天'], code: DiagnosisCode.ANTERIOR_CROSSBITE },
+  { keys: ['开颌'], code: DiagnosisCode.OPEN_BITE },
+  { keys: ['露龈笑'], code: DiagnosisCode.GUMMY_SMILE },
+  { keys: ['上颌前突', '下颌后缩'], code: DiagnosisCode.UPPER_PROTRUSION },
+  { keys: ['前突', '龅牙', '凸嘴'], code: DiagnosisCode.UPPER_PROTRUSION },
+  { keys: ['偏颌', '大小脸', '不对称', '偏斜'], code: DiagnosisCode.ASYMMETRY },
+]
+
+/**
+ * 从 issues 数组中解析出 DiagnosisCode（**已弃用**）
+ * @deprecated 后端已去掉 issues 字段，请改用 `getDiagnosisCopyFromLLMResult`。
+ */
+export function parseIssueCode(issues: unknown): DiagnosisCode {
+  if (!Array.isArray(issues)) return DiagnosisCode.NORMAL
+  for (const raw of issues) {
+    if (typeof raw !== 'string') continue
+    for (const { keys, code } of ISSUE_KEYWORDS) {
+      if (keys.some((k) => raw.includes(k))) return code
+    }
+  }
+  return DiagnosisCode.NORMAL
+}
+
+/**
+ * 把后端 issues 直接转换为文案（**已弃用**）
+ * @deprecated 后端已去掉 issues 字段，请改用 `getDiagnosisCopyFromLLMResult`。
+ */
+export function getDiagnosisCopyFromIssues(issues: unknown): DiagnosisCopy {
+  return getDiagnosisCopy(parseIssueCode(issues))
+}
+
+/**
+ * 从 LLM 分析结果中获取诊断文案。
+ *
+ * 数据来源约定（来自 `/api/ai/analyze` 接口）：
+ *   `analysisResult.llmAnalysis.result.categoryCode` 为数字 0~7，
+ *   表示对应的面型诊断分类。后端已移除 `diagnosis.issues` 字段，
+ *   此处只信任 `categoryCode`。
+ *
+ * 行为：
+ *   - 传入对象缺失 / `categoryCode` 不是合法整数 0~7 → 回退到 NORMAL 文案
+ *   - 兼容字符串数字（如 "5"）
+ *
+ * 用法：
+ *   const copy = getDiagnosisCopyFromLLMResult(analysisResult.value?.llmAnalysis?.result)
+ */
+export function getDiagnosisCopyFromLLMResult(
+  llmResult: unknown,
+): DiagnosisCopy {
+  if (!llmResult || typeof llmResult !== 'object') {
+    return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
+  }
+  const obj = llmResult as Record<string, any>
+  const rawCode = obj.categoryCode
+
+  let code: number | null = null
+  if (typeof rawCode === 'number' && Number.isInteger(rawCode)) {
+    code = rawCode
+  } else if (typeof rawCode === 'string') {
+    const n = Number(rawCode)
+    if (Number.isInteger(n)) code = n
+  }
+
+  if (code == null) {
+    return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
+  }
+  return DIAGNOSIS_COPY_MAP[code as DiagnosisCode]
+    ?? DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
 }
 
 /* -------------------------------------------------------------------------- */

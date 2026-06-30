@@ -313,6 +313,26 @@ public class DualCameraPlugin extends Plugin {
     }
 
     @PluginMethod()
+    public void readImageAsBase64(PluginCall call) {
+        if (imageSplitter == null) {
+            imageSplitter = new ImageSplitter(getContext());
+        }
+        String input = call.getString("input");
+        if (input == null || input.isEmpty()) {
+            call.reject("input is required");
+            return;
+        }
+        String b64 = imageSplitter.readImageAsBase64(input);
+        if (b64 == null) {
+            call.reject("Failed to read image: " + input);
+            return;
+        }
+        JSObject result = new JSObject();
+        result.put("base64", b64);
+        call.resolve(result);
+    }
+
+    @PluginMethod()
     public void clearImageCache(PluginCall call) {
         if (imageSplitter == null) {
             imageSplitter = new ImageSplitter(getContext());

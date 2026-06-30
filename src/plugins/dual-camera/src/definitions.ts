@@ -71,6 +71,14 @@ export interface DualCameraPlugin {
   uploadPhotos(options: DualCameraUploadOptions): Promise<DualCameraUploadResult>
   copyImageToExternalCache(options: { uri: string }): Promise<{ path: string; uri: string }>
   splitImage(options: ImageSplitOptions): Promise<ImageSplitResult>
+  /**
+   * Reads an image from any supported source (file://, content://, http(s)://,
+   * data:) and returns its bytes as a base64 string (no data: prefix).
+   *
+   * Native: implemented in DualCameraPlugin.java (Android only).
+   * Web: implemented in DualCameraWeb using fetch + FileReader.
+   */
+  readImageAsBase64(options: { input: string }): Promise<{ base64: string }>
   clearImageCache(): Promise<{ removed: number }>
   addListener(
     eventName: 'captureComplete',
