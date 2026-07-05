@@ -256,6 +256,8 @@ public class Camera2Controller {
                         if (openedCount > 0) {
                             onAllCamerasOpened();
                         } else {
+                            // 全部断开，释放这些已 open 失败的 session 占用的 cameraDevice
+                            closeFailedSessions();
                             rejectPendingCall("All cameras disconnected");
                         }
                     }
@@ -270,6 +272,8 @@ public class Camera2Controller {
                     slotErrors[slot] = error;
                     failedCount++;
                     if (openedCount + failedCount == slotCount) {
+                        // 收尾：失败 slot 的 session 也要关掉，避免 cameraDevice 占用泄漏
+                        closeFailedSessions();
                         if (openedCount > 0) {
                             Log.w(TAG, "Some cameras failed to open, proceeding with " + openedCount + " camera(s)");
                             for (int i = 0; i < slotCount; i++) {
@@ -287,21 +291,52 @@ public class Camera2Controller {
         };
     }
 
+    private void closeFailedSessions() {
+        if (sessions == null) return;
+        for (int i = 0; i < sessions.length; i++) {
+            if (slotErrors[i] != null && sessions[i] != null) {
+                Log.d(TAG, "Closing failed session at slot " + i);
+                try {
+                    sessions[i].close();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing failed session " + i, e);
+                }
+            }
+        }
+    }
+
     private void onAllCamerasOpened() {
         if (isStopped.get()) return;
         mainHandler.post(() -> {
             if (isStopped.get() || sessions == null) return;
             try {
+                // 收集每槽的最终状态——只要有一个 slot 失败，都告诉前端"concurrent=false"
+                // 让前端知道"双摄"已经退化成"单摄"，可走单路拍照回退路径。
                 JSArray camList = new JSArray();
-                for (Camera2Session session : sessions) {
+                boolean allSlotsOk = true;
+                StringBuilder partialErr = new StringBuilder();
+                for (int i = 0; i < sessions.length; i++) {
                     JSObject camJson = new JSObject();
-                    camJson.put("cameraId", session.getCameraId());
-                    camJson.put("lensFacing", session.getLensFacing());
+                    camJson.put("cameraId", sessions[i].getCameraId());
+                    camJson.put("lensFacing", sessions[i].getLensFacing());
+                    camJson.put("slot", i);
+                    if (slotErrors != null && slotErrors[i] != null) {
+                        allSlotsOk = false;
+                        camJson.put("error", slotErrors[i]);
+                        partialErr.append("slot").append(i).append(":").append(slotErrors[i]).append("; ");
+                    }
                     camList.put(camJson);
                 }
                 JSObject ret = new JSObject();
                 ret.put("cameras", camList);
-                ret.put("concurrent", sessions.length >= 2);
+                // 只有所有 slot 真正打开时才报 concurrent=true，否则视为部分失败
+                ret.put("concurrent", allSlotsOk && sessions.length >= 2);
+                if (!allSlotsOk) {
+                    String failed = partialErr.toString();
+                    Log.w(TAG, "Partial-fail: " + failed);
+                    ret.put("partialFail", true);
+                    ret.put("partialFailReason", failed);
+                }
                 resolvePendingCall(ret);
             } catch (Exception e) {
                 rejectPendingCall("Failed to build result: " + e.getMessage());
@@ -318,6 +353,22 @@ public class Camera2Controller {
             isCapturing.set(false);
             resultCallback.onError("Camera not initialized");
             return;
+        }
+
+        // partial-fail 防护：如果已经在 startPreview 阶段判定有 slot 失败，
+        // 不让用户继续拍照——半张照片毫无意义，且会让用户困惑。
+        if (slotErrors != null && slotCount > 0) {
+            StringBuilder pending = new StringBuilder();
+            for (int i = 0; i < slotCount; i++) {
+                if (slotErrors[i] != null) {
+                    pending.append("slot").append(i).append(":").append(slotErrors[i]).append("; ");
+                }
+            }
+            if (pending.length() > 0) {
+                isCapturing.set(false);
+                resultCallback.onError("Cannot capture: some cameras failed to open (" + pending + "). Please restart preview.");
+                return;
+            }
         }
 
         File photoDir = new File(context.getCacheDir(), PHOTO_DIR_NAME);
@@ -549,6 +600,16 @@ public class Camera2Controller {
         }
     }
 
+    private void clearTextureViewListeners() {
+        if (textureViews != null) {
+            for (TextureView tv : textureViews) {
+                if (tv != null) {
+                    tv.setSurfaceTextureListener(null);
+                }
+            }
+        }
+    }
+
     public void stopPreview() {
         isStopped.set(true);
         mainHandler.post(() -> {
@@ -564,6 +625,8 @@ public class Camera2Controller {
                 containerView = null;
             }
 
+            // 卸掉 listener，避免复用 rootView 时旧 listener 触发回调读已 null 的 sessions[]
+            clearTextureViewListeners();
             textureViews = null;
             photoImageViews = null;
             Log.d(TAG, "Preview stopped, camera resources and views released");
@@ -598,6 +661,7 @@ public class Camera2Controller {
         isStopped.set(true);
         mainHandler.post(() -> {
             shutdownSessions();
+            clearTextureViewListeners();
             textureViews = null;
             photoImageViews = null;
             Log.d(TAG, "Shutdown complete");

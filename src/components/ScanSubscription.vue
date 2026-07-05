@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSubscriptionScan } from '@/composables/useSubscriptionScan'
 import { DualCamera } from '@/plugins/dual-camera'
@@ -20,7 +20,14 @@ const hadSubscription = ref(false)
 const qrcodeUrl = ref('')
 const isFinishing = ref(false)
 const isPrinting = ref(false)
+const hasPrinted = ref(false)
 const printError = ref('')
+
+const printButtonLabel = computed(() => {
+  if (isPrinting.value) return '正在准备打印...'
+  if (hasPrinted.value) return '已打印完成\n请在下方取走宝贝照片'
+  return '打印带走宝贝照片'
+})
 
 let cleanup: (() => void) | undefined
 
@@ -63,7 +70,7 @@ async function onFinish() {
 }
 
 async function onPrint(goodImgUrl: string) {
-  if (isPrinting.value) return
+  if (isPrinting.value || hasPrinted.value) return
   if (!goodImgUrl) {
     printError.value = '主图尚未就绪，请稍后再试'
     return
@@ -84,6 +91,10 @@ async function onPrint(goodImgUrl: string) {
       qrcodeUrl: finalQrcodeUrl,
       jobName: '宝贝照片',
     })
+    // 仅打印走通后锁定按钮：原生平台 printHtml 弹系统对话框，用户取消不会
+    // reject（Capacitor Printer 不感知），因此 await 正常返回即视为成功。
+    hasPrinted.value = true
+    printError.value = ''
   } catch (e) {
     printError.value = (e as Error)?.message ?? '打印失败'
     console.error('[ScanSubscription] print failed:', e)
@@ -105,8 +116,19 @@ async function onPrint(goodImgUrl: string) {
       </div>
 
       <div class="action-buttons">
-        <PrimaryButton class="action-btn primary" type="button" :disabled="isPrinting" @click="onPrint(goodImgUrl)">{{
-          isPrinting ? '正在准备打印...' : '打印带走宝贝照片' }}</PrimaryButton>
+        <PrimaryButton
+          class="action-btn primary"
+          :class="{ 'is-printed': hasPrinted }"
+          type="button"
+          :disabled="isPrinting || hasPrinted"
+          @click="onPrint(goodImgUrl)"
+        >
+          <template v-if="hasPrinted">
+            <span>已打印完成</span>
+            <span>请在下方取走宝贝照片</span>
+          </template>
+          <template v-else>{{ printButtonLabel }}</template>
+        </PrimaryButton>
         <PrimaryButton class="action-btn secondary" type="button" :disabled="isFinishing" @click="onFinish">完成诊断
         </PrimaryButton>
       </div>
@@ -185,14 +207,22 @@ async function onPrint(goodImgUrl: string) {
   }
 }
 
-.action-btn.primary {}
-
-.action-btn.secondary {}
-
 .btn-icon {
   width: 20px;
   height: 20px;
   display: block;
+}
+
+.is-printed {
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 32px;
+
+  & > span {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
 }
 
 .print-error {

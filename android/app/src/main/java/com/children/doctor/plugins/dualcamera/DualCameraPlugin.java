@@ -118,12 +118,16 @@ public class DualCameraPlugin extends Plugin {
                     call.resolve(result);
                 } catch (Exception e) {
                     call.reject("Failed to build camera list", e);
+                } finally {
+                    // 临时 manager 一定释放，避免 Activity 泄漏
+                    if (manager != cameraManager) manager.shutdown();
                 }
             }
 
             @Override
             public void onError(String error) {
                 call.reject(error);
+                if (manager != cameraManager) manager.shutdown();
             }
         });
     }
@@ -150,6 +154,8 @@ public class DualCameraPlugin extends Plugin {
             JSObject result = new JSObject();
             result.put("supported", supported);
             call.resolve(result);
+            // 临时 manager 用完即释放
+            if (manager != cameraManager) manager.shutdown();
         });
     }
 

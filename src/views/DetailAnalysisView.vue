@@ -70,12 +70,24 @@ const healthyCopy = computed<DiagnosisCopy>(() => getDiagnosisCopy(0))
  */
 const diagnosisName = computed(() => diagnosisCopy.value.title)
 
-/** 不健康面型路径：后端生成的矫正后预测图，经 split 后右半部分（good-img） */
+/** 不健康面型路径：后端生成的矫正后预测图，经 split 后用作好坏对比图 */
 const aiImageUrl = computed(
   () => analysisResult.value?.aiAnalysis?.result?.generatedImageUrls?.[0] ?? '',
 )
-const { rightUrl: goodImgRightUrl } = useImageSplit(() => aiImageUrl.value, 0.5)
-const goodImgUrl = computed(() => goodImgRightUrl.value)
+/**
+ * 切割后两半图片的 URL。
+ *
+ * 业务约定（与 `AnalysisFailedSwiper.vue` / `ScanSubscription` 保持一致）：
+ *   - `leftUrl`  -> 矫正后的"好"面容（swipe 第 1 张、ScanSubscription 订阅图）
+ *   - `rightUrl` -> 矫正前的"坏"面容（swipe 第 2 张）
+ *
+ * 注：原生插件 `DualCamera.splitImage` 返回的 `leftUrl` 实际对应原图左半（坏），
+ * `useImageSplit` 内部已交叉赋值，无需在此处再处理。
+ */
+const { leftUrl: goodImgUrl, rightUrl: badImgUrl } = useImageSplit(
+  () => aiImageUrl.value,
+  0.5,
+)
 
 /** 健康面型路径：静态 success 图（Vite 资源会被打包成 /assets/...） */
 const healthyImgUrl = successImg

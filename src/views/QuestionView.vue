@@ -11,10 +11,24 @@ const questionTexts = [
   '你是否有吮吸手指的习惯？',
   '你是否会无意识地咬住或吸吮上唇或下唇？',
   '你是否有吐舌头或者舔牙齿的习惯？',
-  '你是否有长期张嘴呼吸的习惯，特别是在睡着后？',
+  '你是否有长期张嘴呼吸的习惯，特别是睡着后？',
   '你是否长期只用一边牙齿咀嚼食物？',
   '你是否有啃铅笔、啃筷子等物品或者有咬手指的习惯？',
 ]
+
+// 选项文案，与 UI 按钮文本保持一致，提交时复用
+const answerLabels = ['是，我是这样', '不，这不是我']
+
+// 与 answerLabels 等长的「自包含」文案：脱离题目也能直接看懂回答内容。
+// 下标 0 表示肯定的完整陈述，1 表示否定的完整陈述；和题面呼应但不依赖题面。
+const filledAnswers: Record<number, [string, string]> = {
+  0: ['是，我有吮吸手指的习惯', '不，我没有吮吸手指的习惯'],
+  1: ['是，我会无意识地咬住或吸吮嘴唇', '不，我不会无意识地咬住或吸吮嘴唇'],
+  2: ['是，我有吐舌头或舔牙齿的习惯', '不，我没有吐舌头或舔牙齿的习惯'],
+  3: ['是，我有长期张嘴呼吸的习惯', '不，我没有长期张嘴呼吸的习惯'],
+  4: ['是，我只用一边牙齿咀嚼食物', '不，我会用两边牙齿咀嚼食物'],
+  5: ['是，我有啃物品或咬手指的习惯', '不，我没有啃物品或咬手指的习惯'],
+}
 
 const currentQuestionText = computed(() => questionTexts[currentQuestion.value - 1])
 const answers = ref<number[]>([])
@@ -41,20 +55,18 @@ const nextQuestion = () => {
 
 const goNext = async () => {
   const tempResponse = await saveQuestionAnswers({
-    answers: [
-      {
-        questionNo: '1',
-        answer: '是',
-      },
-      {
-        questionNo: '2',
-        answer: '偶尔疼痛',
-      },
-      {
-        questionNo: '3',
-        answer: '有家族史',
-      },
-    ],
+    answers: questionTexts.map((text, idx) => {
+      const answerIndex = answers.value[idx] ?? -1
+      // 优先用“自包含”陈述句；缺数据时回落到 UI 上的选项文案，保证至少有值。
+      const answerText =
+        answerIndex >= 0
+          ? filledAnswers[idx]?.[answerIndex] ?? answerLabels[answerIndex]
+          : ''
+      return {
+        questionNo: String(idx + 1),
+        answer: answerText,
+      }
+    }),
   })
   console.log('tempResponse', tempResponse)
   router.push({ name: 'quiz-intro' })

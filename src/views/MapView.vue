@@ -42,8 +42,18 @@ const goNext = async () => {
     phone: phone,
     province: '浙江省',
   }
-  params.city = locationList.value[0].name
-  params.district = locationList.value[1]?.name
+  // 业务规则：若选择路径包含义乌市，则把它视为地级市，
+  // 其子级（街道/镇）作为 district；路径中更早的节点（金华市）忽略。
+  const yiwuIdx = locationList.value.findIndex(
+    (item: any) => item?.name === '义乌市',
+  )
+  if (yiwuIdx >= 0) {
+    params.city = '义乌市'
+    params.district = locationList.value[yiwuIdx + 1]?.name
+  } else {
+    params.city = locationList.value[0].name
+    params.district = locationList.value[1]?.name
+  }
   btnLoading.value = true
   const tempResponse = await saveUserInfo(params).finally(() => {
     btnLoading.value = false

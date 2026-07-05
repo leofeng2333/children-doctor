@@ -41,8 +41,25 @@ public class Camera2Session {
 
     private static final String TAG = "Camera2Session";
     private static final int MAX_CAPTURE_BUFFERS = 2;
-    private static final int OPEN_RETRY_COUNT = 2;
-    private static final long OPEN_RETRY_DELAY_MS = 500;
+    private static final int OPEN_RETRY_COUNT = 3;
+    private static final long OPEN_RETRY_DELAY_MS = 800;
+    // "被占用"类错误（ERROR_IN_USE / ERROR_MAX_CAMERAS_IN_USE）需要更长时间等 OS 回收
+    private static final long OPEN_RETRY_DELAY_MS_BUSY = 1500;
+
+    // 错误码常量兼容层：
+    // CameraDevice 的 onError 错误码全部在 CameraDevice.StateCallback 内嵌接口里
+    // （不是 CameraDevice 类上），且部分高 API 才引入。本类 minSdk 24，统一用数值常量
+    // 兜底 + 注释标记，便于后续维护。
+    //   ERROR_IN_USE                  = 4   (API 1,  == ERROR_CAMERA_IN_USE)
+    //   ERROR_CAMERA_DISABLED         = 3   (API 23)
+    //   ERROR_CAMERA_DEVICE           = 2   (API 23)
+    //   ERROR_CAMERA_SERVICE          = 5   (API 23)
+    //   ERROR_MAX_CAMERAS_IN_USE      = 6   (API 28)
+    private static final int CAMERA_ERROR_IN_USE              = 4;
+    private static final int CAMERA_ERROR_CAMERA_DISABLED     = 3;
+    private static final int CAMERA_ERROR_CAMERA_DEVICE       = 2;
+    private static final int CAMERA_ERROR_CAMERA_SERVICE      = 5;
+    private static final int CAMERA_ERROR_MAX_CAMERAS_IN_USE  = 6;
 
     private final Context context;
     private final HandlerThread cameraThread;
@@ -212,6 +229,23 @@ public class Camera2Session {
             case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3:             return "LEVEL3";
             case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL:     return "EXTERNAL";
             default: return "UNKNOWN(" + hwLevel + ")";
+        }
+    }
+
+    /**
+     * 把 CameraDevice.StateCallback 的 error 码转成可读字符串，方便日志排查
+     * "一个摄像头开着、另一个没开"的场景。
+     * 这些常量在 CameraDevice.StateCallback 内嵌接口里（不是 CameraDevice 类上），
+     * 且部分高 API 才引入；用本类顶部声明的数值常量做 case 标签。
+     */
+    private static String cameraErrorName(int error) {
+        switch (error) {
+            case CAMERA_ERROR_IN_USE:                 return "IN_USE";             // ERROR_IN_USE / ERROR_CAMERA_IN_USE
+            case CAMERA_ERROR_MAX_CAMERAS_IN_USE:     return "MAX_CAMERAS_IN_USE"; // ERROR_MAX_CAMERAS_IN_USE
+            case CAMERA_ERROR_CAMERA_DISABLED:        return "CAMERA_DISABLED";
+            case CAMERA_ERROR_CAMERA_DEVICE:          return "CAMERA_DEVICE";
+            case CAMERA_ERROR_CAMERA_SERVICE:         return "CAMERA_SERVICE";
+            default:                                   return "UNKNOWN(" + error + ")";
         }
     }
 
@@ -395,23 +429,52 @@ public class Camera2Session {
 
                 @Override
                 public void onError(@NonNull CameraDevice camera, int error) {
+                    final String errorName = cameraErrorName(error);
                     camera.close();
                     cameraDevice = null;
                     isOpen.set(false);
-                    Log.e(TAG, "Camera " + idToOpen + " error: " + error + ", attempt=" + attempt);
+                    Log.e(TAG, "Camera " + idToOpen + " error: " + error
+                            + " (" + errorName + "), attempt=" + attempt);
+
+                    // 全部用本地数值常量，避免依赖高 API 的 StateCallback.ERROR_*
+                    // 见类顶部"错误码常量兼容层"注释。
+                    // CAMERA_ERROR_CAMERA_DISABLED = 3: 当前设备的摄像头被设备级禁用，重启前永不可用
+                    // CAMERA_ERROR_CAMERA_DEVICE   = 2: 设备 fatal，禁用
+                    if (error == CAMERA_ERROR_CAMERA_DISABLED
+                            || error == CAMERA_ERROR_CAMERA_DEVICE) {
+                        Log.e(TAG, "Camera " + idToOpen + " hardware disabled, no retry");
+                        callback.onError("Camera unavailable (" + errorName + ")");
+                        return;
+                    }
+
+                    // "被占用"类错误：
+                    //   ERROR_IN_USE             = 4  (== ERROR_CAMERA_IN_USE)
+                    //   ERROR_MAX_CAMERAS_IN_USE = 6  (API 28+)
+                    boolean isBusyError = error == CAMERA_ERROR_IN_USE
+                            || error == CAMERA_ERROR_MAX_CAMERAS_IN_USE;
+                    if (isBusyError) {
+                        Log.w(TAG, "Camera " + idToOpen + " busy error: " + errorName
+                                + ", will wait longer before retry");
+                    }
 
                     if (attempt < OPEN_RETRY_COUNT) {
-                        Log.d(TAG, "Retrying open for camera " + idToOpen + " (attempt " + (attempt + 1) + "/" + (OPEN_RETRY_COUNT + 1) + ")");
-                        String nextId = findCameraIdByLensFacing(targetLensFacing);
+                        long delay = isBusyError ? OPEN_RETRY_DELAY_MS_BUSY : OPEN_RETRY_DELAY_MS;
+                        Log.d(TAG, "Retrying open for camera " + idToOpen + " (attempt "
+                                + (attempt + 1) + "/" + (OPEN_RETRY_COUNT + 1)
+                                + ", delay=" + delay + "ms)");
+
+                        // 每次重试前重新枚举，避免拿到一份 stale 的 id 列表；
+                        // 某些 ROM 在挂起期间会移除正在被其他进程持有的 id。
+                        final String nextId = findCameraIdByLensFacing(targetLensFacing);
+                        final String idToUse = (nextId != null) ? nextId : idToOpen;
                         if (nextId != null && !nextId.equals(idToOpen)) {
-                            Log.d(TAG, "Re-enumerating, found new ID: " + nextId);
+                            Log.d(TAG, "Re-enumerating on retry, found new ID: " + nextId);
                         }
-                        String idToUse = (nextId != null) ? nextId : idToOpen;
                         final String finalId = idToUse;
                         cameraHandler.postDelayed(() -> openWithRetryImpl(finalId, previewSurface, attempt + 1, callback),
-                                OPEN_RETRY_DELAY_MS);
+                                delay);
                     } else {
-                        callback.onError("Camera error: " + error);
+                        callback.onError("Camera error: " + errorName + " (" + error + ")");
                     }
                 }
             }, cameraHandler);
