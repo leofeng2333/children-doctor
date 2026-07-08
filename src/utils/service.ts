@@ -99,8 +99,32 @@ export const saveQuestionAnswers = (answers: Record<string, any>) => {
 //   return res.json()
 // }
 
-export const startAnalysis = () => {
-  return post('/api/ai/analyze')
+/**
+ * POST /api/ai/analyze
+ *
+ * 直接复用 `post()`，由 `request-native.request` 在以下情况 reject：
+ *   - CapacitorHttp 网络/HTTP 抛错（断网、超时、CORS 等）
+ *   - HTTP status !== 200（抛 `HTTP error! status: xxx`）
+ *   - 响应 JSON `code` !== 200（业务失败，reject 整个 data）
+ *
+ * 调用方（`analysis.start` / `CameraCaptureView.startAnalysis`）的 try/catch
+ * 只拿到 `e.message`，无法区分上述三类失败原因。这里包一层为日志补足上下文，
+ * 不改变 reject 行为。
+ */
+export const startAnalysis = async () => {
+  try {
+    return await post('/api/ai/analyze')
+  } catch (e: any) {
+    const status = e?.status ?? e?.response?.status
+    const code = e?.code ?? e?.data?.code
+    const message = e?.message ?? String(e)
+    console.error(
+      `[startAnalysis] 调用 /api/ai/analyze 失败 (HTTP ${status ?? '?'}, code ${code ?? '?'}):`,
+      message,
+      e,
+    )
+    throw e
+  }
 }
 
 export const createSubscriptionTask = (): Promise<{ qrcodeUrl: string; followTaskId: string }> => {

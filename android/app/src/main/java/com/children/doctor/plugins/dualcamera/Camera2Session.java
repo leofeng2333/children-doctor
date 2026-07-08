@@ -365,12 +365,22 @@ public class Camera2Session {
         this.previewSurface = previewSurface;
         this.previewSurfaceTexture = surfaceTexture;
         this.surfaceOwnedBySession = false;
-        this.imageReader = ImageReader.newInstance(
-                captureSize.getWidth(),
-                captureSize.getHeight(),
-                ImageFormat.JPEG,
-                MAX_CAPTURE_BUFFERS
-        );
+        try {
+            this.imageReader = ImageReader.newInstance(
+                    captureSize.getWidth(),
+                    captureSize.getHeight(),
+                    ImageFormat.JPEG,
+                    MAX_CAPTURE_BUFFERS
+            );
+        } catch (IllegalArgumentException | OutOfMemoryError e) {
+            // ImageReader.newInstance 在尺寸非法 / 内存不足时抛 IAE/OOM，
+            // 若不在此处拦截，openWithRetryImpl 仍会跑下去、然后 onOpened 里读
+            // imageReader.getSurface() 触发 NPE 把 Camera2Thread 整个打挂。
+            Log.e(TAG, "open: failed to create ImageReader for size " + captureSize, e);
+            this.imageReader = null;
+            callback.onError("Failed to create ImageReader: " + e.getMessage());
+            return;
+        }
 
         openWithRetryImpl(cameraId, previewSurface, 0, callback);
     }
@@ -515,9 +525,35 @@ public class Camera2Session {
 
     private void createCaptureSession(Callback callback) {
         try {
+            // imageReader 可能在 onOpened 排队期间被 closeCaptureSessionInternal()
+            // 释放（onOpened 在 cameraHandler 跑，close 也 post 到同一 looper，
+            // 谁先执行取决于 post 顺序）。一旦为 null 必须走业务错误回退，
+            // 不能在 onOpened 线程上抛 NPE，否则整个 Camera2Thread-1 会被打挂。
+            if (cameraDevice == null) {
+                Log.w(TAG, "createCaptureSession: cameraDevice is null, aborting");
+                callback.onError("Camera closed before session created");
+                return;
+            }
+            if (imageReader == null) {
+                Log.w(TAG, "createCaptureSession: imageReader is null, aborting");
+                callback.onError("ImageReader released before session created");
+                return;
+            }
+            final Surface readerSurface = imageReader.getSurface();
+            if (readerSurface == null) {
+                Log.w(TAG, "createCaptureSession: imageReader.getSurface() returned null, aborting");
+                callback.onError("ImageReader surface unavailable");
+                return;
+            }
+            if (previewSurface == null) {
+                Log.w(TAG, "createCaptureSession: previewSurface is null, aborting");
+                callback.onError("Preview surface unavailable");
+                return;
+            }
+
             List<Surface> surfaces = new ArrayList<>();
             surfaces.add(previewSurface);
-            surfaces.add(imageReader.getSurface());
+            surfaces.add(readerSurface);
 
             cameraDevice.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
                 @Override
@@ -549,6 +585,16 @@ public class Camera2Session {
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to create capture session", e);
             callback.onError("Failed to create session: " + e.getMessage());
+        } catch (NullPointerException | IllegalStateException e) {
+            // 兜底：cameraDevice / captureSession 在 callback 排队期间被另一线程 close，
+            // 或者 ImageReader 处于已关闭状态。会拿到 NPE/ISE，必须转成业务错误。
+            Log.e(TAG, "Capture session aborted due to concurrent close", e);
+            callback.onError("Camera closed during session create: " + e.getMessage());
+        } catch (RuntimeException e) {
+            // 兜底：任何漏网的运行时异常（IPC 失败、状态机错乱等），
+            // 都不能让 Camera2Thread 整个挂掉。
+            Log.e(TAG, "Unexpected runtime error creating capture session", e);
+            callback.onError("Unexpected session error: " + e.getMessage());
         }
     }
 
@@ -619,12 +665,20 @@ public class Camera2Session {
         previewSurfaceTexture = surfaceTexture;
         previewSurface = new Surface(surfaceTexture);
         surfaceOwnedBySession = true;
-        this.imageReader = ImageReader.newInstance(
-                captureSize.getWidth(),
-                captureSize.getHeight(),
-                ImageFormat.JPEG,
-                MAX_CAPTURE_BUFFERS
-        );
+        try {
+            this.imageReader = ImageReader.newInstance(
+                    captureSize.getWidth(),
+                    captureSize.getHeight(),
+                    ImageFormat.JPEG,
+                    MAX_CAPTURE_BUFFERS
+            );
+        } catch (IllegalArgumentException | OutOfMemoryError e) {
+            // 见 open() 注释：不让 onOpened 跑到 null imageReader 上 NPE。
+            Log.e(TAG, "restartPreviewWithExistingSurface: failed to create ImageReader for size " + captureSize, e);
+            this.imageReader = null;
+            callback.onError("Failed to create ImageReader: " + e.getMessage());
+            return;
+        }
 
         openWithRetryImpl(cameraId, previewSurface, 0, callback);
     }

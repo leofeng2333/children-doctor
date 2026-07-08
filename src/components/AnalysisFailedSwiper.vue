@@ -18,7 +18,9 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const imgSrc = computed(() => props.analysisResult?.aiAnalysis.result.generatedImageUrls[0])
+const imgSrc = computed(
+  () => props.analysisResult?.aiAnalysis?.result?.generatedImageUrls?.[0] ?? '',
+)
 
 const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(() => imgSrc.value, 0.5)
 
