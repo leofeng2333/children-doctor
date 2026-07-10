@@ -111,9 +111,14 @@ body {
 }
 
 .title-after {
-  width: 60.47vw;
+  width: 70.47vw;
   text-align: left;
   margin-top: 8.34vw;
+}
+
+/* NORMAL 分支：副标题文案变长（diagnosisCopy.opening），放开宽度让其自然换行 */
+.title-after--normal {
+  width: 100%;
 }
 
 .title-warning {

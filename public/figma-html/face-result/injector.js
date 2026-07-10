@@ -14,6 +14,12 @@
  *
  * 注：title-warning 是与 Vue 端 DetailAnalysisView.vue 对齐的静态文案，
  *     不再做动态注入（Vue 端也是写死的"啊哦，颌面发育似乎不太妙！"）。
+ *
+ *     但当 categoryCode === 0（NORMAL，正常面容）时，Vue 端会切换到
+ *     "isHealthyFace" 分支，不展示"啊哦..."警告与"坏面容"卡片，
+ *     face-result.html 也要保持一致——把 .title-warning 与 .card2 隐藏。
+ *     这里用 DOM 隐藏（display:none）而不是删除节点，保留 #bad-img 锚点
+ *     防止 image-splitter / setImageElement 报错，并便于 Cypress 断言。
  */
 
 /* ---------------------------------------------------------------------------
@@ -136,10 +142,50 @@ function injectDescription(diagnosisCopy) {
 }
 
 /* ---------------------------------------------------------------------------
+ * 根据诊断编码隐藏/展示 DOM 段落 + 注入 card1 上方副标题
+ *
+ * 仅当 categoryCode === DiagnosisCode.NORMAL (0) 时执行隐藏 title-warning 与 card2，
+ * 并把 title-after 替换为 diagnosisCopy.opening。
+ * 其它编码（含 null/非法值）一律按原状展示"啊哦..."警告与 card2 坏面容卡，
+ * 并保留静态副标题 "但是不用担心，矫正后面容会变成这样！"，与 Vue 端
+ * DetailAnalysisView.vue 的 isHealthyFace 分支判断语义一致。
+ * ------------------------------------------------------------------------ */
+
+/** 非 NORMAL 分支的静态 fallback 副标题（含显式 <br/>） */
+const DEFAULT_TITLE_AFTER_HTML =
+  '但是不用担心，<br />矫正后面容会变成这样！'
+
+function injectLayoutByCategory(data, diagnosisCopy) {
+  const isNormal = data?.categoryCode === 0
+  const titleWarning = document.querySelector('.title-warning')
+  if (titleWarning) {
+    titleWarning.style.display = isNormal ? 'none' : ''
+  }
+  const card2 = document.querySelector('.card.card2')
+  if (card2) {
+    card2.style.display = isNormal ? 'none' : ''
+  }
+
+  const titleAfter = document.getElementById('title-after')
+  if (titleAfter) {
+    if (isNormal && diagnosisCopy?.opening) {
+      // NORMAL：使用诊断文案里的 opening（连续长句，CSS 让其自然换行）
+      titleAfter.textContent = diagnosisCopy.opening
+      titleAfter.classList.add('title-after--normal')
+    } else {
+      // 其它诊断：恢复静态 fallback（保留 <br/>）
+      titleAfter.innerHTML = DEFAULT_TITLE_AFTER_HTML
+      titleAfter.classList.remove('title-after--normal')
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * 对外：注入入口
  * ------------------------------------------------------------------------ */
 
 export async function injectAll(data, diagnosisCopy) {
+  injectLayoutByCategory(data, diagnosisCopy)
   await injectImages(data)
   injectDescription(diagnosisCopy)
 }
