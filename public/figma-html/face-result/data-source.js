@@ -16,18 +16,18 @@
  *   {
  *     data: {
  *       llmAnalysis: { result: { categoryCode: number, ... } },
- *       aiAnalysis:  { result: { generatedImageUrls, predictions: { currentImageUrl, futureImageUrl } } }
+ *       aiAnalysis:  { result: { predictions: { currentImageUrl, futureImageUrl } } }
  *     }
  *   }
  *
  * analysisResult（/api/ai/analyze，Vue store 原样）：
  *   {
  *     llmAnalysis: { result: { categoryCode: number, ... } },
- *     aiAnalysis:  { result: { generatedImageUrls: [...] } }
+ *     aiAnalysis:  { result: { predictions: { futureImageUrl } } }
  *   }
  *
  * 图片处理（统一走 image-splitter 切割）：
- *   - fullImgUrl 优先取 generatedImageUrls[0]，
+ *   - fullImgUrl 优先取 predictions.futureImageUrl，
  *     由 image-splitter 按 50% 切成 badImgUrl / goodImgUrl。
  *   - goodImgUrl / badImgUrl 字段保留，作为外部预切图的覆盖入口
  *     （URL ?data= 调试场景可直接传入）。
@@ -119,7 +119,7 @@ function pickAiResult(raw) {
 /**
  * 归一化 Vue analysisStore.result / verifyData（结构差异已统一处理）：
  *   - llmAnalysis.result.categoryCode → categoryCode
- *   - aiAnalysis.result.generatedImageUrls[0] → fullImgUrl（待切割）
+ *   - aiAnalysis.result.predictions.futureImageUrl → fullImgUrl（待切割）
  */
 function normalize(raw) {
   const llm = pickLlmResult(raw)
@@ -132,7 +132,7 @@ function normalize(raw) {
     diagnosisCopy: null,
     goodImgUrl: '',
     badImgUrl: '',
-    fullImgUrl: ai?.generatedImageUrls?.[0] || '',
+    fullImgUrl: ai?.predictions?.futureImageUrl || '',
   }
 }
 

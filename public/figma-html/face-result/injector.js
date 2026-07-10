@@ -59,10 +59,10 @@ function createParagraph(text) {
  * 图片注入
  *
  * 业务约定（与 DetailAnalysisView.vue + useImageSplit 保持一致）：
- *   - 整张图 generatedImageUrls[0] 经 canvas 50% 切割：
- *       左半 [0, w/2)   = 矫正前（坏面容）→ badImgUrl
- *       右半 [w/2, w)   = 矫正后（好面容）→ goodImgUrl
- *   - 上层数据源可直接传入预切图覆盖切割结果。
+ *   - predictions.futureImageUrl 作为 fullImgUrl（单张"未来面容"预测图），
+ *     传入 image-splitter 后按 50% 切成左/右两半，作为好坏对比图显示在
+ *     face-result.html 的 #bad-img / #good-img。
+ *   - 上层数据源可直接传入预切图覆盖切割结果（goodImgUrl / badImgUrl）。
  * ------------------------------------------------------------------------ */
 
 async function injectImages(data) {

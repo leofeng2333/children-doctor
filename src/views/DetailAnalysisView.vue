@@ -70,9 +70,10 @@ const healthyCopy = computed<DiagnosisCopy>(() => getDiagnosisCopy(0))
  */
 const diagnosisName = computed(() => diagnosisCopy.value.title)
 
-/** 不健康面型路径：后端生成的矫正后预测图，经 split 后用作好坏对比图 */
+/** 不健康面型路径：后端生成的矫正后预测图 URL */
 const aiImageUrl = computed(
-  () => analysisResult.value?.aiAnalysis?.result?.generatedImageUrls?.[0] ?? '',
+  () =>
+    analysisResult.value?.aiAnalysis?.result?.predictions?.futureImageUrl ?? '',
 )
 /**
  * 切割后两半图片的 URL。
