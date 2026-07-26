@@ -6,9 +6,11 @@ import LogoText from '../components/LogoText.vue'
 import IconButton from '../components/IconButton.vue'
 import PasswordDialog from '../components/PasswordDialog.vue'
 import { createSession } from '@/utils/service'
+import { useFlowStore } from '@/stores/flow'
 import { onMounted } from 'vue'
 
 const router = useRouter()
+const flowStore = useFlowStore()
 
 const showPasswordDialog = ref(false)
 
@@ -20,10 +22,10 @@ const goToPrintTest = () => {
   router.push('/print-test')
 }
 
+// 密码验证通过：切换长/短流程（不再跳打印测试页，避免覆盖原调试入口）
 const handlePasswordSuccess = () => {
-  console.log('管理员密码验证通过')
-  // 密码入口同时跳转到打印测试页, 方便快捷验证
-  router.push('/print-test')
+  flowStore.toggle()
+  console.log(`[flow] 已切换为${flowStore.mode === 'long' ? '长' : '短'}流程`)
 }
 
 const handleAdminButtonClick = () => {
@@ -38,8 +40,15 @@ onMounted(async () => {
 
 <template>
   <div class="welcome-container">
-    <!-- 右上角空白按钮 -->
-    <IconButton class="admin-button" @dblclick="handleAdminButtonClick" />
+    <!-- 右上角空白按钮 + 流程模式指示点 -->
+    <div class="admin-area">
+      <IconButton class="admin-button" @dblclick="handleAdminButtonClick" />
+      <span
+        class="flow-indicator"
+        :class="{ 'is-short': flowStore.isShort }"
+        :title="flowStore.isShort ? '当前：短流程' : '当前：长流程'"
+      ></span>
+    </div>
 
     <!-- 顶部口腔科图片 -->
     <div class="top-section">
@@ -125,11 +134,32 @@ onMounted(async () => {
 }
 
 /* 右上角管理员按钮 */
-.admin-button {
+.admin-area {
   position: absolute;
   top: max(20px, env(safe-area-inset-top));
   right: max(20px, env(safe-area-inset-right));
   z-index: 20;
+}
+
+.admin-button {
+  // 由父级 .admin-area 控制定位
+  position: static;
+}
+
+// 流程模式指示点：长流程=绿色圆点，短流程=橙色圆点
+.flow-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2ecc71;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
+.flow-indicator.is-short {
+  background: #ff9900;
 }
 
 .mouth-image img {

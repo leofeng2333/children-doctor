@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
 import { useUserStore } from '@/stores/user'
+import { useFlowStore } from '@/stores/flow'
 
 const router = useRouter()
 
 const userStore = useUserStore()
+const flowStore = useFlowStore()
 
 const phoneError = ref('')
 const nicknameError = ref('')
@@ -61,8 +63,13 @@ const goNext = () => {
   if (!validatePhone(userStore.phone)) {
     return
   }
-  router.push('/location')
   userStore.update(userStore.nickname.trim(), userStore.phone.trim())
+
+  // 长流程：Form → 选地址 → (Diagnose 介绍) → 拍照介绍 → 拍照
+  // 短流程：跳过选地址页，直达拍照介绍
+  const nextRoute = flowStore.isShort ? '/capture-intro' : '/location'
+  console.log(`[flow] ${flowStore.mode} → ${nextRoute}`)
+  router.push(nextRoute)
 }
 </script>
 
