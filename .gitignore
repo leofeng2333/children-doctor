@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+node_modules-target
 .pnpm-store/
 .pnpm/
 .DS_Store
@@ -46,5 +47,8 @@ __screenshots__/
 .capacitorignore
 *.hprof
 *.heap Snapshot
+
+# H5 子项目同步产物（build 时由 h5-oral-checkup/dist/ 自动复制而来）
+/public/h5-oral-checkup/
 
 .vscode

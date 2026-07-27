@@ -7,6 +7,25 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
     />
     <title>口腔-面容变化 · 输入信息</title>
+    <!-- 启动时检测版本：fetch version.json 比对上次部署版本，变了就 force reload -->
+    <script>
+      (function () {
+        try {
+          fetch('./version.json?_=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.json() })
+            .then(function (data) {
+              var last = sessionStorage.getItem('__h5_version')
+              if (last && last !== data.version) {
+                sessionStorage.setItem('__h5_version', data.version)
+                location.reload(true)
+              } else {
+                sessionStorage.setItem('__h5_version', data.version)
+              }
+            })
+            .catch(function () {})
+        } catch (e) {}
+      })()
+    </script>
     <style>
       * {
         margin: 0;

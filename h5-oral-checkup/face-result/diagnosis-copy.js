@@ -3,17 +3,8 @@
  *
  * 与 Vue 项目 `src/utils/diagnosisCopy.ts` 100% 对齐，
  * 保持 8 套文案（编码 0~7）以及骨性版本的备用文案。
- *
- * 数据源：`AI预测面型诊断文案.docx`
- * 每个 DiagnosisCopy 字段：
- *   - title:       章节标题（如 "牙列拥挤"）
- *   - opening:     引导句
- *   - body:        危害描述 + 干预建议（多段）
- *   - careTips:    日常护理小贴士
- *   - habitNote:   对应不良口腔习惯（无则空串）
  */
 
-/** 后端返回的诊断编码枚举（数值与 Vue 端 DiagnosisCode 保持一致） */
 export const DiagnosisCode = Object.freeze({
   NORMAL: 0,
   ASYMMETRY: 1,
@@ -25,17 +16,6 @@ export const DiagnosisCode = Object.freeze({
   SPACING: 7,
 })
 
-/**
- * 编码 -> 诊断文案
- *   0 NORMAL              正常面容
- *   1 ASYMMETRY           偏颌/大小脸
- *   2 ANTERIOR_CROSSBITE  反颌（地包天）
- *   3 OPEN_BITE           开颌
- *   4 GUMMY_SMILE         露龈笑
- *   5 UPPER_PROTRUSION    牙齿前突（龅牙，牙性，儿童期更常见）
- *   6 CROWDING            牙列拥挤
- *   7 SPACING             牙列稀疏
- */
 export const DIAGNOSIS_COPY_MAP = {
   [DiagnosisCode.NORMAL]: {
     title: '正常面容',
@@ -92,7 +72,6 @@ export const DIAGNOSIS_COPY_MAP = {
     habitNote: '',
   },
   [DiagnosisCode.UPPER_PROTRUSION]: {
-    // 编码 5 默认走牙性版本（儿童期更常见）
     title: '牙齿前突（龅牙）',
     opening: '宝贝可能有点牙齿前突（龅牙）哦。',
     body: [
@@ -127,7 +106,6 @@ export const DIAGNOSIS_COPY_MAP = {
   },
 }
 
-/** 编码 5 的骨性版本（上颌前突/下颌后缩），按需取用 */
 export const UPPER_PROTRUSION_BONE = {
   title: '上颌前突/下颌后缩',
   opening: '宝贝存在上颌前突 / 下颌后缩情况哦～',
@@ -140,10 +118,6 @@ export const UPPER_PROTRUSION_BONE = {
   habitNote: '对应不良口腔习惯：张口呼吸',
 }
 
-/**
- * 归一化任意 categoryCode 到 0~7 范围内的合法整数。
- * 非法/缺失值 → NORMAL。
- */
 function normalizeCode(rawCode) {
   if (typeof rawCode === 'number' && Number.isInteger(rawCode)) {
     return rawCode
@@ -155,21 +129,11 @@ function normalizeCode(rawCode) {
   return null
 }
 
-/**
- * 根据诊断编码获取文案。
- * 未知编码（null/undefined 或超出范围）回退到 NORMAL。
- * 对齐 Vue getDiagnosisCopy(code)。
- */
 export function getDiagnosisCopy(code) {
   if (code == null) return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
   return DIAGNOSIS_COPY_MAP[code] ?? DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
 }
 
-/**
- * 从 LLM 分析结果中获取诊断文案。
- * 仅信任 `categoryCode`；非法/缺失 → 回退到 NORMAL。兼容字符串数字。
- * 对齐 Vue getDiagnosisCopyFromLLMResult(llmResult)。
- */
 export function getDiagnosisCopyFromLLMResult(llmResult) {
   if (!llmResult || typeof llmResult !== 'object') {
     return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
@@ -177,10 +141,6 @@ export function getDiagnosisCopyFromLLMResult(llmResult) {
   return getDiagnosisCopy(normalizeCode(llmResult.categoryCode))
 }
 
-/**
- * 从 `habitNote` 中去掉 "对应不良口腔习惯：" 前缀。
- * 用于在标题里简短展示不良习惯列表。
- */
 export function getHabitShort(habitNote) {
   return (habitNote || '').replace(/^对应不良口腔习惯[：:]\s*/, '').trim()
 }

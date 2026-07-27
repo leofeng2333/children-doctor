@@ -1,0 +1,13 @@
+{
+  "name": "h5-oral-checkup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "儿童口腔-面容变化 H5 独立子项目（输入手机号 + AI 结果页）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "comment": "本地安装说明：因 npmmirror 镜像源 ban 了部分 postcss/nanoid/vite 版本，H5 子项目直接复用主项目的 node_modules/vite（无需重新安装依赖）。新机器首次构建请先在外层跑 pnpm install。"
+}

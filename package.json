@@ -12,7 +12,10 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
-    "cap:sync": "pnpm build && npx cap sync",
+    "h5:build": "pnpm --dir h5-oral-checkup build",
+    "h5:sync": "pnpm h5:build && rm -rf public/h5-oral-checkup && mkdir -p public/h5-oral-checkup && cp -r h5-oral-checkup/dist/. public/h5-oral-checkup/",
+    "build": "pnpm h5:sync && vite build",
+    "cap:sync": "pnpm h5:sync && pnpm build && npx cap sync",
     "cap:open": "npx cap open android"
   },
   "dependencies": {

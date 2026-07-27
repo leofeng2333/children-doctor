@@ -6,59 +6,62 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
     />
+    <!-- vite 构建会自动给引用的 JS/CSS 加 content-hash；
+         HTML 本身被浏览器强缓存，业务代码变了文件名就变，浏览器自然拉到新版本 -->
     <title>口腔-面容变化 · 结果</title>
+    <!-- 启动时检测版本：fetch version.json 比对上次部署版本，变了就 force reload -->
+    <script>
+      (function () {
+        try {
+          fetch('./version.json?_=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.json() })
+            .then(function (data) {
+              var last = sessionStorage.getItem('__h5_version')
+              if (last && last !== data.version) {
+                sessionStorage.setItem('__h5_version', data.version)
+                location.reload(true)
+              } else {
+                sessionStorage.setItem('__h5_version', data.version)
+              }
+            })
+            .catch(function () {})
+        } catch (e) {}
+      })()
+    </script>
     <link rel="stylesheet" href="./face-result.css" />
   </head>
   <body>
     <div class="page">
-      <!-- 背景装饰：3 个粉色块（与 input.html 一致） -->
       <div class="bg-deco d1"></div>
       <div class="bg-deco d2"></div>
       <div class="bg-deco d3"></div>
 
       <div class="content">
-        <!-- 标题1：与 DetailAnalysisView.vue 保持一致
-             "啊哦，颌面发育似乎不太妙！" -->
         <h2 class="title-warning">
           啊哦，<br />
           颌面发育似乎不太妙！
         </h2>
 
-        <!-- 卡片A：当前的样子（😟 担心面容，矫正前 = "坏"图） -->
         <div class="card card2">
           <div class="card-base">
             <div class="card-img-wrap">
-              <!-- 注入锚点：id="bad-img" 对应矫正前的"坏"面容 -->
               <img class="card-img" id="bad-img" alt="" />
             </div>
           </div>
           <div class="sticker"></div>
         </div>
 
-        <!-- 标题2：NORMAL 时由 injector 注入 diagnosisCopy.opening；
-             其它诊断编码保留静态 fallback（与 Vue DetailAnalysisView 不健康分支语义一致） -->
         <h1 class="title-after" id="title-after"></h1>
 
-        <!-- 卡片B：改正后的样子（😊 笑脸面容，矫正后 = "好"图） -->
         <div class="card card1">
           <div class="card-base">
             <div class="card-img-wrap">
-              <!-- 注入锚点：id="good-img" 对应矫正后的"好"面容 -->
               <img class="card-img" id="good-img" alt="" />
             </div>
           </div>
           <div class="sticker"></div>
         </div>
 
-        <!-- 诊断文案卡
-             段内锚点（行内 span / 容器）：
-               #desc-title    - 章节标题
-               #desc-opening  - 引导句（紧随标题）
-               #desc-body     - 正文多段（容器，脚本会清空后注入多行）
-               #desc-care     - 日常护理小贴士
-               #desc-habit    - 不良口腔习惯提示
-             原占位文本保留作为 fallback（数据缺失时不显示空卡）。
-        -->
         <div class="description">
           <div class="description-icon"></div>
           <div id="description-body">
@@ -69,7 +72,6 @@
           </div>
         </div>
 
-        <!-- 底部：Logo + 保存按钮 -->
         <div class="footer">
           <button class="save-btn" id="save-btn">保 存 到 手 机</button>
           <div class="logo">logo</div>
