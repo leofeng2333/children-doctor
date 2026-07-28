@@ -15,6 +15,11 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+        // 显式声明 ABI，避免 AGP 用“默认全集”导致产物里漏掉手机对应的 ABI（arm64-v8a）。
+        // 包含 arm64-v8a：覆盖现代手机；包含 armeabi-v7a：覆盖 32 位旧机。
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
     }
     buildTypes {
         release {
