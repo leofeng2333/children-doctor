@@ -8,7 +8,7 @@ import { defineConfig } from 'vite'
  * 缺哪个不影响其它入口的构建（容错友好）。
  */
 const ENTRY_CANDIDATES = [
-  { key: 'main', file: 'index.html' },
+  { key: 'input', file: 'input.html' },
   { key: 'face-result', file: 'face-result.html' },
 ]
 
@@ -58,6 +58,7 @@ function emitVersionJsonPlugin() {
 
 export default defineConfig({
   root: '.',
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,

@@ -11,10 +11,12 @@
     <title>口腔-面容变化 · 结果</title>
     <!-- 启动时检测版本：fetch version.json 比对上次部署版本，变了就 force reload -->
     <script>
-      (function () {
+      ;(function () {
         try {
           fetch('./version.json?_=' + Date.now(), { cache: 'no-store' })
-            .then(function (r) { return r.json() })
+            .then(function (r) {
+              return r.json()
+            })
             .then(function (data) {
               var last = sessionStorage.getItem('__h5_version')
               if (last && last !== data.version) {
@@ -28,6 +30,7 @@
         } catch (e) {}
       })()
     </script>
+    <link rel="stylesheet" href="./base.css" />
     <link rel="stylesheet" href="./face-result.css" />
   </head>
   <body>

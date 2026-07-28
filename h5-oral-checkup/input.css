@@ -1,0 +1,183 @@
+/* 口腔-面容变化 · 输入页 样式
+ * 公共样式见 ./base.css
+ * 这里只放输入页特有样式。
+ */
+
+.content {
+  padding: 0 8.55vw;
+  padding-top: 52.16vw;
+}
+
+/* 标题 */
+.title {
+  font-size: 5.95vw;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-color);
+  margin-bottom: 9.5vw;
+}
+
+/* 头部装饰图（input-icon 位） */
+.header-illu {
+  position: absolute;
+  top: 25.4vw;
+  left: 5.58vw;
+  width: 35.44vw;
+  height: 30.6vw;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-illu-icon {
+  width: 85%;
+  height: 80%;
+  background-image: url('./html-icon.png');
+  background-repeat: no-repeat;
+  background-size: 700% 400%;
+  background-position: 80% 45%;
+}
+
+/* 表单 */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 3vw;
+}
+
+.field {
+  position: relative;
+  width: 83.02vw;
+  height: 8.92vw;
+  background: #ffffff;
+  border-radius: 4.46vw;
+  display: flex;
+  align-items: center;
+  padding: 0 4.46vw;
+  color: #d9d9d9;
+  font-size: 2.98vw;
+  font-weight: 700;
+}
+
+.field input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+}
+
+.field input::placeholder {
+  color: #d9d9d9;
+}
+
+/* 第二行：验证码输入 + 获取按钮 */
+.row-2 {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  position: relative;
+}
+
+.row-2 .code-field {
+  flex: 1 1 0;
+  min-width: 0; /* 让 flex shrink 真生效，否则 <input> 的 intrinsic min-width 会把容器撑超 */
+  height: 8.92vw;
+  background: #ffffff;
+  border-radius: 4.46vw;
+  display: flex;
+  align-items: center;
+  padding: 0 4.46vw;
+  color: #d9d9d9;
+  font-size: 2.98vw;
+  font-weight: 700;
+}
+
+.row-2 .code-field input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+}
+
+.row-2 .code-field input::placeholder {
+  color: #d9d9d9;
+}
+
+.row-2 .get-btn {
+  flex: 0 0 auto;
+  /* 设计稿 807 → 100vw, 24px ≈ 2.97vw, 12px ≈ 1.49vw */
+  height: 8.92vw;
+  padding: 0 4vw;
+  margin-right: 3vw;
+  background: #ffe361;
+  border: none;
+  border-radius: 4.46vw;
+  color: #000000;
+  font-size: 2.98vw;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.row-2 .get-btn.sending {
+  padding: 0 1.8vw;
+  background: #d9d9d9;
+  cursor: wait;
+}
+
+.row-2 .get-btn:active {
+  transform: scale(0.98);
+}
+
+.row-2 .get-btn:disabled {
+  background: #d9d9d9;
+  cursor: not-allowed;
+}
+
+/* 分隔线 */
+.divider {
+  width: 82.28vw;
+  height: 0.25vw;
+  background: #ffffff;
+  margin: 2.73vw 0;
+}
+
+/* 查看照片按钮 */
+.view-photos {
+  width: 83.02vw;
+  height: 8.92vw;
+  background: #ffffff;
+  border: none;
+  border-radius: 4.46vw;
+  color: #000000;
+  font-size: 2.98vw;
+  font-weight: 700;
+  letter-spacing: 0.2vw;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.view-photos:active {
+  transform: scale(0.98);
+}
+
+/* 响应式微调 */
+@media (max-aspect-ratio: 9 / 16) {
+  .title {
+    font-size: 6.5vw;
+  }
+}

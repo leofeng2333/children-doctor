@@ -1,87 +1,11 @@
 /* 口腔-面容变化 · 结果页 样式
-   移动端 H5 单页，基准设计稿 807px；通过 vw 自适应屏幕宽度。
-   与 input.html 共享设计语言（背景、按钮、字体）。 */
-
-:root {
-  --page-w: 807;
-  --unit: calc(100vw / var(--page-w));
-  --page-bg: #f2684e;
-  --deco-bg: #f2a4a2;
-  --text-color: #ffffff;
-  --card-bg: #eefaff;
-  --placeholder-bg: #e9e9e9;
-  --accent-red: #c0392b;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html,
-body {
-  width: 100%;
-}
-
-body {
-  background: var(--page-bg);
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'PingFang SC',
-    'Microsoft YaHei',
-    sans-serif;
-  min-height: 100dvh;
-  overflow-x: hidden;
-  color: var(--text-color);
-}
-
-.page {
-  position: relative;
-  width: 100vw;
-  min-height: 100dvh;
-  padding-top: max(env(safe-area-inset-top), 0px);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 6vw);
-  overflow: hidden;
-}
-
-.bg-deco {
-  position: absolute;
-  pointer-events: none;
-  background: var(--deco-bg);
-  border-radius: 50%;
-  z-index: 0;
-}
-
-.bg-deco.d1 {
-  top: calc(-3.96 * var(--unit));
-  left: calc(45.23 * var(--unit));
-  width: calc(66.6 * var(--unit));
-  height: calc(71.25 * var(--unit));
-  border-radius: 50% 50% 45% 55% / 60% 40% 60% 40%;
-}
-
-.bg-deco.d2 {
-  top: calc(153.41 * var(--unit));
-  left: calc(-32.42 * var(--unit));
-  width: calc(114.72 * var(--unit));
-  height: calc(120.5 * var(--unit));
-  border-radius: 60% 40% 55% 45% / 50% 50% 50% 50%;
-}
-
-.bg-deco.d3 {
-  top: calc(296.65 * var(--unit));
-  left: calc(-1.74 * var(--unit));
-  width: calc(145.57 * var(--unit));
-  height: calc(144.7 * var(--unit));
-  border-radius: 40% 60% 50% 50% / 50% 50% 60% 40%;
-}
+ * 公共样式见 ./base.css
+ * 这里只放结果页特有样式。
+ *
+ * 移动端 H5 单页，基准设计稿 807px；通过 vw 自适应屏幕宽度。
+ */
 
 .content {
-  position: relative;
-  z-index: 1;
   padding: 0 7.68vw;
 }
 
@@ -124,7 +48,7 @@ body {
   left: 0;
   width: 71.35vw;
   height: 90.08vw;
-  background: var(--card-bg);
+  background: #eefaff;
   border-radius: 4.46vw;
   box-shadow: 0 1.8vw 5.4vw rgba(0, 0, 0, 0.08);
   overflow: hidden;
@@ -138,7 +62,7 @@ body {
   width: 64.54vw;
   height: 81.47vw;
   border-radius: 2.23vw;
-  background: var(--placeholder-bg);
+  background: #e9e9e9;
   overflow: hidden;
 }
 
@@ -216,7 +140,7 @@ body {
 }
 
 .description #desc-habit {
-  color: var(--accent-red);
+  color: #c0392b;
   font-weight: 600;
   margin-top: 1vw;
 }

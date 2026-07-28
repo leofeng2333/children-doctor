@@ -9,9 +9,12 @@ children-doctor/                  ← Vue + Capacitor 主项目（iOS/Android Ap
 ├── src/                          ← Vue 源码
 ├── android/ ios/                 ← Capacitor 原生工程
 └── h5-oral-checkup/              ← 本目录：独立的 H5 子项目
-    ├── index.html                ← 入口：输入手机号 + 验证码
+    ├── input.html                 ← 入口：输入手机号 + 验证码
     ├── face-result.html          ← 入口：AI 结果展示
-    ├── face-result/              ← ES Module：main.js / data-source.js ...
+    ├── input/                     ← ES Module：main.js / api.js / validation.js / countdown.js / toast.js
+    ├── face-result/              ← ES Module：main.js / data-source.js / diagnosis-copy.js / injector.js / image-splitter.js
+    ├── base.css                   ← 两页共享的公共样式
+    ├── input.css                  ← input 页特有样式
     ├── face-result.css
     ├── package.json              ← 独立依赖（只装 vite）
     ├── vite.config.ts
@@ -42,10 +45,13 @@ pnpm build          # 产出到 dist/
 
 ```
 dist/
-├── index.html                  ← 业务入口（强缓存）
+├── input.html                   ← 业务入口（强缓存）
 ├── face-result.html
-├── face-result-[hash].css      ← content-hash 缓存
-├── face-result-[hash].js       ← content-hash 缓存
+├── base-[hash].css              ← content-hash 缓存（两页共享）
+├── input-[hash].css             ← content-hash 缓存（input 页特有）
+├── face-result-[hash].css       ← content-hash 缓存（结果页特有）
+├── input-[hash].js              ← content-hash 缓存（input 页 JS）
+├── face-result-[hash].js        ← content-hash 缓存（结果页 JS）
 ├── assets/*.js                 ← 依赖模块（带 hash）
 ├── html-icon.png
 └── version.json                ← 版本号（前端启动时检测）
@@ -73,3 +79,19 @@ pnpm build
 rm -rf ../public/h5-oral-checkup/*
 cp -r dist/* ../public/h5-oral-checkup/
 ```
+
+## 打包发布产物
+
+需要把 dist 打成一个 zip 部署到 CDN / 后端资源站时，跑主项目的 `h5:zip`：
+
+```bash
+cd /path/to/children-doctor
+pnpm h5:zip
+```
+
+等价于 `pnpm h5:sync && node h5-oral-checkup/scripts/zip-dist.mjs`，输出位置：
+`public/release/h5-oral-checkup-<version>.zip`，其中 `<version>` 取自 `dist/version.json` 的 `version` 字段。
+
+- 不带时间戳；业务代码变了 → `version` 自动变 → 包名变 → 不会出现"重名但内容不一样"的歧义
+- 同 version 重跑是**原地覆盖**（幂等），不会累积同名文件
+- Windows 上脚本会走 PowerShell 的 `Compress-Archive`
