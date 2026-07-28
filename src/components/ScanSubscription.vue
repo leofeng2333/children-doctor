@@ -31,26 +31,26 @@ const printButtonLabel = computed(() => {
 
 let cleanup: (() => void) | undefined
 
-// onMounted(async () => {
-//   console.log('[ScanSubscription] onMounted')
-//   cleanup = useSubscriptionScan((state) => {
-//     console.log('[ScanSubscription] state updated:', state)
-//     if (state.isSubscribed) {
-//       hadSubscription.value = true
-//     }
-//     if (state.qrcodeUrl) {
-//       qrcodeUrl.value = state.qrcodeUrl
-//     }
-//   })
+onMounted(async () => {
+  console.log('[ScanSubscription] onMounted')
+  cleanup = useSubscriptionScan((state) => {
+    console.log('[ScanSubscription] state updated:', state)
+    if (state.isSubscribed) {
+      hadSubscription.value = true
+    }
+    if (state.qrcodeUrl) {
+      qrcodeUrl.value = state.qrcodeUrl
+    }
+  })
 
-//   console.log('[ScanSubscription] calling init...')
-//   await useSubscriptionScan()
-//   console.log('[ScanSubscription] init done')
-// })
+  console.log('[ScanSubscription] calling init...')
+  await useSubscriptionScan()
+  console.log('[ScanSubscription] init done')
+})
 
-// onUnmounted(() => {
-//   cleanup?.()
-// })
+onUnmounted(() => {
+  cleanup?.()
+})
 
 async function onFinish() {
   if (isFinishing.value) return
