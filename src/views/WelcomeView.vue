@@ -26,6 +26,8 @@ const goToPrintTest = () => {
 const handlePasswordSuccess = () => {
   flowStore.toggle()
   console.log(`[flow] 已切换为${flowStore.mode === 'long' ? '长' : '短'}流程`)
+  // 切完关闭弹窗，避免用户停留在已无意义的面板上
+  showPasswordDialog.value = false
 }
 
 const handleAdminButtonClick = () => {
