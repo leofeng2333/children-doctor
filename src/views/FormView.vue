@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Toast } from '@capacitor/toast'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '@/components/LogoText.vue'
 import { useUserStore } from '@/stores/user'
 import { useFlowStore } from '@/stores/flow'
+import { saveUserInfo } from '@/utils/service'
 
 const router = useRouter()
 
@@ -13,6 +15,7 @@ const flowStore = useFlowStore()
 
 const phoneError = ref('')
 const nicknameError = ref('')
+const btnLoading = ref(false)
 
 const validateNickname = (value: string) => {
   if (!value.trim()) {
@@ -56,7 +59,7 @@ watch(
   },
 )
 
-const goNext = () => {
+const goNext = async () => {
   if (!validateNickname(userStore.nickname)) {
     return
   }
@@ -66,10 +69,33 @@ const goNext = () => {
   userStore.update(userStore.nickname.trim(), userStore.phone.trim())
 
   // 长流程：Form → 选地址 → (Diagnose 介绍) → 拍照介绍 → 拍照
-  // 短流程：跳过选地址页，直达拍照介绍
-  const nextRoute = flowStore.isShort ? '/capture-intro' : '/location'
-  console.log(`[flow] ${flowStore.mode} → ${nextRoute}`)
-  router.push(nextRoute)
+  // 短流程：跳过选地址页，直达拍照介绍。这里需要先保存用户信息到后端，
+  //        否则后续 /api/ai/analyze 拿不到 nickname / phone。
+  if (flowStore.isShort) {
+    const params: Record<string, string> = {
+      nickname: userStore.nickname.trim(),
+      phone: userStore.phone.trim(),
+      province: '',
+      city: '',
+      district: '',
+    }
+    btnLoading.value = true
+    try {
+      await saveUserInfo(params)
+      router.push('/capture-intro')
+    } catch (e) {
+      console.error('[form] short-flow saveUserInfo failed:', e)
+      Toast.show({
+        text: '保存失败，请重试',
+        position: 'center',
+      })
+    } finally {
+      btnLoading.value = false
+    }
+    return
+  }
+
+  router.push('/location')
 }
 </script>
 
@@ -113,7 +139,7 @@ const goNext = () => {
     <!-- 按钮 -->
     <div class="bottom-section-buttons">
       <!-- 按钮 -->
-      <PrimaryButton text="下一步" :disabled="btnDisabled" @click="goNext" />
+      <PrimaryButton text="下一步" :disabled="btnDisabled" :loading="btnLoading" @click="goNext" />
 
       <!-- Logo -->
       <LogoText class="logo" />
