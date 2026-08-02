@@ -181,3 +181,36 @@
     font-size: 6.5vw;
   }
 }
+
+/* 底部 logo 区 (跟 LogoText.vue 视觉一致) */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8vw;
+  background-color: #fff;
+  /* 用负 margin 让 footer 顶到屏底、左右贴屏边，再在内部 padding 还回来 */
+  margin-left: calc(-1 * 8.55vw);
+  margin-right: calc(-1 * 8.55vw);
+  margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
+  padding: 10px 8.55vw calc(env(safe-area-inset-bottom) + 6vw);
+}
+
+.logo {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
+}
+
+.logo-left,
+.logo-right {
+  height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
+  width: auto;
+  display: block;
+}
+
+.logo-left {
+  margin-right: 4vw;
+}

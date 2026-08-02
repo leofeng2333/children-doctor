@@ -51,6 +51,13 @@ __screenshots__/
 # H5 子项目同步产物（build 时由 h5-oral-checkup/dist/ 自动复制而来）
 /public/h5-oral-checkup/
 
+# H5 子项目打包产物（zip-dist.mjs 输出到此处，不入库）
+/public/release/
+
+# 同事本地打包/调试产物（不入库）
+/public/result-review.zip
+/public/result-review/
+
 # HiTi USB 打印机 SDK 解压产物（外部 RAR 包解开后的参考工程，不进版本控制）
 /Android_Rolltype_UsbLinkSdk_Release/
 /Android_Rolltype_UsbLinkSdk_Release.rar

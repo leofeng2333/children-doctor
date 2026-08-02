@@ -50,6 +50,8 @@ body {
   padding-top: max(env(safe-area-inset-top), 0px);
   padding-bottom: calc(env(safe-area-inset-bottom) + 6vw);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 背景装饰: 3 个粉色块，模拟 Figma 的 Vector 5/6/7 */
@@ -89,6 +91,7 @@ body {
 .content {
   position: relative;
   z-index: 1;
+  flex: 1 1 auto; /* 让 .content 占满 .page 的剩余空间，把 footer 顶到屏底 */
 }
 
 /* Toast 通用浮层（input 页用到，face-result 也可复用） */
