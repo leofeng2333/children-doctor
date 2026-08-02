@@ -62,4 +62,8 @@ __screenshots__/
 /Android_Rolltype_UsbLinkSdk_Release/
 /Android_Rolltype_UsbLinkSdk_Release.rar
 
+# 视微元 SWY-3566/3568 系统签名包（项目根解压出 yf356x_android11_system.jks 后即可丢，私钥不入库）
+/YF-3566_3568系统签名文件_*.rar
+/YF-3566_3568系统签名文件_*/
+
 .vscode
