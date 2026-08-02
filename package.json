@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm h5:sync && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:*",
@@ -15,7 +15,8 @@
     "h5:build": "pnpm --dir h5-oral-checkup build",
     "h5:sync": "pnpm h5:build && rm -rf public/h5-oral-checkup && mkdir -p public/h5-oral-checkup && cp -r h5-oral-checkup/dist/. public/h5-oral-checkup/",
     "h5:zip": "pnpm h5:sync && node h5-oral-checkup/scripts/zip-dist.mjs",
-    "cap:sync": "pnpm h5:sync && pnpm build && npx cap sync",
+    "cap:sync": "pnpm build && npx cap sync",
+    "cap:full": "pnpm h5:sync && pnpm cap:sync",
     "cap:open": "npx cap open android"
   },
   "dependencies": {

@@ -1,0 +1,33 @@
+import { WebPlugin } from '@capacitor/core'
+import type { HiTiPrinterPlugin, HiTiResult } from './definitions'
+
+/**
+ * Web fallback for {@link HiTiPrinterPlugin}. The HiTi SDK only runs on a
+ * connected HiTi USB photo printer (Android device with USB-Host + HiTi
+ * firmware), so the web fallback always reports "not available" with a
+ * recognizable error string. The caller in {@code utils/print.ts} catches
+ * this and auto-falls-back to {@code @capgo/capacitor-printer} (which works
+ * on the system PrintManager).
+ */
+export class HiTiPrinterWeb extends WebPlugin implements HiTiPrinterPlugin {
+  private unavailable(): Promise<HiTiResult<never>> {
+    return Promise.resolve({
+      ok: false,
+      error: 'HiTiPrinter is only available on Android with a connected HiTi USB photo printer.',
+    })
+  }
+
+  startService(): Promise<HiTiResult<never>> { return this.unavailable() }
+  stopService(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getPrinterStatus(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getModelName(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getSerialNumber(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getFirmwareVersion(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getRibbonInfo(): Promise<HiTiResult<never>> { return this.unavailable() }
+  getPrintCount(): Promise<HiTiResult<never>> { return this.unavailable() }
+  resetPrinter(): Promise<HiTiResult<never>> { return this.unavailable() }
+  resumeJob(): Promise<HiTiResult<never>> { return this.unavailable() }
+  ejectPaperJam(): Promise<HiTiResult<never>> { return this.unavailable() }
+  printPhoto(): Promise<HiTiResult<never>> { return this.unavailable() }
+  printPhotoBase64(): Promise<HiTiResult<never>> { return this.unavailable() }
+}

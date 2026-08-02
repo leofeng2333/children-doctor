@@ -1,12 +1,14 @@
 package com.children.doctor;
 
 import com.children.doctor.plugins.dualcamera.DualCameraPlugin;
+import com.children.doctor.plugins.hitiprinter.HiTiPrinterPlugin;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         registerPlugin(DualCameraPlugin.class);
+        registerPlugin(HiTiPrinterPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

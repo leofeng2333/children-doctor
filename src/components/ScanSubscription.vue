@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSubscriptionScan } from '@/composables/useSubscriptionScan'
 import { DualCamera } from '@/plugins/dual-camera'
-import { printPhotoWithQrcode } from '@/utils/print'
+import { printPhoto } from '@/utils/print'
 
 interface Props {
   /** 主图 URL（不健康面型路径下：右半图矫正后面容；健康面型路径下：analysis-success.png） */
@@ -86,7 +86,9 @@ async function onPrint(goodImgUrl: string) {
       'qrcode=',
       finalQrcodeUrl || '(empty)',
     )
-    await printPhotoWithQrcode({
+    // 默认走 HiTi 专用 USB 照片打印机；HiTi 不可用时由 printPhoto 内部
+    // 自动降级到 @capgo/capacitor-printer 系统打印对话框（含二维码排版）。
+    await printPhoto({
       goodImgUrl,
       qrcodeUrl: finalQrcodeUrl,
       jobName: '宝贝照片',

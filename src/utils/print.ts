@@ -1,6 +1,7 @@
 import { Printer } from '@capgo/capacitor-printer'
 import { Capacitor } from '@capacitor/core'
 import { DualCamera } from '@/plugins/dual-camera'
+import { HiTiPrinter } from '@/plugins/hiti-printer'
 
 export interface PrintOptions {
   /** 主图 URL（good-img / 静态 success 图） */
@@ -230,4 +231,78 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
     name: jobName,
     html,
   })
+}
+
+/**
+ * HiTi 专用：把 6 寸照片直接送进 HiTi USB 打印机。
+ *
+ * 与 {@link printPhotoWithQrcode} 的关键差异：
+ * - 不走 WebView / PrintManager，直接用 SDK 协议发到 USB
+ * - 不渲染 HTML 模板，HiTi 期望的是裸 JPEG + PaperSize
+ * - 二维码被丢弃（HiTi 协议本身不支持 HTML 排版）
+ *
+ * @throws 当 SDK 不可用 / 打印机未连接 / 发送失败时，抛 Error
+ */
+export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: number }): Promise<void> {
+  if (!opts.goodImgUrl) throw new Error('goodImgUrl is required')
+
+  // 取 base64（dataURL → base64）。HiTi 路径是独立调用，复用
+  // resolveImageAsDataUrl 的同源/跨域处理逻辑避免重复。
+  const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
+  const comma = resolved.indexOf(',')
+  const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
+  if (!base64) throw new Error('goodImgUrl 解析为空')
+
+  // 1) 起 service。HiTi SDK 要求所有 USB op 之前必须先 StartService,
+  // 否则 USB_CHECK_PRINTER_STATUS 之类直接返回 "Service is not start"。
+  const startRes = await HiTiPrinter.startService()
+  if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
+
+  // 2) 探测打印机是否就绪
+  const statusRes = await HiTiPrinter.getPrinterStatus()
+  if (!statusRes.ok) {
+    throw new Error(`HiTi 打印机不可用：${statusRes.error}`)
+  }
+  // SDK 返回 null 表示"无 status 数据"，但不一定是错；放过继续打。
+  if (statusRes.data && statusRes.data.statusValue === 0x00000080) {
+    throw new Error('HiTi 打印机未连接或未开机（status=0x00000080）')
+  }
+
+  // 3) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
+  const printRes = await HiTiPrinter.printPhotoBase64({
+    base64,
+    paperType: opts.paperType ?? 2,
+  })
+  if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
+}
+
+/**
+ * 智能分发入口：默认走 HiTi（专用 USB 照片打印机），失败/不可用时自动降级到
+ * 系统 PrintManager（@capgo/capacitor-printer）。
+ *
+ * 用户也可通过 {@link PrintEngine} 显式选择引擎，绕过自动降级。
+ */
+export type PrintEngine = 'auto' | 'hiti' | 'system'
+
+export async function printPhoto(opts: PrintOptions & { engine?: PrintEngine; paperType?: number }): Promise<void> {
+  const engine: PrintEngine = opts.engine ?? 'auto'
+
+  if (engine === 'system') {
+    await printPhotoWithQrcode(opts)
+    return
+  }
+
+  if (engine === 'hiti') {
+    await printPhotoWithHiTi(opts)
+    return
+  }
+
+  // auto：先 HiTi，失败回退系统打印
+  try {
+    await printPhotoWithHiTi(opts)
+  } catch (hitiErr) {
+    const msg = hitiErr instanceof Error ? hitiErr.message : String(hitiErr)
+    console.warn('[print] HiTi 不可用，自动降级到系统打印：', msg)
+    throw new Error(`[DEBUG] HiTi failed: ${msg}`)  // DEBUG: 临时暴露真实错误
+  }
 }
