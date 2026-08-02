@@ -32,11 +32,7 @@ const goToCapture = () => {
             <div class="corner top-right"></div>
             <div class="corner bottom-left"></div>
             <div class="corner bottom-right"></div>
-            <img
-              src="@/assets/images/front-view-sample-3aceb1.png"
-              alt="正视图示例"
-              class="sample-image"
-            />
+            <img src="@/assets/images/capture-sample-left.png" alt="正视图示例" class="sample-image" />
           </div>
           <span class="sample-label">正视图</span>
         </div>
@@ -48,11 +44,7 @@ const goToCapture = () => {
             <div class="corner top-right"></div>
             <div class="corner bottom-left"></div>
             <div class="corner bottom-right"></div>
-            <img
-              src="@/assets/images/side-view-sample-7b1ece.png"
-              alt="右侧视图示例"
-              class="sample-image"
-            />
+            <img src="@/assets/images/capture-sample-right.png" alt="右侧视图示例" class="sample-image" />
           </div>
           <span class="sample-label">右侧视图</span>
         </div>
@@ -154,7 +146,7 @@ const goToCapture = () => {
   position: absolute;
   width: 48px;
   height: 48px;
-  border: 2px solid #bcbcbc;
+  border: 2px solid #FF9900;
 
   &.top-left {
     top: 0;
