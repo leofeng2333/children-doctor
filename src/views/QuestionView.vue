@@ -213,7 +213,7 @@ const goNext = async () => {
   justify-content: center;
   padding: 0;
   border: none;
-  background: #d9d9d9;
+  background: #FFE361;
   border-radius: 73.5px;
   cursor: pointer;
   transition: all 0.2s ease;

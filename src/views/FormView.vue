@@ -112,26 +112,15 @@ const goNext = async () => {
       <!-- 名字输入 -->
       <div class="input-group">
         <label class="input-label">我该怎么称呼你呢？</label>
-        <input
-          v-model="userStore.nickname"
-          type="text"
-          :maxlength="20"
-          class="input-field"
-          :class="{ 'input-field-error': nicknameError }"
-          placeholder="请输入用户全名/昵称"
-        />
+        <input v-model="userStore.nickname" type="text" :maxlength="20" class="input-field"
+          :class="{ 'input-field-error': nicknameError }" placeholder="请输入用户全名/昵称" />
         <p v-if="nicknameError" class="error-text">{{ nicknameError }}</p>
       </div>
       <!-- 电话输入 -->
       <div class="input-group">
         <label class="input-label">你的联系方式？</label>
-        <input
-          v-model="userStore.phone"
-          type="tel"
-          class="input-field"
-          :class="{ 'input-field-error': phoneError }"
-          placeholder="请输入手机号"
-        />
+        <input v-model="userStore.phone" type="tel" class="input-field" :class="{ 'input-field-error': phoneError }"
+          placeholder="请输入手机号" />
         <p v-if="phoneError" class="error-text">{{ phoneError }}</p>
       </div>
     </div>
@@ -227,7 +216,7 @@ const goNext = async () => {
 .input-field {
   width: 100%;
   height: 75px;
-  background: #d9d9d9;
+  background: #FFE361;
   border: none;
   border-radius: 12px;
   padding: 0 24px;
@@ -241,7 +230,7 @@ const goNext = async () => {
 }
 
 .input-field::placeholder {
-  color: #bcbcbc;
+  color: #8A8A8A;
 }
 
 .input-field:focus {

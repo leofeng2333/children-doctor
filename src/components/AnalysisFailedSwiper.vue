@@ -175,7 +175,7 @@ onUnmounted(() => {
 .custom-pagination-bullet {
   width: 16px;
   height: 16px;
-  background-color: #d9d9d9;
+  background-color: #FF9900;
   border-radius: 8px;
   transition: width 0.3s ease-in-out;
 

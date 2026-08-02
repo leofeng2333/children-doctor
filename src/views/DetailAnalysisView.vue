@@ -148,26 +148,14 @@ const healthyImgUrl = successImg
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0" class="analysis-failed-tips">
               <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
-              <p
-                v-for="(paragraph, idx) in diagnosisCopy.body"
-                :key="idx"
-                class="tips-content"
-                style="margin-bottom: 12px"
-              >
+              <p v-for="(paragraph, idx) in diagnosisCopy.body" :key="idx" class="tips-content"
+                style="margin-bottom: 12px">
                 {{ paragraph }}
               </p>
-              <p
-                v-if="diagnosisCopy.careTips"
-                class="tips-content"
-                style="margin-top: 16px"
-              >
+              <p v-if="diagnosisCopy.careTips" class="tips-content" style="margin-top: 16px">
                 <strong>日常护理小贴士：</strong>{{ diagnosisCopy.careTips }}
               </p>
-              <p
-                v-if="diagnosisCopy.habitNote"
-                class="tips-content"
-                style="margin-top: 12px; color: #c0392b"
-              >
+              <p v-if="diagnosisCopy.habitNote" class="tips-content" style="margin-top: 12px; color: #c0392b">
                 {{ diagnosisCopy.habitNote }}
               </p>
             </div>
@@ -303,7 +291,7 @@ const healthyImgUrl = successImg
         right: 0;
         text-align: center;
         width: 270px;
-        background-color: #bcbcbc;
+        background-color: #FFE361;
         box-sizing: border-box;
         padding: 20px 12px;
         text-align: left;
@@ -354,7 +342,7 @@ const healthyImgUrl = successImg
         color: #000;
         text-align: center;
         width: 100%;
-        background-color: #bcbcbc;
+        background-color: #FF9900;
         box-sizing: border-box;
         padding: 40px;
         text-align: left;

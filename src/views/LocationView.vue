@@ -117,7 +117,7 @@ const handleSelect = async (isOutOfProvince: boolean) => {
     font-weight: 700;
     font-size: 32px;
     line-height: 85px;
-    background-color: #d9d9d9;
+    background-color: #FFE361;
     text-align: center;
 
     &:first-child {

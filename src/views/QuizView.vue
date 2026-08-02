@@ -239,7 +239,7 @@ const goResult = () => {
 
 .option-card {
   position: relative;
-  background: #d9d9d9;
+  background: #FFE361;
   border: 2px solid transparent;
   border-radius: 73.5px;
   cursor: pointer;
