@@ -5,7 +5,6 @@ import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
 import { useAnalysisStore } from '@/stores'
 import { useImageSplit } from '@/composables/useImageSplit'
-import successImg from '@/assets/images/analysis-success.png'
 import {
   getDiagnosisCopyFromLLMResult,
   getDiagnosisCopy,
@@ -88,10 +87,15 @@ const aiImageUrl = computed(
 const { leftUrl: goodImgUrl, rightUrl: badImgUrl } = useImageSplit(
   () => aiImageUrl.value,
   0.5,
+  { inset: 20 },
 )
 
-/** 健康面型路径：静态 success 图（Vite 资源会被打包成 /assets/...） */
-const healthyImgUrl = successImg
+/**
+ * 健康面型图：复用不健康分支那次 splitImage 的产物（goodImgUrl）。
+ * 该图已经是 inset 后的右半（宽度 = halfWidth - inset，比原图窄），
+ * 满足"经过分割 + 宽度变小"的诉求，又不增加额外 native 调用。
+ */
+const healthyWholeImgUrl = computed(() => goodImgUrl.value)
 </script>
 
 <template>
@@ -139,9 +143,9 @@ const healthyImgUrl = successImg
             <p class="tips-content">{{ healthyCopy.careTips }}</p>
           </div>
           <div class="analysis-success-img">
-            <img src="@/assets/images/analysis-success.png" alt="analysis-success" />
+            <img :src="healthyWholeImgUrl" alt="analysis-success" />
           </div>
-          <ScanSubscription v-show="swiperIndex === 1" :good-img-url="healthyImgUrl" />
+            <ScanSubscription v-show="swiperIndex === 1" :good-img-url="healthyWholeImgUrl" />
         </div>
         <div class="analysis-failed" v-else>
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
@@ -266,14 +270,20 @@ const healthyImgUrl = successImg
       position: relative;
 
       .analysis-success-img {
-        width: 540px;
-        height: 720px;
+        width: 100%;
+        max-width: 485px;
+        aspect-ratio: 3 / 4;
         margin-bottom: 60px;
+        border-radius: 18px;
+        overflow: hidden;
 
         img {
+          display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
         }
       }
 

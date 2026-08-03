@@ -22,7 +22,11 @@ const imgSrc = computed(
   () => props.analysisResult?.aiAnalysis?.result?.predictions?.futureImageUrl ?? '',
 )
 
-const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(() => imgSrc.value, 0.5)
+const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(
+  () => imgSrc.value,
+  0.5,
+  { inset: 20 },
+)
 
 const leftUrl = computed(() => leftUrlRef.value)
 const rightUrl = computed(() => rightUrlRef.value)

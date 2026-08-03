@@ -47,16 +47,27 @@ public class ImageSplitter {
     }
 
     public void split(String input, double splitRatio, SplitCallback callback) {
+        split(input, splitRatio, 0, callback);
+    }
+
+    /**
+     * Splits with an optional inset (in pixels) trimmed from BOTH sides of the
+     * boundary, narrowing each half so that they don't visually meet at the
+     * seam. A small gap may appear between the two halves when placed side by
+     * side (e.g. before/after slider).
+     */
+    public void split(String input, double splitRatio, int inset, SplitCallback callback) {
         if (input == null || input.isEmpty()) {
             callback.onError("input is empty");
             return;
         }
         final double ratio = (splitRatio <= 0 || splitRatio >= 1) ? 0.5 : splitRatio;
+        final int insetPx = inset < 0 ? 0 : inset;
 
-        executor.execute(() -> doSplit(input, ratio, callback));
+        executor.execute(() -> doSplit(input, ratio, insetPx, callback));
     }
 
-    private void doSplit(String input, double splitRatio, SplitCallback callback) {
+    private void doSplit(String input, double splitRatio, int inset, SplitCallback callback) {
         Bitmap source = null;
         Bitmap left = null;
         Bitmap right = null;
@@ -74,15 +85,26 @@ public class ImageSplitter {
                 return;
             }
 
-            int halfWidth = (int) Math.floor(source.getWidth() * splitRatio);
-            if (halfWidth <= 0 || halfWidth >= source.getWidth()) {
+            int srcWidth = source.getWidth();
+            int halfWidth = (int) Math.floor(srcWidth * splitRatio);
+            if (halfWidth <= 0 || halfWidth >= srcWidth) {
                 callback.onError("Invalid split ratio: " + splitRatio);
                 return;
             }
 
-            left = Bitmap.createBitmap(source, 0, 0, halfWidth, source.getHeight());
-            right = Bitmap.createBitmap(source, halfWidth, 0,
-                    source.getWidth() - halfWidth, source.getHeight());
+            // 左右各向内缩 inset 像素；夹紧到 [0, srcWidth] 内并确保不交叉。
+            // left  = [0, halfWidth - inset]
+            // right = [halfWidth + inset, srcWidth]
+            int leftEnd = Math.max(0, halfWidth - inset);
+            int rightStart = Math.min(srcWidth, halfWidth + inset);
+            if (leftEnd <= 0 || rightStart >= srcWidth || leftEnd >= rightStart) {
+                callback.onError("Invalid inset: " + inset);
+                return;
+            }
+
+            left = Bitmap.createBitmap(source, 0, 0, leftEnd, source.getHeight());
+            right = Bitmap.createBitmap(source, rightStart, 0,
+                    srcWidth - rightStart, source.getHeight());
 
             File cacheDir = context.getExternalCacheDir();
             if (cacheDir == null) {
@@ -107,8 +129,8 @@ public class ImageSplitter {
             String rightUri = "file://" + rightFile.getAbsolutePath();
 
             int height = source.getHeight();
-            callback.onSuccess(leftUri, rightUri, halfWidth,
-                    source.getWidth() - halfWidth, height);
+            callback.onSuccess(leftUri, rightUri, leftEnd,
+                    srcWidth - rightStart, height);
         } catch (OutOfMemoryError oom) {
             Log.e(TAG, "splitImage OOM", oom);
             callback.onError("Out of memory while splitting image");

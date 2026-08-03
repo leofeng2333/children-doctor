@@ -49,6 +49,20 @@ export interface DualCameraUploadResult {
 export interface ImageSplitOptions {
   imageUrl: string
   splitRatio?: number
+  /**
+   * 交界处左右各向内缩的像素数（inset）。
+   *
+   * 默认 0 = 严格二等分（与历史行为一致）。
+   * > 0 时两张图会各从交界处向内裁掉 {@code inset} 像素，
+   * 用于在 before/after 卡片切换时让两张图整体宽度略小于原图，
+   * 避免边缘像素拼接到同一行产生毛刺。
+   *
+   * 实际裁切范围会被夹紧到合法区间：
+   *   - `leftEnd = max(0, halfWidth - inset)`
+   *   - `rightStart = min(srcWidth, halfWidth + inset)`
+   * 因此 `inset >= halfWidth` 或 `inset >= srcWidth - halfWidth` 也不会越界。
+   */
+  inset?: number
 }
 
 export interface ImageSplitResult {

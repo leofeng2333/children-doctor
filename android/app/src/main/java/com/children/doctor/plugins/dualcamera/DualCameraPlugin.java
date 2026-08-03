@@ -291,15 +291,17 @@ public class DualCameraPlugin extends Plugin {
         }
         String imageUrl = call.getString("imageUrl");
         Double splitRatio = call.getDouble("splitRatio");
+        Integer inset = call.getInt("inset");
         if (imageUrl == null || imageUrl.isEmpty()) {
             call.reject("imageUrl is required");
             return;
         }
 
         final double ratio = splitRatio != null ? splitRatio : 0.5;
-        Log.d(TAG, "splitImage called, ratio=" + ratio);
+        final int insetPx = inset != null ? inset : 0;
+        Log.d(TAG, "splitImage called, ratio=" + ratio + ", inset=" + insetPx);
 
-        imageSplitter.split(imageUrl, ratio, new ImageSplitter.SplitCallback() {
+        imageSplitter.split(imageUrl, ratio, insetPx, new ImageSplitter.SplitCallback() {
             @Override
             public void onSuccess(String leftPath, String rightPath, int leftWidth, int rightWidth, int height) {
                 JSObject result = new JSObject();

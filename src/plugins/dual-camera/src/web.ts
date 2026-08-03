@@ -111,7 +111,7 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
   }
 
   async splitImage(options: ImageSplitOptions): Promise<ImageSplitResult> {
-    const { imageUrl, splitRatio = 0.5 } = options
+    const { imageUrl, splitRatio = 0.5, inset = 0 } = options
     if (!imageUrl) {
       return { leftUrl: '', rightUrl: '' }
     }
@@ -128,6 +128,8 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
       throw this.unavailable('splitImage is only available in a browser environment.')
     }
 
+    const safeInset = Math.max(0, Math.floor(inset))
+
     const img = new Image()
     img.crossOrigin = 'anonymous'
 
@@ -135,33 +137,39 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
       img.onload = () => {
         try {
           const halfWidth = Math.floor(img.width * splitRatio)
+          if (halfWidth <= 0 || halfWidth >= img.width) {
+            throw new Error(`Invalid split ratio: ${splitRatio}`)
+          }
+
+          // 左右各向内缩 inset 像素；夹紧到 [0, img.width] 内并确保不交叉。
+          // left  = [0, halfWidth - inset]
+          // right = [halfWidth + inset, img.width]
+          const leftEnd = Math.max(0, halfWidth - safeInset)
+          const rightStart = Math.min(img.width, halfWidth + safeInset)
+          if (leftEnd <= 0 || rightStart >= img.width || leftEnd >= rightStart) {
+            throw new Error(`Invalid inset: ${safeInset}`)
+          }
+
+          const leftW = leftEnd
+          const rightW = img.width - rightStart
+
           const canvasL = document.createElement('canvas')
-          canvasL.width = halfWidth
+          canvasL.width = leftW
           canvasL.height = img.height
           const ctxL = canvasL.getContext('2d')
           if (!ctxL) throw new Error('Failed to acquire 2d context for left half')
-          ctxL.drawImage(img, 0, 0, halfWidth, img.height, 0, 0, halfWidth, img.height)
+          ctxL.drawImage(img, 0, 0, leftW, img.height, 0, 0, leftW, img.height)
           const leftUrl = canvasL.toDataURL('image/jpeg', 0.95)
 
           const canvasR = document.createElement('canvas')
-          canvasR.width = img.width - halfWidth
+          canvasR.width = rightW
           canvasR.height = img.height
           const ctxR = canvasR.getContext('2d')
           if (!ctxR) throw new Error('Failed to acquire 2d context for right half')
-          ctxR.drawImage(
-            img,
-            halfWidth,
-            0,
-            img.width - halfWidth,
-            img.height,
-            0,
-            0,
-            img.width - halfWidth,
-            img.height,
-          )
+          ctxR.drawImage(img, rightStart, 0, rightW, img.height, 0, 0, rightW, img.height)
           const rightUrl = canvasR.toDataURL('image/jpeg', 0.95)
 
-          resolve({ leftUrl, rightUrl, leftWidth: halfWidth, rightWidth: img.width - halfWidth, height: img.height })
+          resolve({ leftUrl, rightUrl, leftWidth: leftW, rightWidth: rightW, height: img.height })
         } catch (err) {
           reject(err instanceof Error ? err : new Error(String(err)))
         } finally {

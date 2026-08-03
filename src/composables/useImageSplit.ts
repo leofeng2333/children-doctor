@@ -8,6 +8,13 @@ export interface ImageSplitResult {
   isLoading: ReturnType<typeof ref<boolean>>
 }
 
+export interface UseImageSplitOptions {
+  /**
+   * 交界处左右各向内缩的像素数（inset）。默认 0 = 严格二等分。
+   */
+  inset?: number
+}
+
 /**
  * Returns a WebView-friendly URL. On native platforms `file://` paths must
  * be rewritten to the local server URL so the WebView can load them.
@@ -26,7 +33,11 @@ function toDisplayUrl(path: string): string {
 export function useImageSplit(
   imageUrl: string | (() => string | undefined),
   splitRatio: number = 0.5,
+  options: UseImageSplitOptions | number = {},
 ): ImageSplitResult {
+  // 兼容旧调用 useImageSplit(url, ratio, insetPx)
+  const inset =
+    typeof options === 'number' ? options : (options?.inset ?? 0)
   const leftUrl = ref<string>('')
   const rightUrl = ref<string>('')
   const isLoading = ref(false)
@@ -47,6 +58,7 @@ export function useImageSplit(
       const { leftUrl: l, rightUrl: r } = await DualCamera.splitImage({
         imageUrl: url,
         splitRatio,
+        inset,
       })
       if (current !== token) return
       // 业务上需要"好图在前、坏图在后"。
