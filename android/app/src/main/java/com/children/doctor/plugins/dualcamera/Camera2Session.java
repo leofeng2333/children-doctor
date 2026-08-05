@@ -729,11 +729,15 @@ public class Camera2Session {
 
     public void capture(String filePath, CountDownLatch latch, CaptureCallback callback) {
         if (!isOpen.get() || captureSession == null || cameraDevice == null) {
+            Log.w(TAG, "capture() rejected: isOpen=" + isOpen.get()
+                    + " captureSession=" + captureSession
+                    + " cameraDevice=" + cameraDevice);
             callback.onCaptureError("Camera not ready");
             latch.countDown();
             return;
         }
         if (!isCapturing.compareAndSet(false, true)) {
+            Log.w(TAG, "capture() rejected: already capturing for cameraId=" + cameraId);
             callback.onCaptureError("Capture already in progress");
             latch.countDown();
             return;
@@ -797,6 +801,12 @@ public class Camera2Session {
             Log.e(TAG, "Capture failed", e);
             isCapturing.set(false);
             callback.onCaptureError("Capture failed: " + e.getMessage());
+            latch.countDown();
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Capture illegal state (session/device closed)", e);
+            isCapturing.set(false);
+            callback.onCaptureError("Capture illegal state: " + e.getMessage());
+            latch.countDown();
         }
     }
 
