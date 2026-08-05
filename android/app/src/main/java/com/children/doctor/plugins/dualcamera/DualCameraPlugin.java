@@ -63,6 +63,11 @@ public class DualCameraPlugin extends Plugin {
         if (cameraManager != null) {
             cameraManager.pausePreview();
         }
+        // 兜底：app 切后台 / 进程被暂停时关闭当前日志会话，
+        // 防止 onBeforeUnmount 在后台路径下没机会触发导致 session 残留。
+        if (captureLogger != null) {
+            captureLogger.closeSession();
+        }
     }
 
     @Override
@@ -77,6 +82,11 @@ public class DualCameraPlugin extends Plugin {
         if (cameraManager != null) {
             cameraManager.shutdown();
             cameraManager = null;
+        }
+        // 关闭摄像头占用时同步关闭日志会话。
+        // closeSession 内部有 sessionOpen 守卫，重复调用安全。
+        if (captureLogger != null) {
+            captureLogger.closeSession();
         }
     }
 
@@ -215,6 +225,14 @@ public class DualCameraPlugin extends Plugin {
         );
 
         cameraManager.startPreview(call);
+
+        // 摄像头真正起来时自动开启一次日志会话——
+        // 不再依赖 JS 端 onMounted 调 startLogSession，确保只要摄像头被占用就有日志可查。
+        // startSession 内部每次创建新文件，多次进入页面不会丢日志。
+        if (captureLogger != null) {
+            String path = captureLogger.startSession();
+            captureLogger.java("DualCameraPlugin", "auto startLogSession -> " + path);
+        }
     }
 
     @PluginMethod()

@@ -21,9 +21,6 @@ const countdown = ref(COUNTDOWN_SECONDS)  // 剩余秒数
 const pendingPhoto = ref<DualCameraPhoto | null>(null)
 const errorMsg = ref('')
 
-// 拍摄日志会话状态
-const logSessionActive = ref(false)
-
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let captureTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -42,10 +39,12 @@ const clearTimers = () => {
 
 /**
  * 把一条消息同时写到 console 和 native 日志文件。
- * native 写入是异步的；失败时 fallback 到 console（不会阻塞拍照主流程）。
+ * 日志会话的 start/close 全部在 native 端（DualCameraPlugin）管理：
+ *   - start: startPreview() 调用之后自动 startSession()
+ *   - close: shutdownManager() / handleOnPause() / handleOnDestroy() 三处兜底
+ * 这里只负责把消息镜像到 native 文件。
  */
 const log = (msg: string) => {
-  // console 一定要保留——前端调试 / Chrome devtools 都靠它
   console.log('[CaptureSession] ' + msg)
   if (isNative) {
     DualCamera.captureLog({ tag: 'CaptureSession', msg }).catch(() => {
@@ -54,39 +53,14 @@ const log = (msg: string) => {
   }
 }
 
-const startLogSession = async () => {
-  if (!isNative) return
-  try {
-    const result = await DualCamera.startLogSession()
-    logSessionActive.value = true
-    log(`log session STARTED -> ${result.path}`)
-  } catch (e) {
-    console.warn('[CaptureSession] startLogSession failed:', e)
-  }
-}
-
-const closeLogSession = async () => {
-  if (!isNative || !logSessionActive.value) return
-  try {
-    await DualCamera.closeLogSession()
-    log('log session CLOSED')
-  } catch (e) {
-    // ignore
-  } finally {
-    logSessionActive.value = false
-  }
-}
-
 const isNative = Capacitor.isNativePlatform()
 
 onMounted(() => {
   log(`mounted, round=${props.round}`)
-  void startLogSession()
 })
 
 onBeforeUnmount(() => {
   log(`unmounted, pendingPhoto=${pendingPhoto.value ? 'set' : 'null'}`)
-  void closeLogSession()
   clearTimers()
 })
 
