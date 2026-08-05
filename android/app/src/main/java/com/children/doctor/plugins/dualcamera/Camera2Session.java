@@ -6,7 +6,9 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -69,6 +71,10 @@ public class Camera2Session {
     private volatile CameraCaptureSession captureSession;
     private volatile CaptureRequest.Builder previewRequestBuilder;
     private volatile ImageReader imageReader;
+
+    // ImageReader 实际使用的格式：JPEG（多数摄像头）或 YUV_420_888（UVC 等无 JPEG encoder 的设备）。
+    // 在 open()/restartPreviewWithExistingSurface() 时根据摄像头支持的输出格式决定。
+    private volatile int captureImageFormat = ImageFormat.JPEG;
 
     private Surface previewSurface;
     private SurfaceTexture previewSurfaceTexture;
@@ -356,6 +362,89 @@ public class Camera2Session {
         }
     }
 
+    /**
+     * 取该摄像头的 StreamConfigurationMap，用于后续判断它支持哪些 output format。
+     * 任何异常都返回 null，调用方据此走 JPEG fallback。
+     */
+    private android.hardware.camera2.params.StreamConfigurationMap getStreamConfigurationMap(String camId) {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics chars = manager.getCameraCharacteristics(camId);
+            return chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        } catch (Exception e) {
+            Log.w(TAG, "getStreamConfigurationMap failed for " + camId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 判断摄像头是否属于"UVC/外接"类（LEGACY 或 EXTERNAL hwLevel），即更可能
+     * 没有硬件 JPEG encoder、需要走 YUV 绕过软编码卡死。
+     * 内置 FULL/LEVEL3 摄像头继续走 JPEG 路径（HAL 硬件编码、零 CPU 成本）。
+     */
+    private boolean isLikelyUvcCamera() {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics chars = manager.getCameraCharacteristics(cameraId);
+            Integer hwLevel = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            if (hwLevel == null) return true;  // 拿不到 hwLevel 视为可疑
+            return hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
+                    || hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL;
+        } catch (Exception e) {
+            Log.w(TAG, "isLikelyUvcCamera failed for " + cameraId, e);
+            return true;  // 出错也走 YUV，更保守
+        }
+    }
+
+    /**
+     * 选择一个最接近 desiredSize 的 YUV_420_888 输出尺寸。返回 null 表示该摄像头不支持 YUV。
+     *
+     * 选 YUV 的策略：UVC 外接摄像头通常 JPEG encoder 是软件模拟的；直接读 YUV、Java 层
+     * 自己压 JPEG，比依赖 HAL 软编码稳定得多。代价是一次 CPU 编码，但单张 1280x960 在
+     * ARM A 系列上 < 100ms，且不会卡 HAL 状态机。
+     */
+    private static Size chooseYuvSizeForCamera(
+            android.hardware.camera2.params.StreamConfigurationMap map,
+            Size desiredSize) {
+        if (map == null) return null;
+        Size[] yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888);
+        if (yuvSizes == null || yuvSizes.length == 0) {
+            Log.d(TAG, "chooseYuvSizeForCamera: no YUV_420_888 support");
+            return null;
+        }
+        // 过滤掉太大的（避免 CPU 编码成为瓶颈）和太小的（避免图像糊）。
+        List<Size> candidates = new ArrayList<>();
+        for (Size s : yuvSizes) {
+            if (s.getWidth() <= 1920 && s.getHeight() <= 1920
+                    && s.getWidth() >= 320 && s.getHeight() >= 240) {
+                candidates.add(s);
+            }
+        }
+        if (candidates.isEmpty()) {
+            // 都太大或都太小，就拿原列表里最接近 desiredSize 的。
+            return pickClosestSize(yuvSizes, desiredSize);
+        }
+        Size best = pickClosestSize(candidates.toArray(new Size[0]), desiredSize);
+        Log.d(TAG, "chooseYuvSizeForCamera: desired=" + desiredSize + ", chosen=" + best);
+        return best;
+    }
+
+    private static Size pickClosestSize(Size[] sizes, Size target) {
+        if (sizes == null || sizes.length == 0) return target;
+        Size best = sizes[0];
+        long bestDiff = Math.abs((long) best.getWidth() * best.getHeight()
+                - (long) target.getWidth() * target.getHeight());
+        for (Size s : sizes) {
+            long diff = Math.abs((long) s.getWidth() * s.getHeight()
+                    - (long) target.getWidth() * target.getHeight());
+            if (diff < bestDiff) {
+                best = s;
+                bestDiff = diff;
+            }
+        }
+        return best;
+    }
+
     public void open(Surface previewSurface, SurfaceTexture surfaceTexture, Callback callback) {
         if (isOpen.get()) {
             callback.onError("Camera already open");
@@ -366,12 +455,42 @@ public class Camera2Session {
         this.previewSurfaceTexture = surfaceTexture;
         this.surfaceOwnedBySession = false;
         try {
-            this.imageReader = ImageReader.newInstance(
-                    captureSize.getWidth(),
-                    captureSize.getHeight(),
-                    ImageFormat.JPEG,
-                    MAX_CAPTURE_BUFFERS
-            );
+            // UVC 摄像头（外接 USB）在很多 HAL 上没有硬件 JPEG encoder，要求 Camera2 HAL 在
+            // 底层把 YUV 软编码成 JPEG。这种软编码在双摄像头同时拍照 / USB 总线抖动时极易
+            // 卡死，导致 onImageAvailable 不回调、整个 capture 走满 15s 超时。
+            //
+            // 解决思路：直接读 YUV_420_888 buffer，绕过 HAL 软编码。代价是我们在 Java 层
+            // 手动做一次 YUV -> JPEG 软编码（YuvImage.compressToJpeg），但这个过程是同步
+            // 可控的，不会被 HAL 状态机卡死。
+            //
+            // 决策逻辑：
+            //   1) 如果该摄像头根本不支持 YUV 输出（JPEG-only 摄像头，比如某些老款 MIPI），
+            //      走 JPEG ImageReader；
+            //   2) 否则用 YUV。
+            android.hardware.camera2.params.StreamConfigurationMap map =
+                    getStreamConfigurationMap(cameraId);
+            boolean preferYuv = isLikelyUvcCamera();
+            Size yuvSize = preferYuv ? chooseYuvSizeForCamera(map, captureSize) : null;
+            if (yuvSize != null) {
+                this.captureImageFormat = ImageFormat.YUV_420_888;
+                this.captureSize = yuvSize;
+                Log.d(TAG, "open: using YUV_420_888 ImageReader for " + cameraId
+                        + " (UVC soft-encode workaround), size=" + yuvSize);
+                this.imageReader = ImageReader.newInstance(
+                        yuvSize.getWidth(),
+                        yuvSize.getHeight(),
+                        ImageFormat.YUV_420_888,
+                        MAX_CAPTURE_BUFFERS
+                );
+            } else {
+                this.captureImageFormat = ImageFormat.JPEG;
+                this.imageReader = ImageReader.newInstance(
+                        captureSize.getWidth(),
+                        captureSize.getHeight(),
+                        ImageFormat.JPEG,
+                        MAX_CAPTURE_BUFFERS
+                );
+            }
         } catch (IllegalArgumentException | OutOfMemoryError e) {
             // ImageReader.newInstance 在尺寸非法 / 内存不足时抛 IAE/OOM，
             // 若不在此处拦截，openWithRetryImpl 仍会跑下去、然后 onOpened 里读
@@ -666,12 +785,31 @@ public class Camera2Session {
         previewSurface = new Surface(surfaceTexture);
         surfaceOwnedBySession = true;
         try {
-            this.imageReader = ImageReader.newInstance(
-                    captureSize.getWidth(),
-                    captureSize.getHeight(),
-                    ImageFormat.JPEG,
-                    MAX_CAPTURE_BUFFERS
-            );
+            // 与 open() 同理：优先 YUV，避免 UVC HAL 软编码卡死。
+            android.hardware.camera2.params.StreamConfigurationMap map =
+                    getStreamConfigurationMap(cameraId);
+            boolean preferYuv = isLikelyUvcCamera();
+            Size yuvSize = preferYuv ? chooseYuvSizeForCamera(map, captureSize) : null;
+            if (yuvSize != null) {
+                this.captureImageFormat = ImageFormat.YUV_420_888;
+                this.captureSize = yuvSize;
+                Log.d(TAG, "restartPreviewWithExistingSurface: using YUV_420_888 ImageReader for "
+                        + cameraId + ", size=" + yuvSize);
+                this.imageReader = ImageReader.newInstance(
+                        yuvSize.getWidth(),
+                        yuvSize.getHeight(),
+                        ImageFormat.YUV_420_888,
+                        MAX_CAPTURE_BUFFERS
+                );
+            } else {
+                this.captureImageFormat = ImageFormat.JPEG;
+                this.imageReader = ImageReader.newInstance(
+                        captureSize.getWidth(),
+                        captureSize.getHeight(),
+                        ImageFormat.JPEG,
+                        MAX_CAPTURE_BUFFERS
+                );
+            }
         } catch (IllegalArgumentException | OutOfMemoryError e) {
             // 见 open() 注释：不让 onOpened 跑到 null imageReader 上 NPE。
             Log.e(TAG, "restartPreviewWithExistingSurface: failed to create ImageReader for size " + captureSize, e);
@@ -727,6 +865,12 @@ public class Camera2Session {
         if (r != null) r.close();
     }
 
+    // 软超时：如果 captureSession.capture() 提交后超过这个时间还没拿到 image，
+    // 主动取消并报"软超时"，避免走到 Camera2Controller 的硬超时（15s）。
+    // 这个时间留得比 15s 短，目的是在 HAL 软编码卡死时能"快速失败 + 内部自动重试"，
+    // 给用户的感觉是"稍微等一下就成功"，而不是"等满 15s 然后失败"。
+    private static final long SOFT_CAPTURE_TIMEOUT_MS = 8_000;
+
     public void capture(String filePath, CountDownLatch latch, CaptureCallback callback) {
         if (!isOpen.get() || captureSession == null || cameraDevice == null) {
             Log.w(TAG, "capture() rejected: isOpen=" + isOpen.get()
@@ -750,16 +894,22 @@ public class Camera2Session {
             public void onImageAvailable(ImageReader reader) {
                 Image image = null;
                 try {
-                    image = reader.acquireLatestImage();
+                    image = reader.acquireNextImage();
                     if (image == null) {
                         isCapturing.set(false);
                         callback.onCaptureError("No image available");
                         return;
                     }
 
-                    ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                    byte[] bytes = new byte[buffer.remaining()];
-                    buffer.get(bytes);
+                    byte[] bytes;
+                    if (captureImageFormat == ImageFormat.YUV_420_888) {
+                        bytes = yuvImageToJpegBytes(image);
+                    } else {
+                        // JPEG 路径：直接拿 plane 0 的 buffer。
+                        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+                        bytes = new byte[buffer.remaining()];
+                        buffer.get(bytes);
+                    }
 
                     byte[] finalBytes = applyFrontMirrorIfNeeded(bytes);
 
@@ -797,6 +947,25 @@ public class Camera2Session {
                     Log.d(TAG, "Capture completed for " + cameraId);
                 }
             }, cameraHandler);
+
+            // 软超时：到点后如果 HAL 还没给我们 image，就主动调用 stopRepeating + abortCaptures
+            // 强制状态机走完。注意：这里必须在 cameraHandler 上 post，因为 abortCaptures 不是线程安全的。
+            cameraHandler.postDelayed(() -> {
+                if (!isCapturing.get()) return;  // 已经成功
+                Log.w(TAG, "capture soft-timeout after " + SOFT_CAPTURE_TIMEOUT_MS
+                        + "ms for cameraId=" + cameraId
+                        + " format=" + captureImageFormat
+                        + " (UVC HAL soft-encode hang, aborting captures)");
+                CameraCaptureSession s = captureSession;
+                if (s != null) {
+                    try { s.stopRepeating(); } catch (Exception ignored) {}
+                    try { s.abortCaptures(); } catch (Exception ignored) {}
+                }
+                // ImageReader 的 listener 不会被调用了，主动回调错误让 latch 归零。
+                isCapturing.set(false);
+                callback.onCaptureError("Capture soft-timeout (no frame in "
+                        + SOFT_CAPTURE_TIMEOUT_MS + "ms)");
+            }, SOFT_CAPTURE_TIMEOUT_MS);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Capture failed", e);
             isCapturing.set(false);
@@ -810,29 +979,147 @@ public class Camera2Session {
         }
     }
 
+    /**
+     * 把 YUV_420_888 Image 转成 JPEG bytes。
+     *
+     * YUV_420_888 在 Android 上有 3 个 plane（Y/U/V），但 stride 可能大于 width。
+     * YuvImage 只接受 NV21（Y 全平面 + VU 交错平面）的紧密排列，所以要先做一次拷贝。
+     * 对于 1280x960 的 USB 摄像头单帧，这是 ~1.8MB 内存操作，单次 < 50ms。
+     */
+    private byte[] yuvImageToJpegBytes(Image image) {
+        int w = image.getWidth();
+        int h = image.getHeight();
+        Image.Plane[] planes = image.getPlanes();
+
+        ByteBuffer yBuf = planes[0].getBuffer();
+        ByteBuffer uBuf = planes[1].getBuffer();
+        ByteBuffer vBuf = planes[2].getBuffer();
+
+        int yRowStride = planes[0].getRowStride();
+        int yPixStride = planes[0].getPixelStride();
+        int uRowStride = planes[1].getRowStride();
+        int vRowStride = planes[2].getRowStride();
+        int uPixelStride = planes[1].getPixelStride();
+        int vPixelStride = planes[2].getPixelStride();
+
+        // NV21 紧密布局：Y 占 w*h，VU 交错占 w*h/2。
+        byte[] nv21 = new byte[w * h * 3 / 2];
+        int yDestPos = 0;
+        int uvDestPos = w * h;
+
+        // Y plane：逐像素拷贝（处理 pixelStride > 1 的情况）
+        byte[] yTmp = new byte[yRowStride];
+        for (int row = 0; row < h; row++) {
+            yBuf.position(row * yRowStride);
+            int toRead = Math.min(yRowStride, yBuf.remaining());
+            yBuf.get(yTmp, 0, toRead);
+            if (yPixStride == 1) {
+                // 紧密布局：整行直接拷贝
+                System.arraycopy(yTmp, 0, nv21, yDestPos, w);
+                yDestPos += w;
+            } else {
+                // 步进布局：每像素读一个字节
+                for (int col = 0; col < w; col++) {
+                    nv21[yDestPos++] = yTmp[col * yPixStride];
+                }
+            }
+        }
+
+        // U + V interleaved as VU (NV21)
+        byte[] uTmp = new byte[uRowStride];
+        byte[] vTmp = new byte[vRowStride];
+        for (int row = 0; row < h / 2; row++) {
+            uBuf.position(row * uRowStride);
+            vBuf.position(row * vRowStride);
+            int uToRead = Math.min(uRowStride, uBuf.remaining());
+            uBuf.get(uTmp, 0, uToRead);
+            int vToRead = Math.min(vRowStride, vBuf.remaining());
+            vBuf.get(vTmp, 0, vToRead);
+            for (int col = 0; col < w / 2; col++) {
+                nv21[uvDestPos++] = vTmp[col * vPixelStride];
+                nv21[uvDestPos++] = uTmp[col * uPixelStride];
+            }
+        }
+
+        YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, w, h, null);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        yuv.compressToJpeg(new Rect(0, 0, w, h), 92, baos);
+        return baos.toByteArray();
+    }
+
     private byte[] applyFrontMirrorIfNeeded(byte[] bytes) {
+        // JPEG 路径下，HAL 已通过 CaptureRequest.JPEG_ORIENTATION 写入 EXIF，
+        // BitmapFactory.decodeByteArray 会自动按 EXIF 旋转，所以这里只需要水平镜像前置摄像头。
+        // YUV 路径下，JPEG_ORIENTATION 不生效，需要我们手动旋转。
+        boolean wasAlreadyRotatedByExif = (captureImageFormat == ImageFormat.JPEG);
+
         if (lensFacing != CameraCharacteristics.LENS_FACING_FRONT) {
-            return bytes;
+            if (wasAlreadyRotatedByExif) return bytes;
+            return rotateJpeg(bytes, getJpegOrientation(getDisplayRotation()));
         }
 
+        if (wasAlreadyRotatedByExif) {
+            // 前置 JPEG：EXIF 已经旋转，只做水平镜像
+            Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            if (original == null) return bytes;
+            int w = original.getWidth();
+            int h = original.getHeight();
+            Bitmap mirrored = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(mirrored);
+            Matrix m = new Matrix();
+            m.setScale(-1f, 1f);
+            m.postTranslate(w, 0);
+            canvas.drawBitmap(original, m, null);
+            original.recycle();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
+            mirrored.recycle();
+            return baos.toByteArray();
+        }
+
+        // 前置 YUV：手动旋转 + 水平镜像
+        return rotateAndMirrorJpeg(bytes, getJpegOrientation(getDisplayRotation()));
+    }
+
+    /** 仅旋转（后置摄像头 UVC）。 */
+    private byte[] rotateJpeg(byte[] bytes, int degrees) {
+        if (degrees == 0) return bytes;
         Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-        if (original == null) {
-            return bytes;
-        }
-
+        if (original == null) return bytes;
         int w = original.getWidth();
         int h = original.getHeight();
-        Bitmap mirrored = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(mirrored);
         Matrix m = new Matrix();
-        m.setScale(-1f, 1f);
-        m.postTranslate(w, 0);
-        canvas.drawBitmap(original, m, null);
-        original.recycle();
-
+        m.postRotate(degrees);
+        Bitmap rotated = Bitmap.createBitmap(original, 0, 0, w, h, m, true);
+        if (rotated != original) original.recycle();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
-        mirrored.recycle();
+        rotated.compress(Bitmap.CompressFormat.JPEG, 95, baos);
+        rotated.recycle();
+        return baos.toByteArray();
+    }
+
+    /** 旋转 + 水平镜像（前置 UVC）。 */
+    private byte[] rotateAndMirrorJpeg(byte[] bytes, int degrees) {
+        Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        if (original == null) return bytes;
+        int w = original.getWidth();
+        int h = original.getHeight();
+        Matrix m = new Matrix();
+        if (degrees == 90) {
+            // 90/270: 先旋转再水平镜像，镜像系数 +1 改成 -1 + postTranslate
+            m.postRotate(degrees);
+            m.postScale(-1f, 1f);
+            m.postTranslate(w, 0);
+        } else {
+            // 0/180: 直接水平镜像
+            m.postScale(-1f, 1f);
+            m.postTranslate(w, 0);
+        }
+        Bitmap transformed = Bitmap.createBitmap(original, 0, 0, w, h, m, true);
+        original.recycle();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        transformed.compress(Bitmap.CompressFormat.JPEG, 95, baos);
+        transformed.recycle();
         return baos.toByteArray();
     }
 
