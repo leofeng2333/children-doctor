@@ -96,3 +96,16 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+/**
+ * 给所有 APK 输出文件名加上 versionName + versionCode。
+ *   app-debug.apk       -> app-debug-1.0.0-1000000.apk
+ *   app-release.apk     -> app-release-1.0.0-1000000.apk
+ */
+android.applicationVariants.all { variant ->
+    variant.outputs.all {
+        def vName = variant.versionName ?: 'unknown'
+        def vCode = variant.versionCode ?: 0
+        outputFileName = "${project.name}-${variant.baseName}-${vName}-${vCode}.apk"
+    }
+}
