@@ -32,6 +32,16 @@ public class Camera2Controller {
     private static final String PHOTO_DIR_NAME = "dual_camera_photos";
     private static final int CAPTURE_TIMEOUT_SECONDS = 15;
 
+    private static volatile CaptureLogger captureLogger;
+
+    public static void setCaptureLogger(CaptureLogger logger) {
+        captureLogger = logger;
+    }
+
+    private static void log(String msg) {
+        if (captureLogger != null) captureLogger.java(TAG, msg);
+    }
+
     private final Context context;
     private final Handler mainHandler;
     private final PreviewCallback callback;
@@ -371,6 +381,9 @@ public class Camera2Controller {
             }
         }
 
+        log("capture begin, slotCount=" + sessions.length
+                + " timeout=" + CAPTURE_TIMEOUT_SECONDS + "s");
+
         File photoDir = new File(context.getCacheDir(), PHOTO_DIR_NAME);
         if (!photoDir.exists() && !photoDir.mkdirs()) {
             isCapturing.set(false);
@@ -403,11 +416,14 @@ public class Camera2Controller {
                     capturedPaths[slot] = filePath;
                     capturedSizes[slot] = fileSizeKb;
                     Log.d(TAG, "Slot " + slot + " captured: " + filePath + " (" + fileSizeKb + " KB)");
+                    log("slot " + slot + " (" + captureLabels[slot] + ") captured, "
+                            + fileSizeKb + " KB");
                     latch.countDown();
                 }
 
                 @Override
                 public void onCaptureError(String error) {
+                    log("slot " + slot + " (" + captureLabels[slot] + ") error: " + error);
                     synchronized (errors) {
                         errors.append(captureLabels[slot]).append(": ").append(error).append("; ");
                     }
@@ -422,15 +438,19 @@ public class Camera2Controller {
                 isCapturing.set(false);
 
                 if (!completed) {
+                    log("capture LATCH-TIMEOUT after " + CAPTURE_TIMEOUT_SECONDS
+                            + "s, some slots did not respond");
                     mainHandler.post(() -> resultCallback.onError("Capture timeout"));
                     return;
                 }
 
                 if (errors.length() > 0) {
+                    log("capture done with errors: " + errors);
                     mainHandler.post(() -> resultCallback.onError("Capture errors: " + errors));
                     return;
                 }
 
+                log("capture OK, all slots succeeded");
                 String[] uris = buildFileUris(capturedPaths);
                 mainHandler.post(() -> {
                     resultCallback.onSuccess(uris, capturedPaths, capturedSizes);

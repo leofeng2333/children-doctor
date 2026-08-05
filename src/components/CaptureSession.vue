@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { DualCamera } from '@/plugins/dual-camera/src/index'
 import type { DualCameraPhoto } from '@/plugins/dual-camera/src/definitions'
 import { Capacitor } from '@capacitor/core'
@@ -21,6 +21,11 @@ const countdown = ref(COUNTDOWN_SECONDS)  // 剩余秒数
 const pendingPhoto = ref<DualCameraPhoto | null>(null)
 const errorMsg = ref('')
 
+// 拍摄日志会话状态
+const logSessionActive = ref(false)
+const logFilePath = ref<string | null>(null)
+const logFileSize = ref(0)
+
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let captureTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -37,12 +42,111 @@ const clearTimers = () => {
   }
 }
 
-onBeforeUnmount(clearTimers)
+/**
+ * 把一条消息同时写到 console 和 native 日志文件。
+ * native 写入是异步的；失败时 fallback 到 console（不会阻塞拍照主流程）。
+ */
+const log = (msg: string) => {
+  // console 一定要保留——前端调试 / Chrome devtools 都靠它
+  console.log('[CaptureSession] ' + msg)
+  if (isNative) {
+    DualCamera.captureLog({ tag: 'CaptureSession', msg }).catch(() => {
+      /* swallow：日志写失败不影响主流程 */
+    })
+  }
+}
+
+const startLogSession = async () => {
+  if (!isNative) return
+  try {
+    const result = await DualCamera.startLogSession()
+    logFilePath.value = result.path
+    logSessionActive.value = true
+    log(`log session STARTED -> ${result.path}`)
+  } catch (e) {
+    console.warn('[CaptureSession] startLogSession failed:', e)
+  }
+}
+
+const refreshLogInfo = async () => {
+  if (!isNative || !logSessionActive.value) return
+  try {
+    const info = await DualCamera.getLogSessionInfo()
+    logFilePath.value = info.path
+    logFileSize.value = info.size
+  } catch (e) {
+    // ignore
+  }
+}
+
+const closeLogSession = async () => {
+  if (!isNative || !logSessionActive.value) return
+  try {
+    await DualCamera.closeLogSession()
+    log('log session CLOSED')
+  } catch (e) {
+    // ignore
+  } finally {
+    logSessionActive.value = false
+  }
+}
+
+const isNative = Capacitor.isNativePlatform()
+
+const shareLogFile = async () => {
+  if (!isNative || !logSessionActive.value) return
+  try {
+    const info = await DualCamera.getLogSessionInfo()
+    if (!info.uri) {
+      console.warn('[CaptureSession] no log uri to share')
+      return
+    }
+    log(`sharing log: path=${info.path}, size=${info.size}B, uri=${info.uri}`)
+    const kb = (info.size / 1024).toFixed(1)
+    // 优先用 Android 原生 Share Intent（更原生体验），失败时 fallback 到 Web Share API
+    try {
+      const { Share } = await import('@capacitor/share')
+      await Share.share({
+        title: `拍摄日志 ${new Date().toLocaleString('zh-CN')}`,
+        text: `ChildrenDoctor 拍摄日志 (${kb} KB)`,
+        url: info.uri,
+        dialogTitle: '分享拍摄日志',
+      })
+    } catch (e) {
+      // @capacitor/share 没装或失败 — fallback 到 Web Share API
+      console.warn('[CaptureSession] capacitor share unavailable, fallback to navigator.share', e)
+      if (navigator.canShare && navigator.canShare({ url: info.uri })) {
+        await navigator.share({
+          title: `拍摄日志 ${new Date().toLocaleString('zh-CN')}`,
+          text: `ChildrenDoctor 拍摄日志 (${kb} KB)`,
+          url: info.uri,
+        })
+      } else {
+        console.warn('[CaptureSession] navigator.share not supported, log saved at: ' + info.path)
+        alert(`日志已保存到：\n${info.path}\n\n（设备不支持分享 API，请用 adb pull 拉取）`)
+      }
+    }
+  } catch (e) {
+    console.warn('[CaptureSession] share log failed:', e)
+  }
+}
+
+onMounted(() => {
+  log(`mounted, round=${props.round}`)
+  void startLogSession()
+})
+
+onBeforeUnmount(() => {
+  log(`unmounted, pendingPhoto=${pendingPhoto.value ? 'set' : 'null'}`)
+  void closeLogSession()
+  clearTimers()
+})
 
 const startCountdown = () => {
   isCounting.value = true
   countdown.value = COUNTDOWN_SECONDS
   errorMsg.value = ''
+  log(`countdown START, round=${props.round}, ${COUNTDOWN_SECONDS}s`)
 
   countdownTimer = setInterval(() => {
     countdown.value -= 1
@@ -61,15 +165,16 @@ const cancelCountdown = () => {
   clearTimers()
   isCounting.value = false
   countdown.value = COUNTDOWN_SECONDS
+  log('countdown CANCELED')
 }
 
 const doCapture = async () => {
-  console.log('[CaptureSession] doCapture 开始')
+  log('doCapture START')
   isCounting.value = false
   isCapturing.value = true
   try {
     const result = (await DualCamera.capture()) as Record<string, unknown>
-    console.log('[CaptureSession] capture result:', JSON.stringify(result))
+    log(`capture() resolved, keys=${Object.keys(result).join(',')}`)
     const frontUrl = result.cameraUrl0 as string
     const backUrl = result.cameraUrl1 as string
 
@@ -85,41 +190,47 @@ const doCapture = async () => {
       timestamp: result.timestamp as number,
     }
 
-    console.log('[CaptureSession] 复制图片到外部缓存:', { frontUrl, backUrl })
+    log(`copy front: ${frontUrl}, back: ${backUrl}`)
     const [frontResult, backResult] = await Promise.all([
       DualCamera.copyImageToExternalCache({ uri: frontUrl }),
       DualCamera.copyImageToExternalCache({ uri: backUrl }),
     ])
-    console.log('[CaptureSession] 复制结果:', JSON.stringify({ frontResult, backResult }))
+    log(`copy results: front=${frontResult.path}, back=${backResult.path}`)
     photo.frontDisplayUrl = Capacitor.convertFileSrc(frontResult.uri)
     photo.backDisplayUrl = Capacitor.convertFileSrc(backResult.uri)
 
-    console.log('[CaptureSession] 拍照成功, round:', props.round)
-    console.log('photo', photo)
+    log(`doCapture OK, round=${props.round}, fileSize front=${result.cameraFileSize0}KB back=${result.cameraFileSize1}KB`)
 
     pendingPhoto.value = photo
-    console.log('[CaptureSession] pendingPhoto.value 已赋值, is pendingPhoto truthy:', !!pendingPhoto.value)
+    log('pendingPhoto.value ASSIGNED')
   } catch (e) {
-    errorMsg.value = (e as Error).message
+    const err = (e as Error).message
+    errorMsg.value = err
+    log(`doCapture FAILED: ${err}`)
     console.error('[CaptureSession] capture failed:', e)
   } finally {
     isCapturing.value = false
     countdown.value = COUNTDOWN_SECONDS
-    console.log('[CaptureSession] doCapture 结束, pendingPhoto:', pendingPhoto.value ? '已设置' : '未设置', 'errorMsg:', errorMsg.value || '无')
+    log(`doCapture END, pendingPhoto=${pendingPhoto.value ? 'set' : 'null'}, errorMsg=${errorMsg.value || 'none'}`)
+    void refreshLogInfo()
   }
 }
 
 const handleCaptureClick = () => {
-  if (isCapturing.value) return
+  if (isCapturing.value) {
+    log('handleCaptureClick ignored (capturing in progress)')
+    return
+  }
   if (isCounting.value) {
     cancelCountdown()
     return
   }
+  log(`handleCaptureClick, round=${props.round}`)
   startCountdown()
 }
 
 const handleRetry = async () => {
-  console.log('[CaptureSession] retry')
+  log('retry click')
   pendingPhoto.value = null
   countdown.value = COUNTDOWN_SECONDS
   try {
@@ -129,7 +240,7 @@ const handleRetry = async () => {
 
 const handleConfirm = async () => {
   if (!pendingPhoto.value) return
-  console.log('[CaptureSession] confirm')
+  log(`confirm click, round=${props.round}`)
   try {
     await DualCamera.resumePreviewFromPhotos()
   } catch (_) {}
@@ -169,6 +280,16 @@ const handleConfirm = async () => {
         <PrimaryButton class="action-btn confirm-btn" @click="handleConfirm">下一步</PrimaryButton>
         <PrimaryButton class="action-btn retry-btn" @click="handleRetry">重新拍摄</PrimaryButton>
       </div>
+    </div>
+
+    <!-- 拍摄日志分享入口（仅原生平台 + 会话激活时可见） -->
+    <div v-if="isNative && logSessionActive" class="log-share">
+      <button class="log-share-btn" @click="shareLogFile">
+        📋 分享日志
+        <span v-if="logFileSize > 0" class="log-share-size">
+          ({{ (logFileSize / 1024).toFixed(1) }} KB)
+        </span>
+      </button>
     </div>
   </div>
 </template>
@@ -310,6 +431,34 @@ const handleConfirm = async () => {
 
   &:active {
     background: #f5f5f5;
+  }
+}
+
+.log-share {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 0;
+
+  .log-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #f5f5f5;
+    color: #666;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+
+    .log-share-size {
+      color: #999;
+      font-size: 12px;
+    }
+
+    &:active {
+      background: #eaeaea;
+    }
   }
 }
 </style>

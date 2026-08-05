@@ -36,12 +36,32 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Camera2Session {
 
     private static final String TAG = "Camera2Session";
+
+    /** 静态 CaptureLogger 引用；由 DualCameraPlugin.load() 注入。 */
+    private static volatile CaptureLogger captureLogger;
+
+    public static void setCaptureLogger(CaptureLogger logger) {
+        captureLogger = logger;
+    }
+
+    private static void log(String msg) {
+        if (captureLogger != null) captureLogger.java(TAG, msg);
+    }
+
+    /** 便捷重载：格式化参数 */
+    private static void log(String fmt, Object... args) {
+        if (captureLogger != null) {
+            captureLogger.java(TAG, String.format(Locale.US, fmt, args));
+        }
+    }
+
     private static final int MAX_CAPTURE_BUFFERS = 2;
     private static final int OPEN_RETRY_COUNT = 3;
     private static final long OPEN_RETRY_DELAY_MS = 800;
@@ -141,6 +161,11 @@ public class Camera2Session {
         Log.d(TAG, "Created session for camera " + cameraId + ", lensFacing=" + lensFacing
                 + ", sensorOrientation=" + sensorOrientation
                 + ", preview=" + this.previewSize + ", capture=" + this.captureSize);
+        log("Created session cameraId=" + cameraId
+                + " lensFacing=" + lensFacing
+                + " sensorOrientation=" + sensorOrientation
+                + " preview=" + this.previewSize
+                + " capture=" + this.captureSize);
     }
 
     private int readSensorOrientation() {
@@ -396,6 +421,17 @@ public class Camera2Session {
         }
     }
 
+    private String hwLevelName() {
+        try {
+            CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics chars = manager.getCameraCharacteristics(cameraId);
+            Integer hwLevel = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            return hwLevelToString(hwLevel);
+        } catch (Exception e) {
+            return "UNKNOWN";
+        }
+    }
+
     /**
      * 选择一个最接近 desiredSize 的 YUV_420_888 输出尺寸。返回 null 表示该摄像头不支持 YUV。
      *
@@ -476,6 +512,8 @@ public class Camera2Session {
                 this.captureSize = yuvSize;
                 Log.d(TAG, "open: using YUV_420_888 ImageReader for " + cameraId
                         + " (UVC soft-encode workaround), size=" + yuvSize);
+                log("open: ImageReader=YUV_420_888 size=" + yuvSize
+                        + " (UVC workaround active, hwLevel=" + hwLevelName() + ")");
                 this.imageReader = ImageReader.newInstance(
                         yuvSize.getWidth(),
                         yuvSize.getHeight(),
@@ -484,6 +522,8 @@ public class Camera2Session {
                 );
             } else {
                 this.captureImageFormat = ImageFormat.JPEG;
+                log("open: ImageReader=JPEG size=" + captureSize
+                        + " (HAL hardware encoder path, hwLevel=" + hwLevelName() + ")");
                 this.imageReader = ImageReader.newInstance(
                         captureSize.getWidth(),
                         captureSize.getHeight(),
@@ -537,6 +577,7 @@ public class Camera2Session {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
                     Log.d(TAG, "onOpened: id=" + idToOpen + " camera=" + camera + " attempt=" + attempt);
+                    log("onOpened cameraId=" + idToOpen + " attempt=" + attempt);
                     if (isShutdown) {
                         Log.w(TAG, "Session was shutdown before camera opened");
                         camera.close();
@@ -564,6 +605,8 @@ public class Camera2Session {
                     isOpen.set(false);
                     Log.e(TAG, "Camera " + idToOpen + " error: " + error
                             + " (" + errorName + "), attempt=" + attempt);
+                    log("onError cameraId=" + idToOpen + " errCode=" + error
+                            + " (" + errorName + ") attempt=" + attempt);
 
                     // 全部用本地数值常量，避免依赖高 API 的 StateCallback.ERROR_*
                     // 见类顶部"错误码常量兼容层"注释。
@@ -888,6 +931,11 @@ public class Camera2Session {
         }
 
         this.captureCallback = callback;
+        final long captureStartMs = System.currentTimeMillis();
+        log("capture start cameraId=" + cameraId
+                + " format=" + captureImageFormat
+                + " captureSize=" + captureSize
+                + " filePath=" + filePath);
 
         imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
             @Override
@@ -901,6 +949,7 @@ public class Camera2Session {
                         return;
                     }
 
+                    long encodeStart = System.currentTimeMillis();
                     byte[] bytes;
                     if (captureImageFormat == ImageFormat.YUV_420_888) {
                         bytes = yuvImageToJpegBytes(image);
@@ -910,6 +959,7 @@ public class Camera2Session {
                         bytes = new byte[buffer.remaining()];
                         buffer.get(bytes);
                     }
+                    long encodeMs = System.currentTimeMillis() - encodeStart;
 
                     byte[] finalBytes = applyFrontMirrorIfNeeded(bytes);
 
@@ -918,10 +968,16 @@ public class Camera2Session {
                     }
 
                     long fileSizeKb = new File(filePath).length() / 1024;
+                    long totalMs = System.currentTimeMillis() - captureStartMs;
+                    log("onImageAvailable cameraId=" + cameraId
+                            + " encodeMs=" + encodeMs
+                            + " totalMs=" + totalMs
+                            + " fileSizeKb=" + fileSizeKb);
                     isCapturing.set(false);
                     callback.onCaptureSuccess(filePath, fileSizeKb);
                 } catch (Exception e) {
                     Log.e(TAG, "Capture processing failed", e);
+                    log("Capture processing failed cameraId=" + cameraId + " err=" + e.getMessage());
                     isCapturing.set(false);
                     callback.onCaptureError("Processing failed: " + e.getMessage());
                 } finally {
@@ -956,6 +1012,10 @@ public class Camera2Session {
                         + "ms for cameraId=" + cameraId
                         + " format=" + captureImageFormat
                         + " (UVC HAL soft-encode hang, aborting captures)");
+                log("capture SOFT-TIMEOUT cameraId=" + cameraId
+                        + " after " + SOFT_CAPTURE_TIMEOUT_MS + "ms"
+                        + " format=" + captureImageFormat
+                        + " (HAL state machine hang suspected, aborting captures)");
                 CameraCaptureSession s = captureSession;
                 if (s != null) {
                     try { s.stopRepeating(); } catch (Exception ignored) {}

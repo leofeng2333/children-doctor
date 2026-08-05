@@ -71,6 +71,20 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
     throw this.unavailable('clearImageCache is only available on Android.')
   }
 
+  // 日志会话 API 的 Web stub：在浏览器上 noop 返回，避免在 web dev 时 console 报错。
+  async startLogSession(): Promise<{ path: string }> {
+    return { path: '' }
+  }
+  async closeLogSession(): Promise<void> {
+    // noop
+  }
+  async captureLog(_options: { tag?: string; msg: string }): Promise<void> {
+    // noop
+  }
+  async getLogSessionInfo(): Promise<{ path: string | null; uri: string | null; size: number }> {
+    return { path: null, uri: null, size: 0 }
+  }
+
   /**
    * Reads an image from any supported source and returns base64.
    *

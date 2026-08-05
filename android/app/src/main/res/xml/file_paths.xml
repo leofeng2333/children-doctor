@@ -2,4 +2,10 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!--
+        拍摄日志文件位于 Context.getExternalFilesDir(null)/capture_logs/ 下，
+        通过 CaptureLogger.getCurrentLogUri() 生成 content:// URI 给前端分享。
+        不声明这个路径会抛 IllegalArgumentException: Failed to find configured root。
+    -->
+    <external-files-path name="capture_logs" path="capture_logs/" />
 </paths>

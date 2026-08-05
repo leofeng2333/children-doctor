@@ -33,12 +33,17 @@ public class DualCameraPlugin extends Plugin {
     private DualCameraManager cameraManager;
     private PhotoUploader photoUploader;
     private ImageSplitter imageSplitter;
+    private CaptureLogger captureLogger;
 
     @Override
     public void load() {
         super.load();
         photoUploader = new PhotoUploader();
         imageSplitter = new ImageSplitter(getContext());
+        captureLogger = CaptureLogger.get(getContext());
+        // 把 logger 注入到静态类，让 Camera2Session / Camera2Controller 也能用它。
+        Camera2Session.setCaptureLogger(captureLogger);
+        Camera2Controller.setCaptureLogger(captureLogger);
         Log.d(TAG, "DualCamera plugin loaded");
     }
 
@@ -354,6 +359,65 @@ public class DualCameraPlugin extends Plugin {
             Log.e(TAG, "clearImageCache failed", e);
             call.reject("Failed to clear image cache: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 启动一次"拍摄日志会话"。前端在用户进入拍照流程时调用一次，
+     * 之后所有 native 层的 Log.d 都同时写入日志文件。返回日志文件路径。
+     */
+    @PluginMethod()
+    public void startLogSession(PluginCall call) {
+        String path = captureLogger.startSession();
+        if (path == null) {
+            call.reject("Failed to start log session");
+            return;
+        }
+        captureLogger.java("DualCameraPlugin", "startLogSession -> " + path);
+        JSObject result = new JSObject();
+        result.put("path", path);
+        call.resolve(result);
+    }
+
+    /**
+     * 关闭当前日志会话（写 footer）。前端在用户退出拍照流程时调用。
+     */
+    @PluginMethod()
+    public void closeLogSession(PluginCall call) {
+        captureLogger.closeSession();
+        captureLogger.java("DualCameraPlugin", "closeLogSession called");
+        call.resolve();
+    }
+
+    /**
+     * 前端写一行日志到 native 日志文件（layer=JS）。
+     * JS 侧每条 console.log 都会通过这个方法镜像写一份，方便汇总。
+     */
+    @PluginMethod()
+    public void captureLog(PluginCall call) {
+        String tag = call.getString("tag", "JS");
+        String msg = call.getString("msg", "");
+        if (msg.isEmpty()) {
+            call.resolve();
+            return;
+        }
+        captureLogger.log("JS", tag, msg);
+        call.resolve();
+    }
+
+    /**
+     * 返回当前日志文件的：
+     *   - path: 绝对路径（adb pull / 文件管理器可见）
+     *   - uri:  content:// URI（前端 Share API 用）
+     *   - size: 文件字节数
+     */
+    @PluginMethod()
+    public void getLogSessionInfo(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("path", captureLogger.getCurrentLogFilePath());
+        Uri uri = captureLogger.getCurrentLogUri();
+        result.put("uri", uri != null ? uri.toString() : null);
+        result.put("size", captureLogger.getCurrentLogSize());
+        call.resolve(result);
     }
 
     @PluginMethod()

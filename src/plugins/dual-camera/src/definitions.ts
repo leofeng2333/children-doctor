@@ -102,4 +102,26 @@ export interface DualCameraPlugin {
     eventName: 'previewError',
     listener: (data: { error: string }) => void,
   ): Promise<{ remove: () => void }>
+
+  /**
+   * 拍摄日志会话相关 API。仅 Android 原生实现；Web 端是 stub。
+   *
+   * 启动一次新会话：返回日志文件绝对路径。每次拍照流程开始调用一次。
+   */
+  startLogSession(): Promise<{ path: string }>
+  /** 关闭当前会话：写入 footer 并停止追加。 */
+  closeLogSession(): Promise<void>
+  /**
+   * 写一行 JS 层日志到 native 日志文件。
+   * @param options.tag 模块名（默认 "JS"）
+   * @param options.msg 日志内容（不能含换行）
+   */
+  captureLog(options: { tag?: string; msg: string }): Promise<void>
+  /**
+   * 查询当前会话状态：
+   *   - path: 日志文件绝对路径
+   *   - uri:  content:// URI（前端分享/上传用）
+   *   - size: 文件字节数
+   */
+  getLogSessionInfo(): Promise<{ path: string | null; uri: string | null; size: number }>
 }
