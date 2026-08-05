@@ -194,7 +194,9 @@ const handleConfirm = async () => {
           :disabled="isCapturing"
           @click="handleCaptureClick"
         >
-          {{ isCapturing ? '拍摄中...' : isCounting ? '取消' : '咔嚓！' }}
+          <span v-if="isCapturing">拍摄中...</span>
+          <span v-else-if="isCounting">取消 <span class="countdown-num">{{ countdown }}</span></span>
+          <span v-else>咔嚓！</span>
         </PrimaryButton>
       </template>
       <div v-else class="review-actions">
@@ -316,6 +318,15 @@ const handleConfirm = async () => {
     sans-serif;
   font-weight: 700;
   transition: all 0.3s ease;
+
+  .countdown-num {
+    display: inline-block;
+    font-size: 1.25em;
+    font-weight: 800;
+    margin-left: 4px;
+    min-width: 1em;
+    text-align: center;
+  }
 
   &.counting {
     background: #ff4d4f;
