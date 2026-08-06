@@ -392,15 +392,33 @@ public class Camera2Controller {
         }
 
         String timestamp = String.valueOf(System.currentTimeMillis());
-        String[] captureLabels = new String[sessions.length];
-        for (int i = 0; i < sessions.length; i++) {
-            captureLabels[i] = sessions[i].getLensFacing() == CameraCharacteristics.LENS_FACING_FRONT
-                    ? "front" : "back";
-        }
-
+        // 文件路径必须按槽位（slot）独立命名，不能依赖 lensFacing：
+        //   - 多个 USB UVC 外接摄像头的 HAL 经常报告同样的 LENS_FACING 值
+        //     （rockchip 上两路 UVC 都被映射成同一类，见 capture_logs 中多次出现的
+        //     "slot 0 (front) ... slot 1 (front) captured"）；
+        //   - 一旦两路都被打上相同的 "front" / "back" 前缀，filePaths 数组里就会出现
+        //     两条相同的路径，下游 FileOutputStream(filePath) 会互相覆盖，最终只剩
+        //     一张照片返回给前端 → 双屏展示同一张图。
+        // 用 slot index 作为命名前缀，cameraId 作为副前缀，保证每个槽位物理上写到独立文件。
         String[] filePaths = new String[sessions.length];
+        String[] slotLabels = new String[sessions.length];
         for (int i = 0; i < sessions.length; i++) {
-            filePaths[i] = new File(photoDir, captureLabels[i] + "_" + timestamp + ".jpg").getAbsolutePath();
+            String camId = sessions[i].getCameraId() != null ? sessions[i].getCameraId() : ("id" + i);
+            // cameraId 里可能含非文件安全字符，做一次最小清洗
+            String safeCamId = camId.replaceAll("[^A-Za-z0-9_\\-]", "_");
+            filePaths[i] = new File(photoDir,
+                    "slot" + i + "_" + safeCamId + "_" + timestamp + ".jpg").getAbsolutePath();
+            // 仅用于日志：清楚标出"第 i 个槽位、cameraId、报告的 lensFacing"
+            // 这里 lensFacing 信息只是观察用途，不再参与文件命名，所以即使 HAL
+            // 给两个摄像头返回同样的值也不会再导致文件覆盖。
+            String facingTag = (sessions[i].getLensFacing()
+                    == CameraCharacteristics.LENS_FACING_FRONT) ? "facing=front"
+                    : (sessions[i].getLensFacing()
+                            == CameraCharacteristics.LENS_FACING_BACK) ? "facing=back"
+                    : (sessions[i].getLensFacing()
+                            == CameraCharacteristics.LENS_FACING_EXTERNAL) ? "facing=external"
+                    : ("facing=" + sessions[i].getLensFacing());
+            slotLabels[i] = "slot" + i + "," + facingTag + ",camId=" + safeCamId;
         }
 
         CountDownLatch latch = new CountDownLatch(sessions.length);
@@ -416,16 +434,16 @@ public class Camera2Controller {
                     capturedPaths[slot] = filePath;
                     capturedSizes[slot] = fileSizeKb;
                     Log.d(TAG, "Slot " + slot + " captured: " + filePath + " (" + fileSizeKb + " KB)");
-                    log("slot " + slot + " (" + captureLabels[slot] + ") captured, "
+                    log("slot " + slot + " (" + slotLabels[slot] + ") captured, "
                             + fileSizeKb + " KB");
                     latch.countDown();
                 }
 
                 @Override
                 public void onCaptureError(String error) {
-                    log("slot " + slot + " (" + captureLabels[slot] + ") error: " + error);
+                    log("slot " + slot + " (" + slotLabels[slot] + ") error: " + error);
                     synchronized (errors) {
-                        errors.append(captureLabels[slot]).append(": ").append(error).append("; ");
+                        errors.append(slotLabels[slot]).append(": ").append(error).append("; ");
                     }
                     latch.countDown();
                 }

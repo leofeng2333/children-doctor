@@ -216,8 +216,8 @@ public class CaptureLogger {
             fos.write(data);
             currentBytes += data.length;
             if (currentBytes > MAX_FILE_BYTES) {
-                fos.write("\n[CaptureLogger] Log file exceeded "
-                        + MAX_FILE_BYTES + " bytes, truncating.\n".getBytes());
+                fos.write(("\n[CaptureLogger] Log file exceeded "
+                        + MAX_FILE_BYTES + " bytes, truncating.\n").getBytes());
                 // 简单策略：直接截断——本会话后续不再写新行
                 currentBytes = MAX_FILE_BYTES + 1;
                 currentLogFile = null;

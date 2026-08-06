@@ -110,7 +110,7 @@ public class Camera2Session {
     private final int targetLensFacing;
     private final int sensorOrientation;
     private final Size previewSize;
-    private final Size captureSize;
+    private Size captureSize;
 
     private CaptureCallback captureCallback;
 
