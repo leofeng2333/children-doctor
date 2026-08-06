@@ -26,7 +26,7 @@ import logoRight from '@/assets/images/logo-right.png'
   display: block;
 }
 
-.logo-left {
-  margin-left: 30px;
+.logo-right {
+  margin-left: 20px;
 }
 </style>

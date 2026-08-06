@@ -87,14 +87,7 @@ onUnmounted(() => {
         <!-- SVG 连接线层 -->
         <svg class="connectors-svg" aria-hidden="true">
           <defs>
-            <marker
-              id="arrowhead"
-              markerWidth="3.75"
-              markerHeight="3.75"
-              refX="3.375"
-              refY="1.875"
-              orient="auto"
-            >
+            <marker id="arrowhead" markerWidth="3.75" markerHeight="3.75" refX="3.375" refY="1.875" orient="auto">
               <path d="M 0 0 L 3.75 1.875 L 0 3.75 z" fill="#D9D9D9" />
             </marker>
           </defs>
@@ -323,6 +316,6 @@ onUnmounted(() => {
 }
 
 .logo {
-  margin-top: 12px;
+  margin-top: 20px;
 }
 </style>
