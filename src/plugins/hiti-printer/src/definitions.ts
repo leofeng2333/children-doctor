@@ -74,6 +74,22 @@ export interface HiTiPrinterPlugin {
    * don't need to install {@code @capacitor/filesystem}.
    */
   printPhotoBase64(options: HiTiPrintPhotoBase64Options): Promise<HiTiResult<string>>
+
+  /**
+   * Opens a fresh print session log file. All subsequent native logs go to
+   * this file in addition to logcat. Mirrors {@code DualCamera#startLogSession}.
+   */
+  startLogSession(): Promise<HiTiResult<{ path: string }>>
+
+  /**
+   * Closes the current print session log (writes footer).
+   */
+  closeLogSession(): Promise<HiTiResult<string>>
+
+  /**
+   * Mirror a single JS-side log line to the native session file (layer=JS).
+   */
+  captureLog(options: { tag?: string; msg: string }): Promise<HiTiResult<string>>
 }
 
 export interface HiTiPrintPhotoOptions {

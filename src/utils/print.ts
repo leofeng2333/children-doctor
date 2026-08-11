@@ -32,9 +32,13 @@ export interface PrintOptions {
  */
 async function resolveImageAsDataUrl(input: string): Promise<string> {
   if (!input) return ''
-  if (input.startsWith('data:')) return input
+  if (input.startsWith('data:')) {
+    console.log('[print/resolve] input already data URL, len=' + input.length)
+    return input
+  }
 
   const isWeb = Capacitor.getPlatform() === 'web'
+  console.log('[print/resolve] input needs conversion: isWeb=' + isWeb + ' prefix=' + input.slice(0, 30))
 
   if (isWeb) {
     if (input.startsWith('http://') || input.startsWith('https://') || input.startsWith('file://')) {
@@ -47,6 +51,7 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
         reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
         reader.readAsDataURL(blob)
       })
+      console.log('[print/resolve] web fetch OK, dataUrl len=' + dataUrl.length)
       return dataUrl
     }
     // Bare local path on web: not supported.
@@ -55,7 +60,9 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
 
   // Native: route through the DualCamera plugin which has privileged
   // access to ContentResolver / app cache directories.
+  console.log('[print/resolve] native path calling DualCamera.readImageAsBase64, input=' + input)
   const { base64 } = await DualCamera.readImageAsBase64({ input })
+  console.log('[print/resolve] DualCamera.readImageAsBase64 OK, base64 len=' + base64.length)
   return `data:image/jpeg;base64,${base64}`
 }
 
@@ -192,7 +199,13 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
   if (!opts.goodImgUrl) {
     throw new Error('goodImgUrl is required')
   }
-  // qrcodeUrl 可选：未传 / 空串时，模板只占位（不渲染图片）
+  console.log('[print/system] ====== System PrintManager 打印开始 ======')
+  console.log('[print/system] opts:', {
+    goodImgUrlLen: opts.goodImgUrl.length,
+    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
+    jobName: opts.jobName,
+    platform: Capacitor.getPlatform(),
+  })
 
   // 在 Android 上把 file:// / http(s):// 转成 data: URL，避免空 origin
   // WebView 拒绝加载本地资源导致打印主图黑屏。
@@ -200,6 +213,10 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
     resolveImageAsDataUrl(opts.goodImgUrl),
     opts.qrcodeUrl?.trim() ? resolveImageAsDataUrl(opts.qrcodeUrl.trim()) : Promise.resolve(''),
   ])
+  console.log('[print/system] resolved images:', {
+    goodImgLen: resolvedGoodImg.length,
+    qrcodeLen: resolvedQrcode.length,
+  })
 
   const html = buildPhotoHtml({
     ...opts,
@@ -207,9 +224,11 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
     qrcodeUrl: resolvedQrcode,
   })
   const jobName = opts.jobName ?? '宝贝照片'
+  console.log('[print/system] html built, length=' + html.length + ' jobName=' + jobName)
 
   // Web 平台 / 浏览器降级
   if (Capacitor.getPlatform() === 'web') {
+    console.log('[print/system] web mode: opening window.print()')
     const w = window.open('', '_blank', 'width=820,height=1240')
     if (!w) throw new Error('无法打开打印窗口，请检查浏览器弹窗拦截设置')
     w.document.open()
@@ -224,13 +243,16 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
     await new Promise((r) => setTimeout(r, 300))
     w.focus()
     w.print()
+    console.log('[print/system] web print() done')
     return
   }
 
+  console.log('[print/system] calling Printer.printHtml...')
   await Printer.printHtml({
     name: jobName,
     html,
   })
+  console.log('[print/system] Printer.printHtml resolved, ====== 完成 ======')
 }
 
 /**
@@ -246,34 +268,90 @@ export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
 export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: number }): Promise<void> {
   if (!opts.goodImgUrl) throw new Error('goodImgUrl is required')
 
-  // 取 base64（dataURL → base64）。HiTi 路径是独立调用，复用
-  // resolveImageAsDataUrl 的同源/跨域处理逻辑避免重复。
-  const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
-  const comma = resolved.indexOf(',')
-  const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
-  if (!base64) throw new Error('goodImgUrl 解析为空')
-
-  // 1) 起 service。HiTi SDK 要求所有 USB op 之前必须先 StartService,
-  // 否则 USB_CHECK_PRINTER_STATUS 之类直接返回 "Service is not start"。
-  const startRes = await HiTiPrinter.startService()
-  if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
-
-  // 2) 探测打印机是否就绪
-  const statusRes = await HiTiPrinter.getPrinterStatus()
-  if (!statusRes.ok) {
-    throw new Error(`HiTi 打印机不可用：${statusRes.error}`)
-  }
-  // SDK 返回 null 表示"无 status 数据"，但不一定是错；放过继续打。
-  if (statusRes.data && statusRes.data.statusValue === 0x00000080) {
-    throw new Error('HiTi 打印机未连接或未开机（status=0x00000080）')
-  }
-
-  // 3) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
-  const printRes = await HiTiPrinter.printPhotoBase64({
-    base64,
+  console.log('[print/HiTi] ====== HiTi 打印开始 ======')
+  console.log('[print/HiTi] opts:', {
+    goodImgUrlLen: opts.goodImgUrl.length,
+    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
+    jobName: opts.jobName,
     paperType: opts.paperType ?? 2,
   })
-  if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
+
+  // 启动 native 端日志会话：本次 HiTi 打印期间所有 native 日志（logcat + 文件）
+  // 都汇入 print_logs/print_<timestamp>.log。失败也不抛错（文件失败不影响打印）。
+  let nativeLogPath = ''
+  try {
+    const session = await HiTiPrinter.startLogSession()
+    if (session.ok && session.data?.path) {
+      nativeLogPath = session.data.path
+      console.log('[print/HiTi] native log session started:', nativeLogPath)
+    } else {
+      console.warn('[print/HiTi] startLogSession failed:', session.ok ? '(empty path)' : session.error)
+    }
+  } catch (e) {
+    console.warn('[print/HiTi] startLogSession threw:', e)
+  }
+
+  // Mirror 这一行 JS 端日志到 native 文件（即使后面抛错也会被 close 写入）
+  try {
+    await HiTiPrinter.captureLog({ tag: 'TS', msg: `printPhotoWithHiTi start, nativeLog=${nativeLogPath}` })
+  } catch {}
+
+  try {
+    // 取 base64（dataURL → base64）。HiTi 路径是独立调用，复用
+    // resolveImageAsDataUrl 的同源/跨域处理逻辑避免重复。
+    const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
+    console.log('[print/HiTi] resolved goodImgUrl:', {
+      isDataUrl: resolved.startsWith('data:'),
+      length: resolved.length,
+      prefix: resolved.slice(0, 40),
+    })
+    const comma = resolved.indexOf(',')
+    const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
+    console.log('[print/HiTi] base64:', {
+      length: base64.length,
+      empty: !base64,
+    })
+    if (!base64) throw new Error('goodImgUrl 解析为空')
+
+    // 1) 起 service。HiTi SDK 要求所有 USB op 之前必须先 StartService,
+    // 否则 USB_CHECK_PRINTER_STATUS 之类直接返回 "Service is not start"。
+    console.log('[print/HiTi] step 1/3: startService...')
+    const startRes = await HiTiPrinter.startService()
+    console.log('[print/HiTi] startService result:', startRes)
+    if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
+
+    // 2) 探测打印机是否就绪
+    console.log('[print/HiTi] step 2/3: getPrinterStatus...')
+    const statusRes = await HiTiPrinter.getPrinterStatus()
+    console.log('[print/HiTi] getPrinterStatus result:', statusRes)
+    if (!statusRes.ok) {
+      throw new Error(`HiTi 打印机不可用：${statusRes.error}`)
+    }
+    // SDK 返回 null 表示"无 status 数据"，但不一定是错；放过继续打。
+    if (statusRes.data && statusRes.data.statusValue === 0x00000080) {
+      throw new Error('HiTi 打印机未连接或未开机（status=0x00000080）')
+    }
+
+    // 3) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
+    console.log('[print/HiTi] step 3/3: printPhotoBase64...', {
+      paperType: opts.paperType ?? 2,
+    })
+    const printRes = await HiTiPrinter.printPhotoBase64({
+      base64,
+      paperType: opts.paperType ?? 2,
+    })
+    console.log('[print/HiTi] printPhotoBase64 result:', printRes)
+    if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
+    console.log('[print/HiTi] ====== HiTi 打印完成 ======')
+  } finally {
+    // 不管成功失败都关闭 native 日志会话（写 footer）
+    try {
+      await HiTiPrinter.closeLogSession()
+      console.log('[print/HiTi] native log session closed:', nativeLogPath)
+    } catch (e) {
+      console.warn('[print/HiTi] closeLogSession failed:', e)
+    }
+  }
 }
 
 /**
@@ -286,23 +364,36 @@ export type PrintEngine = 'auto' | 'hiti' | 'system'
 
 export async function printPhoto(opts: PrintOptions & { engine?: PrintEngine; paperType?: number }): Promise<void> {
   const engine: PrintEngine = opts.engine ?? 'auto'
+  console.log('[print] entry: printPhoto', {
+    engine,
+    goodImgUrlLen: opts.goodImgUrl.length,
+    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
+    jobName: opts.jobName,
+    paperType: opts.paperType,
+  })
 
   if (engine === 'system') {
+    console.log('[print] using system PrintManager')
     await printPhotoWithQrcode(opts)
     return
   }
 
   if (engine === 'hiti') {
+    console.log('[print] using HiTi (forced)')
     await printPhotoWithHiTi(opts)
     return
   }
 
   // auto：先 HiTi，失败回退系统打印
+  console.log('[print] auto mode: try HiTi first...')
   try {
     await printPhotoWithHiTi(opts)
+    console.log('[print] HiTi success, done')
   } catch (hitiErr) {
     const msg = hitiErr instanceof Error ? hitiErr.message : String(hitiErr)
-    console.warn('[print] HiTi 不可用，自动降级到系统打印：', msg)
+    const stack = hitiErr instanceof Error ? hitiErr.stack : undefined
+    console.warn('[print] HiTi 失败，按当前 DEBUG 策略直接抛错（不降级到系统打印）：', msg)
+    console.warn('[print] HiTi stack:', stack)
     throw new Error(`[DEBUG] HiTi failed: ${msg}`)  // DEBUG: 临时暴露真实错误
   }
 }

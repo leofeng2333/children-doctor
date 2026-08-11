@@ -14,11 +14,6 @@ import groovy.json.JsonSlurper
  * 也支持带 -beta.x / -rc.x 等预发布后缀，仅取前三位纯数字段。
  */
 def pkg = new JsonSlurper().parse(file("${rootProject.projectDir}/../package.json"))
-def versionParts = pkg.version.toString().split('-')[0].split('\\.')
-def major = versionParts.length > 0 ? versionParts[0].toInteger() : 0
-def minor = versionParts.length > 1 ? versionParts[1].toInteger() : 0
-def patch = versionParts.length > 2 ? versionParts[2].toInteger() : 0
-def computedVersionCode = major * 1000000 + minor * 1000 + patch
 
 android {
     namespace = "com.children.doctor"
@@ -27,7 +22,6 @@ android {
         applicationId "com.children.doctor"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode computedVersionCode
         versionName pkg.version.toString()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -105,7 +99,6 @@ try {
 android.applicationVariants.all { variant ->
     variant.outputs.all {
         def vName = variant.versionName ?: 'unknown'
-        def vCode = variant.versionCode ?: 0
-        outputFileName = "${project.name}-${variant.baseName}-${vName}-${vCode}.apk"
+        outputFileName = "${project.name}-${variant.baseName}-${vName}.apk"
     }
 }

@@ -15,7 +15,7 @@ const flowStore = useFlowStore()
 const showPasswordDialog = ref(false)
 
 const goToForm = () => {
-  router.push('/form')
+  router.push('/diagnosis')
 }
 
 const goToPrintTest = () => {

@@ -15,23 +15,85 @@ const isPrinting = ref(false)
 const hasPrinted = ref(false)
 const printError = ref('')
 
+// 本地选择图片打印
+const pickedImgUrl = ref<string>('') // 当前选中的图片（dataURL）
+const pickedImgName = ref<string>('') // 选中的文件名（用于显示）
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function onPickClick() {
+  // 重置 value，确保同一张图也能再次触发 change
+  if (fileInputRef.value) fileInputRef.value.value = ''
+  fileInputRef.value?.click()
+}
+
+function onPickChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  pickedImgName.value = file.name
+  printError.value = ''
+  const reader = new FileReader()
+  reader.onload = () => {
+    const result = typeof reader.result === 'string' ? reader.result : ''
+    pickedImgUrl.value = result
+    console.log('[PrintTest] picked image', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      dataUrlPrefix: result.slice(0, 40),
+      dataUrlLen: result.length,
+    })
+  }
+  reader.onerror = () => {
+    printError.value = '读取本地图片失败'
+    console.error('[PrintTest] FileReader error:', reader.error)
+  }
+  reader.readAsDataURL(file)
+}
+
+function onClearPicked() {
+  pickedImgUrl.value = ''
+  pickedImgName.value = ''
+  hasPrinted.value = false
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+// 实际打印：优先用选中的本地图，没有就用内置的 analysis-success.png
 async function onPrint() {
   if (isPrinting.value || hasPrinted.value) return
+  // 没选本地图时，用内置图，并标记"已用过内置图"以便禁用
+  const imgUrl = pickedImgUrl.value || analysisSuccess
+  const isBuiltin = !pickedImgUrl.value
   isPrinting.value = true
   printError.value = ''
+  console.log('[PrintTest] onPrint click', {
+    source: isBuiltin ? 'builtin' : 'picked',
+    imgName: pickedImgName.value || '(builtin analysis-success.png)',
+    imgUrlType: imgUrl.slice(0, 40),
+    len: imgUrl.length,
+  })
   try {
     await printPhoto({
-      goodImgUrl: analysisSuccess,
+      goodImgUrl: imgUrl,
       qrcodeUrl: '',
-      jobName: '打印测试照片',
+      jobName: pickedImgName.value ? `本地打印-${pickedImgName.value}` : '打印测试照片',
     })
     hasPrinted.value = true
+    console.log('[PrintTest] printPhoto resolved (success)')
   } catch (e) {
-    printError.value = (e as Error)?.message ?? '打印失败'
+    const err = e as Error
+    console.error('[PrintTest] printPhoto rejected:', err)
+    console.error('[PrintTest] stack:', err?.stack)
+    printError.value = err?.message ?? '打印失败'
   } finally {
     isPrinting.value = false
   }
 }
+
+// 用户可手动从这里取出 native 日志路径（HiTi 打印成功后）
+// 在 vConsole 里查 printPhoto 内部的 "[print/HiTi] native log session started:"
+// 可找到具体路径（/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/print_*.log）。
+const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/`
 </script>
 
 <template>
@@ -40,6 +102,48 @@ async function onPrint() {
 
     <h1 class="title">打印功能验证</h1>
     <p class="subtitle">调用入口与详情页 ScanSubscription 完全一致</p>
+
+    <!-- 本地选图区域 -->
+    <div class="picker-block">
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept="image/*"
+        class="file-input-hidden"
+        @change="onPickChange"
+      />
+
+      <div class="picker-row">
+        <button
+          class="pick-btn"
+          type="button"
+          :disabled="isPrinting || hasPrinted"
+          @click="onPickClick"
+        >
+          📁 从本地选择图片
+        </button>
+        <button
+          v-if="pickedImgUrl"
+          class="clear-btn"
+          type="button"
+          :disabled="isPrinting || hasPrinted"
+          @click="onClearPicked"
+        >
+          ✕ 清空
+        </button>
+      </div>
+
+      <div v-if="pickedImgUrl" class="picked-preview">
+        <img :src="pickedImgUrl" alt="picked" />
+        <div class="picked-meta">
+          <div class="picked-name">📎 {{ pickedImgName }}</div>
+          <div class="picked-hint">将使用本图打印</div>
+        </div>
+      </div>
+      <div v-else class="picked-hint muted">
+        未选图时将使用内置测试图 analysis-success.png
+      </div>
+    </div>
 
     <button class="print-btn" :disabled="isPrinting || hasPrinted" @click="onPrint">
       {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
@@ -124,6 +228,111 @@ async function onPrint() {
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+.picker-block {
+  width: 425px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.picker-row {
+  display: flex;
+  gap: 12px;
+}
+
+.pick-btn {
+  flex: 1;
+  height: 72px;
+  background: #f0f0f3;
+  color: #222;
+  border: 1px dashed #aaa;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+
+  &:active:not(:disabled) {
+    background: #e5e5ea;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.clear-btn {
+  width: 100px;
+  height: 72px;
+  background: #fff;
+  color: #888;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  font-size: 22px;
+  cursor: pointer;
+
+  &:active:not(:disabled) {
+    background: #f5f5f7;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.picked-preview {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+
+  img {
+    width: 140px;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid #eee;
+    background: #fafafa;
+  }
+}
+
+.picked-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.picked-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picked-hint {
+  font-size: 16px;
+  color: #2a8a3e;
+
+  &.muted {
+    color: #888;
+    text-align: center;
+    padding: 8px 0;
   }
 }
 

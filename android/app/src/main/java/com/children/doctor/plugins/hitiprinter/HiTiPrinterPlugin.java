@@ -33,18 +33,50 @@ public class HiTiPrinterPlugin extends Plugin {
     private static final String TAG = "HiTiPrinterPlugin";
 
     private HiTiPrinterManager manager;
+    private PrintLogger printLogger;
+
+    /**
+     * 同时输出到 logcat 和 PrintLogger（如果已启动会话）。
+     */
+    private void logD(String msg) {
+        Log.d(TAG, msg);
+        if (printLogger != null) printLogger.java(TAG, msg);
+    }
+
+    /**
+     * 同时输出到 logcat (Log.e) 和 PrintLogger。
+     */
+    private void logE(String msg, Throwable t) {
+        Log.e(TAG, msg, t);
+        if (printLogger != null) printLogger.java(TAG, msg + (t == null ? "" : " | " + t));
+    }
+
+    /**
+     * 同时输出到 logcat (Log.e) 和 PrintLogger（无 throwable 重载）。
+     */
+    private void logE(String msg) {
+        Log.e(TAG, msg);
+        if (printLogger != null) printLogger.java(TAG, msg);
+    }
 
     @Override
     public void load() {
         super.load();
-        manager = new HiTiPrinterManager(getContext());
+        printLogger = new PrintLogger(getContext());
+        manager = new HiTiPrinterManager(getContext(), printLogger);
         manager.init();
-        Log.d(TAG, "HiTiPrinter plugin loaded");
+        logD("HiTiPrinter plugin loaded");
     }
 
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
+        // 关闭当前会话（如果有）
+        if (printLogger != null) {
+            printLogger.closeSession();
+            printLogger.shutdown();
+            printLogger = null;
+        }
         if (manager != null) {
             manager.release();
             manager.shutdown();
@@ -53,12 +85,58 @@ public class HiTiPrinterPlugin extends Plugin {
     }
 
     @PluginMethod()
+    public void startLogSession(PluginCall call) {
+        if (printLogger == null) {
+            call.reject("PrintLogger not initialized");
+            return;
+        }
+        String path = printLogger.startSession();
+        if (path == null) {
+            call.reject("Failed to start log session");
+            return;
+        }
+        logD("startLogSession -> " + path);
+        JSObject result = new JSObject();
+        result.put("path", path);
+        call.resolve(result);
+    }
+
+    @PluginMethod()
+    public void closeLogSession(PluginCall call) {
+        if (printLogger != null) {
+            printLogger.closeSession();
+        }
+        logD("closeLogSession called");
+        call.resolve();
+    }
+
+    /**
+     * 前端写一行日志到 native 日志文件（layer=JS）。
+     */
+    @PluginMethod()
+    public void captureLog(PluginCall call) {
+        String tag = call.getString("tag", "JS");
+        String msg = call.getString("msg", "");
+        if (msg.isEmpty()) {
+            call.resolve();
+            return;
+        }
+        if (printLogger != null) {
+            printLogger.log("JS", tag, msg);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod()
     public void getPrinterStatus(PluginCall call) {
+        logD("getPrinterStatus: called");
         manager.getPrinterStatus(new HiTiPrinterManager.Callback<java.lang.Object>() {
             @Override public void onSuccess(Object payload) {
+                logD("getPrinterStatus: onSuccess, payload=" + (payload == null ? "null" : payload.getClass().getSimpleName()));
                 call.resolve(buildOk(toStatus(payload)));
             }
             @Override public void onError(String error) {
+                logE("getPrinterStatus: onError: " + error);
                 call.resolve(buildErr(error));
             }
         });
@@ -122,6 +200,7 @@ public class HiTiPrinterPlugin extends Plugin {
     public void printPhoto(PluginCall call) {
         String bitmapPath = call.getString("bitmapPath", "");
         int paperType = call.getInt("paperType", 2);
+        logD("printPhoto: bitmapPath=" + bitmapPath + " paperType=" + paperType);
         manager.printPhoto(bitmapPath, paperType, simpleVoid(call));
     }
 
@@ -134,7 +213,9 @@ public class HiTiPrinterPlugin extends Plugin {
     public void printPhotoBase64(PluginCall call) {
         String base64 = call.getString("base64", "");
         int paperType = call.getInt("paperType", 2);
+        logD("printPhotoBase64: paperType=" + paperType + " base64Len=" + (base64 == null ? "null" : base64.length()));
         if (base64 == null || base64.isEmpty()) {
+            logE("printPhotoBase64: base64 is null/empty");
             JSObject err = new JSObject();
             err.put("ok", false);
             err.put("error", "base64 is required");
@@ -143,8 +224,10 @@ public class HiTiPrinterPlugin extends Plugin {
         }
         try {
             byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+            logD("printPhotoBase64: decoded " + bytes.length + " bytes");
             File cache = getContext().getExternalCacheDir();
             if (cache == null) {
+                logE("printPhotoBase64: External cache dir not available");
                 JSObject err = new JSObject();
                 err.put("ok", false);
                 err.put("error", "External cache dir not available");
@@ -152,12 +235,14 @@ public class HiTiPrinterPlugin extends Plugin {
                 return;
             }
             File out = new File(cache, "hiti_print_" + System.currentTimeMillis() + ".jpg");
+            logD("printPhotoBase64: writing to " + out.getAbsolutePath());
             try (FileOutputStream fos = new FileOutputStream(out)) {
                 fos.write(bytes);
             }
+            logD("printPhotoBase64: file written, " + out.length() + " bytes; calling manager.printPhoto");
             manager.printPhoto(out.getAbsolutePath(), paperType, simpleVoid(call));
         } catch (Throwable t) {
-            Log.e(TAG, "printPhotoBase64 failed", t);
+            logE("printPhotoBase64 failed", t);
             JSObject err = new JSObject();
             err.put("ok", false);
             err.put("error", t.getMessage() != null ? t.getMessage() : "decode failed");
@@ -167,14 +252,17 @@ public class HiTiPrinterPlugin extends Plugin {
 
     @PluginMethod()
     public void startService(PluginCall call) {
+        logD("startService: called");
         manager.startService(new HiTiPrinterManager.Callback<com.hiti.usb.service.ErrorCode>() {
             @Override public void onSuccess(com.hiti.usb.service.ErrorCode payload) {
+                logD("startService: onSuccess, value=0x" + Integer.toHexString(payload != null ? payload.value : 0) + " desc=" + (payload != null ? payload.description : ""));
                 JSObject o = new JSObject();
                 o.put("value", payload != null ? payload.value : 0);
                 o.put("description", payload != null ? payload.description : "");
                 call.resolve(buildOk(o));
             }
             @Override public void onError(String error) {
+                logE("startService: onError: " + error);
                 call.resolve(buildErr(error));
             }
         });
@@ -182,14 +270,17 @@ public class HiTiPrinterPlugin extends Plugin {
 
     @PluginMethod()
     public void stopService(PluginCall call) {
+        logD("stopService: called");
         manager.stopService(new HiTiPrinterManager.Callback<com.hiti.usb.service.ErrorCode>() {
             @Override public void onSuccess(com.hiti.usb.service.ErrorCode payload) {
+                logD("stopService: onSuccess, value=0x" + Integer.toHexString(payload != null ? payload.value : 0) + " desc=" + (payload != null ? payload.description : ""));
                 JSObject o = new JSObject();
                 o.put("value", payload != null ? payload.value : 0);
                 o.put("description", payload != null ? payload.description : "");
                 call.resolve(buildOk(o));
             }
             @Override public void onError(String error) {
+                logE("stopService: onError: " + error);
                 call.resolve(buildErr(error));
             }
         });
@@ -211,9 +302,11 @@ public class HiTiPrinterPlugin extends Plugin {
     private HiTiPrinterManager.Callback<Object> simpleVoid(PluginCall call) {
         return new HiTiPrinterManager.Callback<Object>() {
             @Override public void onSuccess(Object payload) {
+                logD("simpleVoid.onSuccess: " + (payload == null ? "null" : payload.toString()));
                 call.resolve(buildOk("done"));
             }
             @Override public void onError(String error) {
+                logE("simpleVoid.onError: " + error);
                 call.resolve(buildErr(error));
             }
         };
