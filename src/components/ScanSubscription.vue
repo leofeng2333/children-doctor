@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import QRCode from 'qrcode'
 import { useRouter } from 'vue-router'
-import { useSubscriptionScan } from '@/composables/useSubscriptionScan'
+import VueQrcode from 'vue-qrcode'
+import { useQrcodeIdid } from '@/composables/useQrcode'
 import { DualCamera } from '@/plugins/dual-camera'
 import { printPhoto } from '@/utils/print'
 
@@ -16,8 +18,9 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-const hadSubscription = ref(false)
-const qrcodeUrl = ref('')
+// 直接使用本地二维码 composable：链接从 .env 里的 VITE_QRCODE_BASE_URL
+// 拼出，idid 在 localStorage 持久化。
+const { url: qrcodeUrl } = useQrcodeIdid()
 const isFinishing = ref(false)
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
@@ -27,29 +30,6 @@ const printButtonLabel = computed(() => {
   if (isPrinting.value) return '正在准备打印...'
   if (hasPrinted.value) return '已打印完成\n请在下方取走宝贝照片'
   return '打印带走宝贝照片'
-})
-
-let cleanup: (() => void) | undefined
-
-onMounted(async () => {
-  console.log('[ScanSubscription] onMounted')
-  cleanup = useSubscriptionScan((state) => {
-    console.log('[ScanSubscription] state updated:', state)
-    if (state.isSubscribed) {
-      hadSubscription.value = true
-    }
-    if (state.qrcodeUrl) {
-      qrcodeUrl.value = state.qrcodeUrl
-    }
-  })
-
-  console.log('[ScanSubscription] calling init...')
-  await useSubscriptionScan()
-  console.log('[ScanSubscription] init done')
-})
-
-onUnmounted(() => {
-  cleanup?.()
 })
 
 async function onFinish() {
@@ -78,19 +58,32 @@ async function onPrint(goodImgUrl: string) {
   printError.value = ''
   isPrinting.value = true
   try {
-    // 二维码未就绪时也允许打印：模板里只占位即可
-    const finalQrcodeUrl = qrcodeUrl.value || ''
+    // 把二维码 URL 渲染成 PNG dataURL 传给打印模板。
+    // System PrintManager 模板只接受 dataURL/file/http(s)，直接传 http(s) 链接
+    // 在 Android WebView 空 origin 下会加载失败。
+    let qrcodeDataUrl = ''
+    if (qrcodeUrl.value) {
+      try {
+        qrcodeDataUrl = await QRCode.toDataURL(qrcodeUrl.value, {
+          width: 360,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+        })
+      } catch (e) {
+        console.warn('[ScanSubscription] QRCode.toDataURL failed, print without qrcode:', e)
+      }
+    }
     console.log(
       '[ScanSubscription] onPrint: goodImg=',
       goodImgUrl,
-      'qrcode=',
-      finalQrcodeUrl || '(empty)',
+      'qrcodeDataUrlLen=',
+      qrcodeDataUrl.length,
     )
     // 默认走 HiTi 专用 USB 照片打印机；HiTi 不可用时由 printPhoto 内部
     // 自动降级到 @capgo/capacitor-printer 系统打印对话框（含二维码排版）。
     await printPhoto({
       goodImgUrl,
-      qrcodeUrl: finalQrcodeUrl,
+      qrcodeUrl: qrcodeDataUrl,
       jobName: '宝贝照片',
     })
     // 仅打印走通后锁定按钮：原生平台 printHtml 弹系统对话框，用户取消不会
@@ -112,7 +105,15 @@ async function onPrint(goodImgUrl: string) {
     <div class="scan-row">
       <div class="qrcode-block">
         <div class="qrcode-container">
-          <img :src="qrcodeUrl" alt="qrcode" />
+          <VueQrcode
+            v-if="qrcodeUrl"
+            :value="qrcodeUrl"
+            :width="200"
+            :height="200"
+            :margin="2"
+            :color="{ dark: '#000000ff', light: '#ffffffff' }"
+            type="image/png"
+          />
         </div>
         <div class="qrcode-desc">扫一扫获取电子版</div>
       </div>
@@ -167,8 +168,12 @@ async function onPrint(goodImgUrl: string) {
 .qrcode-container {
   width: 200px;
   height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-  img {
+  img,
+  canvas {
     width: 100%;
     height: 100%;
     object-fit: cover;

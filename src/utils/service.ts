@@ -127,16 +127,6 @@ export const startAnalysis = async () => {
   }
 }
 
-export const createSubscriptionTask = (): Promise<{ qrcodeUrl: string; followTaskId: string }> => {
-  return post('/api/wechat/follow-task/create')
-}
-
-export const getSubscriptionStatus = (taskId: string): Promise<{ status: number }> => {
-  return post('/api/wechat/follow-status', {
-    followTaskId: taskId,
-  })
-}
-
 export const getAnalysisResult = (taskId: string) => {
   return post('/api/ai/result', {
     taskId,

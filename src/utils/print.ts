@@ -7,7 +7,8 @@ export interface PrintOptions {
   /** 主图 URL（good-img / 静态 success 图） */
   goodImgUrl: string
   /**
-   * 公众号二维码 URL（http(s) 或 file://）。
+   * 公众号二维码的 PNG dataURL。
+   * 由前端根据 VITE_QRCODE_BASE_URL 拼链接，再用 qrcode.toDataURL 转图。
    * 可选：未传或空串时，打印模板只在 footer 区域占位，不渲染二维码图片。
    */
   qrcodeUrl?: string
