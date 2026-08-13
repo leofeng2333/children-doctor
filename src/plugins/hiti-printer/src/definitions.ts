@@ -56,43 +56,19 @@ export interface HiTiPrinterPlugin {
   ejectPaperJam(): Promise<HiTiResult<string>>
 
   /**
-   * Sends a JPEG/bitmap to the printer.
+   * Sends a JPEG/bitmap to the printer. Native side accepts base64 JPEG,
+   * decodes it to a temp file under {@code getExternalCacheDir()}, then
+   * synchronously invokes {@code serviceConnector.doService(job)} on a
+   * raw {@code new Thread} (mirrors SampleAPK's
+   * {@code MainActivity#operatePrinter(USB_PRINT_PHOTOS)}). Returns the
+   * SDK-style string {@code "<action> -ID<id> : err <0x<hex> <desc>>"} on
+   * both success and failure — TS side must inspect the result envelope's
+   * {@code ok} flag first.
    *
-   * @param options.bitmapPath Absolute path of a JPEG file on the device.
-   *                           Use the {@link DualCamera#readImageAsBase64}
-   *                           pipeline or write the blob to a cache file first.
-   * @param options.paperType  2=4x6, 3=5x7, 4=6x8, 5=4x6 split 2up, 6=6x6
-   *                           (matches the vendor {@code PaperType} switch).
+   * <p>Defaults match SampleAPK MainActivity:
+   * {@code paperType=2}, {@code printCount=1}, {@code matte=1}, {@code printMode=0}.
    */
   printPhoto(options: HiTiPrintPhotoOptions): Promise<HiTiResult<string>>
-
-  /**
-   * Convenience variant that accepts the JPEG as base64. The native side
-   * writes the bytes to {@code getExternalCacheDir()} and forwards the
-   * resulting file path to {@link printPhoto}. Use this when you already
-   * have a data URL / base64 from {@code resolveImageAsDataUrl} so you
-   * don't need to install {@code @capacitor/filesystem}.
-   */
-  printPhotoBase64(options: HiTiPrintPhotoBase64Options): Promise<HiTiResult<string>>
-
-  /**
-   * SampleAPK-style print entry. Mirrors
-   * {@code com.hiti.test.PrinterOperation#print(photoPath)} —
-   * explicitly forwards {@code PRINTCOUNT / MATTE / PRINTMODE / PaperType}
-   * (the sample's instance fields) instead of {@code printPhotoBase64}'s
-   * hard-coded {@code (1, 0, 1)} triple.
-   *
-   * <p>Behaviour differences from {@link printPhotoBase64}:
-   * <ul>
-   *   <li>Native side calls {@code manager.printPhotoSample} which
-   *       synchronously invokes {@code serviceConnector.doService(job)}
-   *       and inspects {@code job.errCode} — no 3-second fallback timer.</li>
-   *   <li>All native logs are tagged {@code [sample]} so they're easy
-   *       to distinguish from {@code [print/HiTi]} in logcat and the
-   *       per-session log file.</li>
-   * </ul>
-   */
-  printPhotoSample(options: HiTiPrintPhotoSampleOptions): Promise<HiTiResult<string>>
 
   /**
    * Opens a fresh print session log file. All subsequent native logs go to
@@ -111,19 +87,8 @@ export interface HiTiPrinterPlugin {
   captureLog(options: { tag?: string; msg: string }): Promise<HiTiResult<string>>
 }
 
-export interface HiTiPrintPhotoOptions {
-  bitmapPath: string
-  paperType?: number
-}
-
-export interface HiTiPrintPhotoBase64Options {
-  /** Base64-encoded JPEG (no data: prefix). */
-  base64: string
-  paperType?: number
-}
-
 /**
- * SampleAPK 复刻版打印参数。语义对齐
+ * HiTi 打印参数。语义对齐
  * {@code com.hiti.test.MainActivity#operatePrinter(USB_PRINT_PHOTOS)}
  * 中的 4 个 PrinterOperation 实例字段：
  * <ul>
@@ -134,7 +99,7 @@ export interface HiTiPrintPhotoBase64Options {
  * </ul>
  * 缺省值与 sample MainActivity 完全一致，方便做行为对比。
  */
-export interface HiTiPrintPhotoSampleOptions {
+export interface HiTiPrintPhotoOptions {
   /** Base64-encoded JPEG (no data: prefix). */
   base64: string
   paperType?: number

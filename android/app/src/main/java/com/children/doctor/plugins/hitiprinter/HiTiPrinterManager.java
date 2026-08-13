@@ -223,116 +223,28 @@ public class HiTiPrinterManager {
     }
 
     /**
-     * 直接对接 HiTi SDK 的 USB_PRINT_PHOTOS 入口：
-     * <ul>
-     *   <li>bitmap 解码失败 → 直接回调 onError，让 SDK 错误向上透传。</li>
-     *   <li>{@code serviceConnector.doService(job)} 通过 {@link #doServiceWithTimeout}
-     *       调用，统一走 {@link #printExecutor} + {@code future.get(timeout)} 兜底，
-     *       timeout 错误信息带 action+jobId 便于调试。</li>
-     *   <li>不做 3s postDelayed 兜底、不做包装 Callback 链路。</li>
-     * </ul>
-     */
-    public void printPhoto(String bitmapPath, int paperType, Callback<Object> cb) {
-        logD("printPhoto() called: bitmapPath=" + bitmapPath + " paperType=" + paperType);
-        if (bitmapPath == null || bitmapPath.isEmpty()) {
-            logE("printPhoto: bitmapPath is empty");
-            post(cb, null, "bitmapPath is required");
-            return;
-        }
-        // Adapter adapts to the sample's PaperType switch (2..6). Default to 6x4 (2).
-        int pt = paperType <= 0 ? 2 : paperType;
-        io.execute(() -> {
-            try {
-                // Block until Tables are extracted from assets. Without this, tablesRoot
-                // is still "" when printPhoto races ahead of ensureTablesExtracted.
-                boolean tablesLoaded = tablesReady.await(10, TimeUnit.SECONDS);
-                if (!tablesLoaded) {
-                    logE("printPhoto: tablesReady timed out after 10s — tablesRoot='" + tablesRoot + "'");
-                    post(cb, null, "Tables extraction timed out");
-                    return;
-                }
-                if (tablesRoot == null || tablesRoot.isEmpty()) {
-                    logE("printPhoto: tablesRoot is still empty after await — tablesRoot='" + tablesRoot + "'");
-                    post(cb, null, "Tables root not set");
-                    return;
-                }
-                logD("printPhoto: tablesReady confirmed, tablesRoot='" + tablesRoot + "'");
-
-                int jobId = nextJobId++;
-                PrinterJob job = new PrinterJob(jobId, Action.USB_PRINT_PHOTOS);
-                logD("printPhoto: created PrinterJob id=" + jobId);
-                Object attr = buildPhotoAttr(bitmapPath, pt);
-                if (attr == null) {
-                    logE("printPhoto: buildPhotoAttr returned null (bitmapPath=" + bitmapPath + " paperType=" + pt + ")");
-                    post(cb, null, "Failed to decode bitmap from " + bitmapPath);
-                    return;
-                }
-                logD("printPhoto: buildPhotoAttr OK, attr=" + attr.getClass().getSimpleName());
-                job.setJobPara(attr);
-                if (serviceConnector == null) {
-                    logE("printPhoto: serviceConnector is null");
-                    post(cb, null, "ServiceConnector not initialized");
-                    return;
-                }
-                logD("printPhoto: tablesRoot='" + tablesRoot + "' (set on serviceConnector)");
-                serviceConnector.m_strTablesRoot = tablesRoot;
-
-                doServiceWithTimeout(job, new Callback<String>() {
-                    @Override public void onSuccess(String errStr) {
-                        if (errStr == null) {
-                            post(cb, "printed", null);
-                        } else {
-                            post(cb, null, errStr);
-                        }
-                    }
-                    @Override public void onError(String error) {
-                        post(cb, null, error);
-                    }
-                });
-            } catch (Throwable t) {
-                logE("printPhoto failed", t);
-                post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
-            }
-        });
-    }
-
-    /**
-     * SampleAPK 同款 USB_PRINT_PHOTOS 打印，按 sampleAPK 原版行为忠实复刻：
+     * HiTi 打印入口。行为对齐 SDK 自带 SampleAPK 的 MainActivity b_printPhoto：
      * <ol>
-     *   <li>每次调用 {@code new Thread(...).start()} 起一个**全新的 raw Thread**，
-     *       完全脱离本类原有的 {@code io} 单线程 executor，与 {@link #printPhoto}
-     *       互不阻塞、可并行。</li>
-     *   <li>利用 sample 的"实例字段 + 同步 doService"语义：
-     *       <ul>
-     *         <li>同步把 {@code serviceConnector.m_strTablesRoot = tablesRoot}，
-     *             然后同步 {@code serviceConnector.doService(job)}；</li>
-     *         <li>doService 返回后立刻把 {@code m_strTablesRoot} 清空回 {@code ""}
-     *             （与 sample {@code MainActivity#operatePrinter(... USB_PRINT_PHOTOS)}
-     *             行 651-655 完全一致 —— set → print → reset to ""）。</li>
-     *       </ul>
-     *   </li>
-     *   <li>返回结果走 sample 的 {@link #retrieveSampleData} 字符串化格式：
-     *       {@code "USB_PRINT_PHOTOS -ID<id> : err <0x... desc>"}，
-     *       并把 retData 也按 sample {@code retrieveData} 的 switch 处理。</li>
-     *   <li>无任何 fallback timeout —— sample 原版也没有。</li>
-     *   <li>MATTE/PRINTCOUNT/PRINTMODE 取自 sample MainActivity 默认值
-     *       （MATTE=1 覆膜, PRINTCOUNT=1, PRINTMODE=0），
-     *       与 {@link #printPhoto} hardcode 的 {@code (1, 0, 1)} 在 MATTE 上有实际差异。</li>
+     *   <li>每次调用 {@code new Thread(...).start()} 起一个全新的 raw Thread，
+     *       完全脱离本类原有的 {@code io} 单线程 executor，doService(USB_PRINT_PHOTOS)
+     *       不会被前一次任务串行卡住。</li>
+     *   <li>{"set m_strTablesRoot → doService → reset m_strTablesRoot"} 同步成对执行，
+     *       与 sample MainActivity 行 651-655 完全一致。</li>
+     *   <li>doService 走 {@link #doServiceWithTimeout} 统一兜底：超时由 native 端
+     *       强制 cancel Future，错误信息里带 action+jobId 便于调试。TS 端还有
+     *       一层 Promise.race 30s 看门狗，双保险。</li>
+     *   <li>MATTE/PRINTCOUNT/PRINTMODE/PaperType 默认值与 sample MainActivity 一致：
+     *       MATTE=1（覆膜）、PRINTCOUNT=1、PRINTMODE=0、PaperType=2（4x6）。</li>
+     *   <li>返回值：成功时回调 {@code data} 是 native {@code retrieveSampleData}
+     *       拼出来的字符串 {@code "<<<USB_PRINT_PHOTOS -ID<id> : err <0x... desc>"}；
+     *       失败时 {@code error} 同样被填上这段字符串以便前端展示。</li>
      * </ol>
-     *
-     * 与 {@link #printPhoto} 在 observable behavior 上的真实差异：
-     * <ul>
-     *   <li>线程模型：raw Thread vs 单线程 executor。</li>
-     *   <li>m_strTablesRoot 时序：sample 在 doService 完成后立即置空。</li>
-     *   <li>结果序列化：sample 把 errCode + retData 拼成单字符串，printPhoto 仅传 ErrorCode 对象。</li>
-     *   <li>MATTE：sample 默认 1（覆膜），printPhoto 硬编码 0（不覆膜）。</li>
-     * </ul>
      */
-    public void printPhotoSample(final SamplePrintOptions opts, final Callback<Object> cb) {
-        logD("printPhotoSample() called: " + opts);
+    public void printPhoto(final SamplePrintOptions opts, final Callback<Object> cb) {
+        logD("printPhoto() called: " + opts);
 
         if (opts == null || opts.bitmapPath == null || opts.bitmapPath.isEmpty()) {
-            logE("printPhotoSample: bitmapPath is empty");
+            logE("printPhoto: bitmapPath is empty");
             post(cb, null, "bitmapPath is required");
             return;
         }
@@ -342,37 +254,37 @@ public class HiTiPrinterManager {
             @Override
             public void run() {
                 try {
-                    // 1) 等 Tables assets 解压完成，与 printPhoto 同样的安全保证
+                    // 1) 等 Tables assets 解压完成
                     boolean tablesLoaded = tablesReady.await(10, TimeUnit.SECONDS);
                     if (!tablesLoaded) {
-                        logE("printPhotoSample: tablesReady timed out");
+                        logE("printPhoto: tablesReady timed out");
                         post(cb, "USB_PRINT_PHOTOS -ID? : err <0x? Tables extraction timed out>", null);
                         return;
                     }
                     if (tablesRoot == null || tablesRoot.isEmpty()) {
-                        logE("printPhotoSample: tablesRoot is empty after await");
+                        logE("printPhoto: tablesRoot is empty after await");
                         post(cb, "USB_PRINT_PHOTOS -ID? : err <0x? Tables root not set>", null);
                         return;
                     }
 
-                    // 2) 拷贝 sample 实例字段（PRINTCOUNT/MATTE/PRINTMODE/PaperType）到本地 final
+                    // 2) 拷贝字段到本地 final
                     final int PRINTCOUNT = opts.printCount;
                     final short MATTE     = opts.matte;
                     final short PRINTMODE = opts.printMode;
                     final int PaperType   = opts.paperType;
-                    logD("printPhotoSample: sample defaults PRINTCOUNT=" + PRINTCOUNT
+                    logD("printPhoto: sample defaults PRINTCOUNT=" + PRINTCOUNT
                             + " MATTE=" + MATTE + " PRINTMODE=" + PRINTMODE
                             + " PaperType=" + PaperType);
 
                     // 3) 创建 PrinterJob，并把 SDK 期望的 bitmap attr 装配进去
                     int jobId = nextJobId++;
                     final PrinterJob job = new PrinterJob(jobId, Action.USB_PRINT_PHOTOS);
-                    logD("printPhotoSample: PrinterJob created id=" + jobId);
+                    logD("printPhoto: PrinterJob created id=" + jobId);
 
                     Object attr = buildPhotoAttrSample(opts.bitmapPath, PaperType,
                             PRINTCOUNT, MATTE, PRINTMODE, tablesRoot);
                     if (attr == null) {
-                        logE("printPhotoSample: buildPhotoAttrSample returned null");
+                        logE("printPhoto: buildPhotoAttrSample returned null");
                         post(cb, "USB_PRINT_PHOTOS -ID" + jobId
                                 + " : err <0x? Failed to decode bitmap from " + opts.bitmapPath + ">", null);
                         return;
@@ -384,25 +296,21 @@ public class HiTiPrinterManager {
                     //    再 serviceConnector.doService(job)；
                     //    doService 返回后立即把 m_strTablesRoot 置空。
                     if (serviceConnector == null) {
-                        logE("printPhotoSample: serviceConnector is null");
+                        logE("printPhoto: serviceConnector is null");
                         post(cb, "USB_PRINT_PHOTOS -ID" + jobId
                                 + " : err <0x? ServiceConnector not initialized>", null);
                         return;
                     }
 
-                    logD("printPhotoSample: pre-set serviceConnector.m_strTablesRoot='" + tablesRoot + "'");
+                    logD("printPhoto: pre-set serviceConnector.m_strTablesRoot='" + tablesRoot + "'");
                     serviceConnector.m_strTablesRoot = tablesRoot;
-                    // sample 路径要走 raw Thread 同步 doService（与 sample MainActivity 行为一致），
-                    // 但 doService 仍走 doServiceWithTimeout 统一兜底：sampleThread 当前同步等
-                    // future.get(timeout)，超时后 raw Thread 自己抛走 catch 分支，不再卡死 UI。
-                    final PrinterJob doServiceJob = job;
                     final Throwable[] errHolder = new Throwable[1];
-                    doServiceWithTimeout(doServiceJob, new Callback<String>() {
+                    doServiceWithTimeout(job, new Callback<String>() {
                         @Override public void onSuccess(String errStr) {
                             // doService 返回后立即把 m_strTablesRoot 置空（sample MainActivity 行 655）。
                             String before = serviceConnector.m_strTablesRoot;
                             serviceConnector.m_strTablesRoot = "";
-                            logD("printPhotoSample: post-clear serviceConnector.m_strTablesRoot, was='" + before + "'");
+                            logD("printPhoto: post-clear serviceConnector.m_strTablesRoot, was='" + before + "'");
                         }
                         @Override public void onError(String error) {
                             serviceConnector.m_strTablesRoot = "";
@@ -411,7 +319,7 @@ public class HiTiPrinterManager {
                     });
                     if (errHolder[0] != null) {
                         Throwable cause = errHolder[0];
-                        logE("printPhotoSample: doServiceWithTimeout failed, jobId=" + jobId, cause);
+                        logE("printPhoto: doServiceWithTimeout failed, jobId=" + jobId, cause);
                         String msg = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
                         post(cb, "USB_PRINT_PHOTOS -ID" + jobId
                                 + " : err <0x? " + msg + ">", null);
@@ -425,12 +333,12 @@ public class HiTiPrinterManager {
                         errCodeStr = "0x" + Integer.toHexString(job.errCode.value)
                                 + " " + String.valueOf(job.errCode.description);
                     }
-                    logD("printPhotoSample: doService returned, errCode=" + errCodeStr
+                    logD("printPhoto: doService returned, errCode=" + errCodeStr
                             + " retData=" + job.retData);
 
                     // 5) 走 sample retrieveData 字符串化输出
                     String sampleOutput = retrieveSampleData(job);
-                    logD("printPhotoSample: retrieveSampleData -> " + sampleOutput.replace('\n', '\\'));
+                    logD("printPhoto: retrieveSampleData -> " + sampleOutput.replace('\n', '\\'));
 
                     // 喂一个 SDK-style 行到 native 日志文件以便后续检索
                     if (printLogger != null) {
@@ -445,13 +353,13 @@ public class HiTiPrinterManager {
                         post(cb, sampleOutput, sampleOutput);
                     }
                 } catch (Throwable t) {
-                    logE("printPhotoSample raw Thread failed", t);
+                    logE("printPhoto raw Thread failed", t);
                     post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
                 }
             }
-        }, "HiTi-PrintPhotoSample-" + System.currentTimeMillis());
+        }, "HiTi-PrintPhoto-" + System.currentTimeMillis());
         sampleThread.start();
-        logD("printPhotoSample: raw Thread started, name=" + sampleThread.getName());
+        logD("printPhoto: raw Thread started, name=" + sampleThread.getName());
     }
 
     /**
@@ -481,8 +389,7 @@ public class HiTiPrinterManager {
     /**
      * SampleAPK 风格的 getPrintPhotoPara 包装：
      * 解码 bitmap → 按 sample 的 PaperSize switch 选 Size → 装配 PRINTCOUNT/MATTE/PRINTMODE。
-     * 与 {@link #buildPhotoAttr} 的差异在于这里把 PRINTCOUNT/MATTE/PRINTMODE
-     * 全开放, 而不是 hardcode (1, 0, 1) —— 这正是 sample MainActivity
+     * 全部参数开放（PRINTCOUNT/MATTE/PRINTMODE），与 sample MainActivity
      * {@code operatePrinter(... USB_PRINT_PHOTOS)} 设置实例字段后再调用的同款语义。
      */
     private Object buildPhotoAttrSample(String bitmapPath, int paperType,
@@ -698,29 +605,6 @@ public class HiTiPrinterManager {
             default:
                 return null;
         }
-    }
-
-    private Object buildPhotoAttr(String bitmapPath, int paperType) {
-        logD("buildPhotoAttr: bitmapPath=" + bitmapPath + " paperType=" + paperType);
-        android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(bitmapPath);
-        if (bitmap == null) {
-            logE("buildPhotoAttr: BitmapFactory.decodeFile returned null for " + bitmapPath);
-            return null;
-        }
-        logD("buildPhotoAttr: decoded bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
-        PaperSize size;
-        switch (paperType) {
-            case 3: size = PaperSize.PAPER_SIZE_5X7_PHOTO; break;
-            case 4: size = PaperSize.PAPER_SIZE_6X8_PHOTO; break;
-            case 5: size = PaperSize.PAPER_SIZE_6X4_SPLIT_2UP; break;
-            case 6: size = PaperSize.PAPER_SIZE_6X6_PHOTO; break;
-            case 2:
-            default: size = PaperSize.PAPER_SIZE_6X4_PHOTO; break;
-        }
-        logD("buildPhotoAttr: PaperSize=" + size);
-        Object para = PrintPara.getPrintPhotoPara(bitmap, (short) 1, (short) 0, (short) 1, size, tablesRoot);
-        logD("buildPhotoAttr: PrintPara.getPrintPhotoPara returned " + (para == null ? "null" : para.getClass().getSimpleName()));
-        return para;
     }
 
     private String errorOf(PrinterJob job) {

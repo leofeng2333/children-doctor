@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { printPhoto } from '@/utils/print'
 import { HiTiPrinter } from '@/plugins/hiti-printer'
-import { printPhotoWithSampleHiTi } from '@/utils/print'
+import { printPhoto } from '@/utils/print'
 // Vite 的 `?url` 拿 URL；`?inline` 直接拿 base64 dataURL（编译期内联）。
 // 用 inline 让原生侧跳过 readImageAsBase64, 避免 Vite 的 /assets/*.png
 // 在 Android Capacitor 里没有对应 ContentResolver 条目而读不到的问题。
@@ -89,64 +88,6 @@ async function onPrint() {
     printError.value = err?.message ?? '打印失败'
   } finally {
     isPrinting.value = false
-  }
-}
-
-// =================== SampleAPK 同款打印按钮 ===================
-// 与 onPrint 互不干扰：独立的 isPrintingSample / sampleError / sampleNativeOutput 状态，
-// 与原 HiTi 路径完全解耦。
-const isPrintingSample = ref(false)
-const sampleError = ref('')
-/**
- * native 端 retrieveSampleData 拼出来的字符串，例如
- * "<<<USB_PRINT_PHOTOS -ID188 : err <0x0 ...>"。展示在前端 UI 上，
- * 让 sample 路径里的 native 反馈可被肉眼看出是 sample 风格。
- */
-const sampleNativeOutput = ref('')
-
-async function onSamplePrint() {
-  if (isPrintingSample.value) return
-  // 与 onPrint 共用图片源：选中的本地图优先，否则用内置测试图
-  const imgUrl = pickedImgUrl.value || analysisSuccess
-  const isBuiltin = !pickedImgUrl.value
-  isPrintingSample.value = true
-  sampleError.value = ''
-  sampleNativeOutput.value = ''
-  console.log('[PrintTest/sample] onSamplePrint click', {
-    source: isBuiltin ? 'builtin' : 'picked',
-    imgName: pickedImgName.value || '(builtin analysis-success.png)',
-    imgUrlType: imgUrl.slice(0, 40),
-    len: imgUrl.length,
-  })
-  // sample MainActivity 的 b_startService 不在 b_printPhoto 内 —— 它由用户单独点。
-  // 这里为了真实可用，加一层前置 startService，让连接就绪；不预检 getPrinterStatus，
-  // 与 sample 的"只做 operatePrinter(USB_PRINT_PHOTOS)" 行为一致。
-  try {
-    const svc = await HiTiPrinter.startService()
-    console.log('[PrintTest/sample] pre-startService result:', svc)
-    if (!svc.ok) {
-      throw new Error(`startService 失败：${svc.error}`)
-    }
-    await printPhotoWithSampleHiTi({
-      goodImgUrl: imgUrl,
-      qrcodeUrl: '',
-      // 显式传默认值，让 sample 路径行为可复现且与 sampleAPK MainActivity 默认值一致
-      paperType: 2,
-      printCount: 1,
-      matte: 1,
-      printMode: 0,
-    })
-    console.log('[PrintTest/sample] printPhotoWithSampleHiTi resolved (success)')
-  } catch (e) {
-    const err = e as Error
-    console.error('[PrintTest/sample] printPhotoWithSampleHiTi rejected:', err)
-    console.error('[PrintTest/sample] stack:', err?.stack)
-    const msg = err?.message ?? 'sample 打印失败'
-    sampleError.value = msg
-    // retrieveSampleData 风格前缀："<<<USB_PRINT_PHOTOS ..." 或 "[sample/rawThread] ..."
-    if (msg.includes('<<<')) sampleNativeOutput.value = msg
-  } finally {
-    isPrintingSample.value = false
   }
 }
 
@@ -332,22 +273,6 @@ async function probePrinter() {
     <button class="print-btn" :disabled="isPrinting || hasPrinted" @click="onPrint">
       {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
     </button>
-
-    <!--
-      SampleAPK 同款按钮：底层走 native HiTiPrinterManager#printPhotoSample
-      （同步 doService，无 3s 兜底），与上面按钮互不干扰、状态独立。
-      共用 picker 选出的图片源；不依赖 HiTi 路径的降级逻辑。
-    -->
-    <button
-      class="print-btn print-btn-sample"
-      :disabled="isPrintingSample"
-      @click="onSamplePrint"
-    >
-      {{ isPrintingSample ? '正在按 sampleAPK 逻辑打印…' : '按 sampleAPK 逻辑打印' }}
-    </button>
-    <p v-if="sampleError" class="print-error print-error-sample">{{ sampleError }}</p>
-    <!-- 把 native 侧的 retrieveSampleData 输出（"<<<USB_PRINT_PHOTOS ..."）原样展示 -->
-    <pre v-if="sampleNativeOutput" class="sample-native-output">{{ sampleNativeOutput }}</pre>
 
     <p v-if="printError" class="print-error">{{ printError }}</p>
 
@@ -613,35 +538,6 @@ async function probePrinter() {
   font-size: 18px;
   color: #ff4d4f;
   text-align: center;
-}
-
-/* SampleAPK 风格打印按钮：在原 .print-btn 基础上换上紫色，视觉上和原 HiTi 路径做区分 */
-.print-btn-sample {
-  background: #6f42c1;
-  margin-top: 0;
-  width: 425px;
-  font-size: 24px;
-  height: 80px;
-}
-
-.print-error-sample {
-  color: #b73ad6;
-}
-
-/* sample 路径专属：把 native retrieveSampleData 字符串原样展示给开发者 */
-.sample-native-output {
-  width: 425px;
-  margin: 0;
-  padding: 12px 16px;
-  background: #f3e8ff;
-  border: 1px solid #b73ad6;
-  border-radius: 12px;
-  color: #4a1f6e;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 16px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
 /* ===== 打印机检测区域 ===== */

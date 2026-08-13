@@ -196,26 +196,38 @@ public class HiTiPrinterPlugin extends Plugin {
         manager.ejectPaperJam(simpleVoid(call));
     }
 
-    @PluginMethod()
-    public void printPhoto(PluginCall call) {
-        String bitmapPath = call.getString("bitmapPath", "");
-        int paperType = call.getInt("paperType", 2);
-        logD("printPhoto: bitmapPath=" + bitmapPath + " paperType=" + paperType);
-        manager.printPhoto(bitmapPath, paperType, simpleVoid(call));
-    }
-
     /**
-     * Variant that accepts base64 JPEG bytes directly. Saves the caller
-     * (TS side) from installing {@code @capacitor/filesystem} just to
-     * materialise a temp file.
+     * HiTi 打印入口（合并自原 printPhotoBase64 + printPhotoSample）。
+     * 接受 base64 JPEG，解码后写到 ExternalCacheDir/hiti_print_*.jpg 调用
+     * {@link HiTiPrinterManager#printPhoto}（sample 行为）。返回值是
+     * native 侧 {@code retrieveSampleData} 拼出来的字符串（与 SDK 协议一致）。
+     *
+     * <p>历史：早先有两个方法
+     * <ul>
+     *   <li>{@code printPhotoBase64} → {@code manager.printPhoto(bitmapPath, paperType)}
+     *       —— 走 io executor；测试中冷启第一次 doService 经常卡 20s 兜底超时</li>
+     *   <li>{@code printPhotoSample} → {@code manager.printPhotoSample(SamplePrintOptions)}
+     *       —— 走 raw {@code new Thread()}；冷启也能 6s 出图</li>
+     * </ul>
+     * 实测 sample 路径更稳定，因此合并为唯一入口。打印参数（MATTE/PRINTCOUNT/PRINTMODE）
+     * 默认值与 sample MainActivity 一致：MATTE=1（覆膜）、PRINTCOUNT=1、PRINTMODE=0。
      */
     @PluginMethod()
-    public void printPhotoBase64(PluginCall call) {
+    public void printPhoto(PluginCall call) {
         String base64 = call.getString("base64", "");
         int paperType = call.getInt("paperType", 2);
-        logD("printPhotoBase64: paperType=" + paperType + " base64Len=" + (base64 == null ? "null" : base64.length()));
+        int printCount = call.getInt("printCount", 1);
+        // call.getInt(...) 返回 Integer（boxed），不能直接 (short) 强转；
+        // 这里先 intValue() 拆箱再 cast 到 short，与 SamplePrintOptions.short 字段对齐。
+        short matte = (short) call.getInt("matte", 1).intValue();
+        short printMode = (short) call.getInt("printMode", 0).intValue();
+        logD("[sample] printPhoto: paperType=" + paperType
+                + " printCount=" + printCount
+                + " matte=" + matte
+                + " printMode=" + printMode
+                + " base64Len=" + (base64 == null ? "null" : base64.length()));
         if (base64 == null || base64.isEmpty()) {
-            logE("printPhotoBase64: base64 is null/empty");
+            logE("[sample] printPhoto: base64 is null/empty");
             JSObject err = new JSObject();
             err.put("ok", false);
             err.put("error", "base64 is required");
@@ -224,10 +236,10 @@ public class HiTiPrinterPlugin extends Plugin {
         }
         try {
             byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
-            logD("printPhotoBase64: decoded " + bytes.length + " bytes");
+            logD("[sample] printPhoto: decoded " + bytes.length + " bytes");
             File cache = getContext().getExternalCacheDir();
             if (cache == null) {
-                logE("printPhotoBase64: External cache dir not available");
+                logE("[sample] printPhoto: External cache dir not available");
                 JSObject err = new JSObject();
                 err.put("ok", false);
                 err.put("error", "External cache dir not available");
@@ -235,101 +247,30 @@ public class HiTiPrinterPlugin extends Plugin {
                 return;
             }
             File out = new File(cache, "hiti_print_" + System.currentTimeMillis() + ".jpg");
-            logD("printPhotoBase64: writing to " + out.getAbsolutePath());
+            logD("[sample] printPhoto: writing to " + out.getAbsolutePath());
             try (FileOutputStream fos = new FileOutputStream(out)) {
                 fos.write(bytes);
             }
-            logD("printPhotoBase64: file written, " + out.length() + " bytes; calling manager.printPhoto");
-            manager.printPhoto(out.getAbsolutePath(), paperType, simpleVoid(call));
-        } catch (Throwable t) {
-            logE("printPhotoBase64 failed", t);
-            JSObject err = new JSObject();
-            err.put("ok", false);
-            err.put("error", t.getMessage() != null ? t.getMessage() : "decode failed");
-            call.resolve(err);
-        }
-    }
-
-    /**
-     * SampleAPK 同款打印入口。bit 路径写文件后丢给 manager.printPhotoSample。
-     * 与 {@link #printPhotoBase64} 的真实行为差异：
-     * <ul>
-     *   <li>native 侧 {@code manager.printPhotoSample} 走 raw {@code new Thread()}
-     *       —— 与本类其它所有走 {@code io} executor 的方法都不一样，
-     *       因此 sample 路径上同时进行的多次打印不会相互串行化。</li>
-     *   <li>sample 路径在 doService 完成后立刻把
-     *       {@code serviceConnector.m_strTablesRoot} 清空回 {@code ""}。</li>
-     *   <li>MATTE/PRINTCOUNT/PRINTMODE 取 sample MainActivity 默认值
-     *       （MATTE=1 覆膜，PRINTCOUNT=1，PRINTMODE=0）。</li>
-     *   <li>结果序列化：sample 风格 {@code retrieveData} 把
-     *       {@code "<action> -ID<id> : err <0x<hex> <desc>>"} 字符串回传，
-     *       不再是 {ok:true, data:"done"} 这种精简成功协议。</li>
-     *   <li>native 日志统一用 {@code [sample] } 前缀，便于和
-     *       {@code [printPhoto]} / {@code [print/HiTi]} 区分。</li>
-     * </ul>
-     */
-    @PluginMethod()
-    public void printPhotoSample(PluginCall call) {
-        String base64 = call.getString("base64", "");
-        int paperType = call.getInt("paperType", 2);
-        int printCount = call.getInt("printCount", 1);
-        // call.getInt(...) 返回 Integer（boxed），不能直接 (short) 强转，
-        // 这里先 intValue() 拆箱再 cast 到 short，与 SamplePrintOptions.short 字段对齐。
-        short matte = (short) call.getInt("matte", 1).intValue();
-        short printMode = (short) call.getInt("printMode", 0).intValue();
-        logD("[sample] printPhotoSample: paperType=" + paperType
-                + " printCount=" + printCount
-                + " matte=" + matte
-                + " printMode=" + printMode
-                + " base64Len=" + (base64 == null ? "null" : base64.length()));
-        if (base64 == null || base64.isEmpty()) {
-            logE("[sample] printPhotoSample: base64 is null/empty");
-            JSObject err = new JSObject();
-            err.put("ok", false);
-            err.put("error", "base64 is required");
-            call.resolve(err);
-            return;
-        }
-        try {
-            byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
-            logD("[sample] printPhotoSample: decoded " + bytes.length + " bytes");
-            File cache = getContext().getExternalCacheDir();
-            if (cache == null) {
-                logE("[sample] printPhotoSample: External cache dir not available");
-                JSObject err = new JSObject();
-                err.put("ok", false);
-                err.put("error", "External cache dir not available");
-                call.resolve(err);
-                return;
-            }
-            // 文件命名 hiti_sample_* 前缀以区别 hiti_print_*
-            File out = new File(cache, "hiti_sample_" + System.currentTimeMillis() + ".jpg");
-            logD("[sample] printPhotoSample: writing to " + out.getAbsolutePath());
-            try (FileOutputStream fos = new FileOutputStream(out)) {
-                fos.write(bytes);
-            }
-            logD("[sample] printPhotoSample: file written, " + out.length() + " bytes; calling manager.printPhotoSample");
+            logD("[sample] printPhoto: file written, " + out.length() + " bytes; calling manager.printPhoto");
             HiTiPrinterManager.SamplePrintOptions opts = new HiTiPrinterManager.SamplePrintOptions(
                     out.getAbsolutePath(), paperType, printCount, matte, printMode);
-            manager.printPhotoSample(opts, new HiTiPrinterManager.Callback<java.lang.Object>() {
+            manager.printPhoto(opts, new HiTiPrinterManager.Callback<java.lang.Object>() {
                 @Override public void onSuccess(Object payload) {
-                    logD("[sample] printPhotoSample: onSuccess: " + (payload == null ? "null" : payload.toString()));
-                    // 与 printPhotoBase64 的 buildOk("done") 不同：sample 直接把
-                    // retrieveSampleData 拼出来的字符串塞进 data 里
+                    logD("[sample] printPhoto: onSuccess: " + (payload == null ? "null" : payload.toString()));
+                    // data 字段是 native 端 retrieveSampleData 拼出来的字符串
+                    // （成功时不带 errCode，失败时同步带 errCode）。
                     JSObject o = new JSObject();
                     o.put("ok", true);
                     o.put("data", payload == null ? "done" : payload.toString());
                     call.resolve(o);
                 }
                 @Override public void onError(String error) {
-                    logE("[sample] printPhotoSample: onError: " + error);
-                    // errCode 非 0 时 manager 会把整段 retrieveSampleData 字符串当作 error 上抛，
-                    // 这里原样回给前端，TS 侧能在 UI 上完整展示。
+                    logE("[sample] printPhoto: onError: " + error);
                     call.resolve(buildErr(error));
                 }
             });
         } catch (Throwable t) {
-            logE("[sample] printPhotoSample failed", t);
+            logE("[sample] printPhoto failed", t);
             JSObject err = new JSObject();
             err.put("ok", false);
             err.put("error", t.getMessage() != null ? t.getMessage() : "decode failed");
