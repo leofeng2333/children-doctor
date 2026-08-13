@@ -5,9 +5,7 @@ import type { HiTiPrinterPlugin, HiTiResult } from './definitions'
  * Web fallback for {@link HiTiPrinterPlugin}. The HiTi SDK only runs on a
  * connected HiTi USB photo printer (Android device with USB-Host + HiTi
  * firmware), so the web fallback always reports "not available" with a
- * recognizable error string. The caller in {@code utils/print.ts} catches
- * this and auto-falls-back to {@code @capgo/capacitor-printer} (which works
- * on the system PrintManager).
+ * recognizable error string.
  */
 export class HiTiPrinterWeb extends WebPlugin implements HiTiPrinterPlugin {
   private unavailable(): Promise<HiTiResult<never>> {

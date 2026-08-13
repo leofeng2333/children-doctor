@@ -1,4 +1,3 @@
-import { Printer } from '@capgo/capacitor-printer'
 import { Capacitor } from '@capacitor/core'
 import { DualCamera } from '@/plugins/dual-camera'
 import { HiTiPrinter } from '@/plugins/hiti-printer'
@@ -7,25 +6,17 @@ export interface PrintOptions {
   /** 主图 URL（good-img / 静态 success 图） */
   goodImgUrl: string
   /**
-   * 公众号二维码的 PNG dataURL。
-   * 由前端根据 VITE_QRCODE_BASE_URL 拼链接，再用 qrcode.toDataURL 转图。
-   * 可选：未传或空串时，打印模板只在 footer 区域占位，不渲染二维码图片。
+   * 公众号二维码的 PNG dataURL（已废弃，仅为兼容旧调用方保留）。
+   * HiTi 协议不渲染 HTML 二维码，传入也会被丢弃。如果未来要重新支持
+   * 二维码打印，请走系统 PrintManager 或新写一条 HiTi overlay 路径。
    */
   qrcodeUrl?: string
-  /** 打印任务名（显示在系统打印队列） */
+  /** 打印任务名（显示在 HiTi native log / 调用方业务日志） */
   jobName?: string
 }
 
 /**
- * Resolves an image URL into a base64 dataURL that the print WebView can
- * always render, regardless of origin.
- *
- * Why: {@link Printer.printHtml} on Android spins up a WebView via
- * `loadDataWithBaseURL(null, ...)` whose origin is "data:" / "about:blank".
- * Such an origin refuses to load `file://` resources (Same-Origin Policy),
- * and `http(s)://` images also fail to load in time before PrintManager
- * snapshots the DOM. Inlining the image as a `data:image/jpeg;base64,...`
- * URL sidesteps both problems.
+ * Resolves an image URL into a base64 dataURL.
  *
  * Inputs that are already `data:` URLs are returned unchanged. `http(s)://`
  * URLs and `file://` paths are fetched (web) or read via the native
@@ -68,213 +59,24 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
 }
 
 /**
- * 6 寸照片纸规格：4 × 6 in (102 × 152 mm)
- * 1 in = 96 CSS px
- * 主体：上方 goodImg（占 ~80% 高度），底部二维码 + 引导文案（占 ~20%）
- */
-function buildPhotoHtml(opts: PrintOptions): string {
-  const jobName = opts.jobName ?? '宝贝照片'
-  const qrcodeUrl = opts.qrcodeUrl?.trim() ?? ''
-  // 无二维码时只保留占位元素，保持 footer 高度不变，文字内容居中显示
-  const qrcodeImg = qrcodeUrl
-    ? `<img class="qrcode" src="${escapeAttr(qrcodeUrl)}" alt="qrcode" />`
-    : `<div class="qrcode qrcode-placeholder" aria-hidden="true"></div>`
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <title>${escapeHtml(jobName)}</title>
-  <style>
-    @page {
-      size: 4in 6in;
-      margin: 0;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 4in;
-      height: 6in;
-      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: #1a1a1a;
-      background: #ffffff;
-    }
-    .photo {
-      width: 4in;
-      height: 6in;
-      display: flex;
-      flex-direction: column;
-      page-break-after: avoid;
-      page-break-inside: avoid;
-    }
-    .photo-main {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.12in;
-      overflow: hidden;
-    }
-    .photo-main img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-    .photo-footer {
-      display: flex;
-      align-items: center;
-      gap: 0.18in;
-      padding: 0.14in 0.18in;
-      border-top: 1px dashed #d9d9d9;
-      background: #fafafa;
-    }
-.photo-footer img.qrcode,
-.photo-footer .qrcode-placeholder {
-  width: 0.85in;
-  height: 0.85in;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-/* 占位样式：无二维码时显示一个浅色虚线框 */
-.photo-footer .qrcode-placeholder {
-  border: 1px dashed #d9d9d9;
-  border-radius: 6px;
-  background: #f5f5f5;
-}
-    .photo-footer .text {
-      flex: 1;
-      min-width: 0;
-    }
-    .photo-footer .text .title {
-      font-size: 11pt;
-      font-weight: 700;
-      margin-bottom: 2pt;
-      color: #1a1a1a;
-    }
-    .photo-footer .text .sub {
-      font-size: 8.5pt;
-      color: #666;
-      line-height: 1.35;
-    }
-    @media print {
-      html, body { width: 4in; height: 6in; }
-    }
-  </style>
-</head>
-<body>
-  <div class="photo">
-    <div class="photo-main">
-      <img src="${escapeAttr(opts.goodImgUrl)}" alt="photo" />
-    </div>
-    <div class="photo-footer">
-      ${qrcodeImg}
-      <div class="text">
-        <div class="title">扫码关注公众号</div>
-        <div class="sub">获取宝贝的电子版照片与面型分析报告</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`
-}
-
-function escapeHtml(s: string): string {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function escapeAttr(s: string): string {
-  return escapeHtml(s).replace(/"/g, '&quot;')
-}
-
-/**
- * 打印 6 寸照片：good-img（主图） + 公众号二维码
+ * HiTi 专用打印入口：把 6 寸照片直接送进 HiTi USB 打印机。
  *
- * - Web 平台：调用 window.print()（Capacitor Printer 已自动降级）
- * - Android：@capgo/capacitor-printer.printHtml，弹系统打印对话框
- * - 失败：抛错（不吞），调用方负责提示
- */
-export async function printPhotoWithQrcode(opts: PrintOptions): Promise<void> {
-  if (!opts.goodImgUrl) {
-    throw new Error('goodImgUrl is required')
-  }
-  console.log('[print/system] ====== System PrintManager 打印开始 ======')
-  console.log('[print/system] opts:', {
-    goodImgUrlLen: opts.goodImgUrl.length,
-    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
-    jobName: opts.jobName,
-    platform: Capacitor.getPlatform(),
-  })
-
-  // 在 Android 上把 file:// / http(s):// 转成 data: URL，避免空 origin
-  // WebView 拒绝加载本地资源导致打印主图黑屏。
-  const [resolvedGoodImg, resolvedQrcode] = await Promise.all([
-    resolveImageAsDataUrl(opts.goodImgUrl),
-    opts.qrcodeUrl?.trim() ? resolveImageAsDataUrl(opts.qrcodeUrl.trim()) : Promise.resolve(''),
-  ])
-  console.log('[print/system] resolved images:', {
-    goodImgLen: resolvedGoodImg.length,
-    qrcodeLen: resolvedQrcode.length,
-  })
-
-  const html = buildPhotoHtml({
-    ...opts,
-    goodImgUrl: resolvedGoodImg,
-    qrcodeUrl: resolvedQrcode,
-  })
-  const jobName = opts.jobName ?? '宝贝照片'
-  console.log('[print/system] html built, length=' + html.length + ' jobName=' + jobName)
-
-  // Web 平台 / 浏览器降级
-  if (Capacitor.getPlatform() === 'web') {
-    console.log('[print/system] web mode: opening window.print()')
-    const w = window.open('', '_blank', 'width=820,height=1240')
-    if (!w) throw new Error('无法打开打印窗口，请检查浏览器弹窗拦截设置')
-    w.document.open()
-    w.document.write(html)
-    w.document.close()
-    // 等待图片加载后再触发 print
-    await new Promise<void>((resolve) => {
-      if (w.document.readyState === 'complete') resolve()
-      else w.addEventListener('load', () => resolve(), { once: true })
-    })
-    // 给图片一点时间解码
-    await new Promise((r) => setTimeout(r, 300))
-    w.focus()
-    w.print()
-    console.log('[print/system] web print() done')
-    return
-  }
-
-  console.log('[print/system] calling Printer.printHtml...')
-  await Printer.printHtml({
-    name: jobName,
-    html,
-  })
-  console.log('[print/system] Printer.printHtml resolved, ====== 完成 ======')
-}
-
-/**
- * HiTi 专用：把 6 寸照片直接送进 HiTi USB 打印机。
- *
- * 与 {@link printPhotoWithQrcode} 的关键差异：
+ * 行为对齐 HiTi SDK 自带 sampleAPK MainActivity#operatePrinter(USB_PRINT_PHOTOS)：
  * - 不走 WebView / PrintManager，直接用 SDK 协议发到 USB
  * - 不渲染 HTML 模板，HiTi 期望的是裸 JPEG + PaperSize
- * - 二维码被丢弃（HiTi 协议本身不支持 HTML 排版）
+ * - 二维码字段 {@link PrintOptions.qrcodeUrl} 被忽略（HiTi 协议不支持 HTML 排版）
  *
  * @throws 当 SDK 不可用 / 打印机未连接 / 发送失败时，抛 Error
  */
-export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: number }): Promise<void> {
+export async function printPhoto(opts: PrintOptions & { paperType?: number }): Promise<void> {
   if (!opts.goodImgUrl) throw new Error('goodImgUrl is required')
 
+  const paperType = opts.paperType ?? 2
   console.log('[print/HiTi] ====== HiTi 打印开始 ======')
   console.log('[print/HiTi] opts:', {
     goodImgUrlLen: opts.goodImgUrl.length,
-    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
     jobName: opts.jobName,
-    paperType: opts.paperType ?? 2,
+    paperType,
   })
 
   // 启动 native 端日志会话：本次 HiTi 打印期间所有 native 日志（logcat + 文件）
@@ -294,50 +96,60 @@ export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: numb
 
   // Mirror 这一行 JS 端日志到 native 文件（即使后面抛错也会被 close 写入）
   try {
-    await HiTiPrinter.captureLog({ tag: 'TS', msg: `printPhotoWithHiTi start, nativeLog=${nativeLogPath}` })
+    await HiTiPrinter.captureLog({ tag: 'TS', msg: `printPhoto start, paperType=${paperType} nativeLog=${nativeLogPath}` })
   } catch {}
 
   try {
-    // 取 base64（dataURL → base64）。HiTi 路径是独立调用，复用
-    // resolveImageAsDataUrl 的同源/跨域处理逻辑避免重复。
-    const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
-    console.log('[print/HiTi] resolved goodImgUrl:', {
-      isDataUrl: resolved.startsWith('data:'),
-      length: resolved.length,
-      prefix: resolved.slice(0, 40),
-    })
-    const comma = resolved.indexOf(',')
-    const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
-    console.log('[print/HiTi] base64:', {
-      length: base64.length,
-      empty: !base64,
-    })
-    if (!base64) throw new Error('goodImgUrl 解析为空')
+    // ★双保险兜底：除了 native 端 PRINT_PHOTO_TIMEOUT_SECONDS 的 future.get(timeout)，
+    // 这里再加一层 TS Promise.race，避免 native 端兜底编译失败 / 漏触发时 UI 永久卡在"打印中"。
+    // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
+    await Promise.race([
+      (async () => {
+        const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
+        console.log('[print/HiTi] resolved goodImgUrl:', {
+          isDataUrl: resolved.startsWith('data:'),
+          length: resolved.length,
+          prefix: resolved.slice(0, 40),
+        })
+        const comma = resolved.indexOf(',')
+        const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
+        if (!base64) throw new Error('goodImgUrl 解析为空')
 
-    // 1) 起 service。HiTi SDK 要求所有 USB op 之前必须先 StartService,
-    // 否则 USB_CHECK_PRINTER_STATUS 之类直接返回 "Service is not start"。
-    console.log('[print/HiTi] step 1/2: startService...')
-    const startRes = await HiTiPrinter.startService()
-    console.log('[print/HiTi] startService result:', startRes)
-    if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
+        // HiTi SDK 要求所有 USB op 之前必须先 StartService，否则 USB_CHECK_PRINTER_STATUS
+        // 之类直接返回 "Service is not start"。
+        console.log('[print/HiTi] step 1/2: startService...')
+        const startRes = await HiTiPrinter.startService()
+        console.log('[print/HiTi] startService result:', startRes)
+        if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
 
-    // 不再做 getPrinterStatus 预检：HiTi SDK 没有不调 USB transfer 的轻量探测，
-    // 预检本身会再发一次 USB_CHECK_PRINTER_STATUS 卡住直到 native 兜底超时，
-    // 体感上跟直接打一样卡，而且错误信息被预检吃掉一层更难看。
-    // 直接走打印，错误信息（包含 SDK 真实 errCode + native 兜底超时）会原样透传。
-    console.log('[print/HiTi] skipping getPrinterStatus pre-check, going straight to print')
+        // 不做 getPrinterStatus 预检：HiTi SDK 没有不调 USB transfer 的轻量探测，
+        // 预检本身会再发一次 USB_CHECK_PRINTER_STATUS 卡住直到 native 兜底超时，
+        // 体感上跟直接打一样卡，而且错误信息被预检吃掉一层更难看。
+        console.log('[print/HiTi] skipping getPrinterStatus pre-check, going straight to print')
 
-    // 2) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
-    console.log('[print/HiTi] step 2/2: printPhoto...', {
-      paperType: opts.paperType ?? 2,
-    })
-    const printRes = await HiTiPrinter.printPhoto({
-      base64,
-      paperType: opts.paperType ?? 2,
-    })
-    console.log('[print/HiTi] printPhoto result:', printRes)
-    if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
+        // 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
+        console.log('[print/HiTi] step 2/2: printPhoto...', { paperType })
+        const printRes = await HiTiPrinter.printPhoto({
+          base64,
+          paperType,
+        })
+        console.log('[print/HiTi] printPhoto result:', printRes)
+        if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
+      })(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('[TS-watchdog] HiTi print did not resolve within 25s (likely SDK stuck)')),
+          25_000,
+        ),
+      ),
+    ])
     console.log('[print/HiTi] ====== HiTi 打印完成 ======')
+  } catch (hitiErr) {
+    const msg = hitiErr instanceof Error ? hitiErr.message : String(hitiErr)
+    const stack = hitiErr instanceof Error ? hitiErr.stack : undefined
+    console.warn('[print/HiTi] HiTi failed:', msg)
+    if (stack) console.warn('[print/HiTi] HiTi stack:', stack)
+    throw new Error(`HiTi failed: ${msg}`)
   } finally {
     // 不管成功失败都关闭 native 日志会话（写 footer）
     try {
@@ -346,60 +158,5 @@ export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: numb
     } catch (e) {
       console.warn('[print/HiTi] closeLogSession failed:', e)
     }
-  }
-}
-
-/**
- * 智能分发入口：默认走 HiTi（专用 USB 照片打印机），失败/不可用时自动降级到
- * 系统 PrintManager（@capgo/capacitor-printer）。
- *
- * 用户也可通过 {@link PrintEngine} 显式选择引擎，绕过自动降级。
- */
-export type PrintEngine = 'auto' | 'hiti' | 'system'
-
-export async function printPhoto(opts: PrintOptions & { engine?: PrintEngine; paperType?: number }): Promise<void> {
-  const engine: PrintEngine = opts.engine ?? 'auto'
-  console.log('[print] entry: printPhoto', {
-    engine,
-    goodImgUrlLen: opts.goodImgUrl.length,
-    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
-    jobName: opts.jobName,
-    paperType: opts.paperType,
-  })
-
-  if (engine === 'system') {
-    console.log('[print] using system PrintManager')
-    await printPhotoWithQrcode(opts)
-    return
-  }
-
-  if (engine === 'hiti') {
-    console.log('[print] using HiTi (forced)')
-    await printPhotoWithHiTi(opts)
-    return
-  }
-
-  // auto：先 HiTi，失败回退系统打印
-  console.log('[print] auto mode: try HiTi first...')
-  try {
-    // ★双保险兜底：除了 native 端 PRINT_PHOTO_TIMEOUT_SECONDS 的 future.get(timeout)，
-    // 这里再加一层 TS Promise.race，避免 native 端兜底编译失败 / 漏触发时 UI 永久卡在"打印中"。
-    // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
-    await Promise.race([
-      printPhotoWithHiTi(opts),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('[TS-watchdog] HiTi print did not resolve within 25s (likely SDK stuck)')),
-          25_000,
-        ),
-      ),
-    ])
-    console.log('[print] HiTi success, done')
-  } catch (hitiErr) {
-    const msg = hitiErr instanceof Error ? hitiErr.message : String(hitiErr)
-    const stack = hitiErr instanceof Error ? hitiErr.stack : undefined
-    console.warn('[print] HiTi 失败，按当前 DEBUG 策略直接抛错（不降级到系统打印）：', msg)
-    console.warn('[print] HiTi stack:', stack)
-    throw new Error(`[DEBUG] HiTi failed: ${msg}`)  // DEBUG: 临时暴露真实错误
   }
 }
