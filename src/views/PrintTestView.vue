@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { printPhoto } from '@/utils/print'
+import { HiTiPrinter } from '@/plugins/hiti-printer'
+import { printPhotoWithSampleHiTi } from '@/utils/print'
 // Vite 的 `?url` 拿 URL；`?inline` 直接拿 base64 dataURL（编译期内联）。
 // 用 inline 让原生侧跳过 readImageAsBase64, 避免 Vite 的 /assets/*.png
 // 在 Android Capacitor 里没有对应 ContentResolver 条目而读不到的问题。
@@ -90,10 +92,192 @@ async function onPrint() {
   }
 }
 
+// =================== SampleAPK 同款打印按钮 ===================
+// 与 onPrint 互不干扰：独立的 isPrintingSample / sampleError / sampleNativeOutput 状态，
+// 与原 HiTi 路径完全解耦。
+const isPrintingSample = ref(false)
+const sampleError = ref('')
+/**
+ * native 端 retrieveSampleData 拼出来的字符串，例如
+ * "<<<USB_PRINT_PHOTOS -ID188 : err <0x0 ...>"。展示在前端 UI 上，
+ * 让 sample 路径里的 native 反馈可被肉眼看出是 sample 风格。
+ */
+const sampleNativeOutput = ref('')
+
+async function onSamplePrint() {
+  if (isPrintingSample.value) return
+  // 与 onPrint 共用图片源：选中的本地图优先，否则用内置测试图
+  const imgUrl = pickedImgUrl.value || analysisSuccess
+  const isBuiltin = !pickedImgUrl.value
+  isPrintingSample.value = true
+  sampleError.value = ''
+  sampleNativeOutput.value = ''
+  console.log('[PrintTest/sample] onSamplePrint click', {
+    source: isBuiltin ? 'builtin' : 'picked',
+    imgName: pickedImgName.value || '(builtin analysis-success.png)',
+    imgUrlType: imgUrl.slice(0, 40),
+    len: imgUrl.length,
+  })
+  // sample MainActivity 的 b_startService 不在 b_printPhoto 内 —— 它由用户单独点。
+  // 这里为了真实可用，加一层前置 startService，让连接就绪；不预检 getPrinterStatus，
+  // 与 sample 的"只做 operatePrinter(USB_PRINT_PHOTOS)" 行为一致。
+  try {
+    const svc = await HiTiPrinter.startService()
+    console.log('[PrintTest/sample] pre-startService result:', svc)
+    if (!svc.ok) {
+      throw new Error(`startService 失败：${svc.error}`)
+    }
+    await printPhotoWithSampleHiTi({
+      goodImgUrl: imgUrl,
+      qrcodeUrl: '',
+      // 显式传默认值，让 sample 路径行为可复现且与 sampleAPK MainActivity 默认值一致
+      paperType: 2,
+      printCount: 1,
+      matte: 1,
+      printMode: 0,
+    })
+    console.log('[PrintTest/sample] printPhotoWithSampleHiTi resolved (success)')
+  } catch (e) {
+    const err = e as Error
+    console.error('[PrintTest/sample] printPhotoWithSampleHiTi rejected:', err)
+    console.error('[PrintTest/sample] stack:', err?.stack)
+    const msg = err?.message ?? 'sample 打印失败'
+    sampleError.value = msg
+    // retrieveSampleData 风格前缀："<<<USB_PRINT_PHOTOS ..." 或 "[sample/rawThread] ..."
+    if (msg.includes('<<<')) sampleNativeOutput.value = msg
+  } finally {
+    isPrintingSample.value = false
+  }
+}
+
 // 用户可手动从这里取出 native 日志路径（HiTi 打印成功后）
 // 在 vConsole 里查 printPhoto 内部的 "[print/HiTi] native log session started:"
 // 可找到具体路径（/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/print_*.log）。
 const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/`
+
+// =================== 打印机检测 ===================
+// 字段含义对照：
+//   statusValue: 打印机原生 status 码（十六进制展示）
+//   serviceErr : startService 返回的 ErrorCode（HiTi 自定义）
+//   ribbon  : [ribbonType, remainCount]
+//   counts  : [total, 4x6, 5x7, 6x8] 累计打印张数
+interface PrinterProbe {
+  serviceErr: { value: number; description: string } | null
+  status: { statusValue: number; statusDescription: string } | null
+  modelName: string
+  serialNumber: string
+  firmwareVersion: string
+  ribbon: number[] | null
+  counts: number[] | null
+  /** 整轮检测耗时（ms） */
+  elapsedMs: number
+}
+
+const isProbing = ref(false)
+const probeData = ref<PrinterProbe | null>(null)
+const probeError = ref('')
+
+/** statusValue 转 hex 文本，方便对照 HiTi 手册 */
+const statusHex = computed(() => {
+  const v = probeData.value?.status?.statusValue
+  return typeof v === 'number' ? '0x' + v.toString(16).padStart(8, '0').toUpperCase() : '—'
+})
+
+/** 高位 bit 用来判定"未连接/不可用"：0x00000080 表示未连接 */
+const isDisconnected = computed(() => probeData.value?.status?.statusValue === 0x00000080)
+
+/** 友好的状态文本 */
+const statusText = computed(() => {
+  if (probeError.value) return probeError.value
+  if (!probeData.value) return ''
+  if (isDisconnected.value) return '打印机未连接或未开机'
+  const desc = probeData.value.status?.statusDescription
+  return desc && desc !== 'null' ? desc : '打印机就绪'
+})
+
+/** 色带类型 → 文本（参考 vendor 手册：0=YMCKO, 1=K, 3=KO, ...） */
+const ribbonTypeText = computed(() => {
+  const r = probeData.value?.ribbon
+  if (!r || r.length < 2) return '—'
+  const map: Record<number, string> = {
+    0: 'YMCKO（彩色+覆膜）',
+    1: 'K（黑白）',
+    3: 'KO（黑白+覆膜）',
+  }
+  const t = r[0] as number
+  return map[t] ?? `类型 ${t}`
+})
+
+const ribbonRemain = computed(() => {
+  const r = probeData.value?.ribbon
+  return r && r.length >= 2 ? `${r[1]} 张` : '—'
+})
+
+/**
+ * 一次性调用所有 SDK 只读接口，并把每条结果独立存放。
+ * 任意一个失败不影响其它字段，最终用一个 ProbeResult 卡片统一展示。
+ */
+async function probePrinter() {
+  if (isProbing.value) return
+  isProbing.value = true
+  probeError.value = ''
+  probeData.value = null
+  const t0 = Date.now()
+  console.log('[PrintTest/probe] start')
+
+  try {
+    // 1) startService 必须先调，否则后续 USB_CHECK_PRINTER_STATUS 等
+    //    直接返回 "Service is not start"。
+    const svcRes = await HiTiPrinter.startService()
+    console.log('[PrintTest/probe] startService:', svcRes)
+    if (!svcRes.ok) {
+      throw new Error(`startService 失败：${svcRes.error}`)
+    }
+
+    // 2) 并行拉所有只读字段，单独容错
+    const [statusR, modelR, snR, fwR, ribbonR, countR] = await Promise.all([
+      HiTiPrinter.getPrinterStatus(),
+      HiTiPrinter.getModelName(),
+      HiTiPrinter.getSerialNumber(),
+      HiTiPrinter.getFirmwareVersion(),
+      HiTiPrinter.getRibbonInfo(),
+      HiTiPrinter.getPrintCount(),
+    ])
+    console.log('[PrintTest/probe] results:', { statusR, modelR, snR, fwR, ribbonR, countR })
+
+    probeData.value = {
+      serviceErr: svcRes.data ?? null,
+      status: statusR.ok ? statusR.data ?? null : null,
+      modelName: modelR.ok ? modelR.data ?? '' : '',
+      serialNumber: snR.ok ? snR.data ?? '' : '',
+      firmwareVersion: fwR.ok ? fwR.data ?? '' : '',
+      ribbon: ribbonR.ok ? ribbonR.data ?? null : null,
+      counts: countR.ok ? countR.data ?? null : null,
+      elapsedMs: Date.now() - t0,
+    }
+
+    // statusR 失败其它都好：把它的错误顶到 probeError 里展示
+    if (!statusR.ok) {
+      probeError.value = `getPrinterStatus: ${statusR.error}`
+    } else if (!modelR.ok || !snR.ok || !fwR.ok || !ribbonR.ok || !countR.ok) {
+      // 至少一项失败，告知但不阻塞
+      const partial: string[] = []
+      if (!modelR.ok) partial.push(`model:${modelR.error}`)
+      if (!snR.ok) partial.push(`serial:${snR.error}`)
+      if (!fwR.ok) partial.push(`firmware:${fwR.error}`)
+      if (!ribbonR.ok) partial.push(`ribbon:${ribbonR.error}`)
+      if (!countR.ok) partial.push(`count:${countR.error}`)
+      probeError.value = `部分字段获取失败：${partial.join('；')}`
+    }
+  } catch (e) {
+    const err = e as Error
+    console.error('[PrintTest/probe] failed:', err)
+    probeError.value = err?.message ?? '检测失败'
+  } finally {
+    isProbing.value = false
+    console.log('[PrintTest/probe] done, elapsed=' + (Date.now() - t0) + 'ms')
+  }
+}
 </script>
 
 <template>
@@ -149,7 +333,96 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
       {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
     </button>
 
+    <!--
+      SampleAPK 同款按钮：底层走 native HiTiPrinterManager#printPhotoSample
+      （同步 doService，无 3s 兜底），与上面按钮互不干扰、状态独立。
+      共用 picker 选出的图片源；不依赖 HiTi 路径的降级逻辑。
+    -->
+    <button
+      class="print-btn print-btn-sample"
+      :disabled="isPrintingSample"
+      @click="onSamplePrint"
+    >
+      {{ isPrintingSample ? '正在按 sampleAPK 逻辑打印…' : '按 sampleAPK 逻辑打印' }}
+    </button>
+    <p v-if="sampleError" class="print-error print-error-sample">{{ sampleError }}</p>
+    <!-- 把 native 侧的 retrieveSampleData 输出（"<<<USB_PRINT_PHOTOS ..."）原样展示 -->
+    <pre v-if="sampleNativeOutput" class="sample-native-output">{{ sampleNativeOutput }}</pre>
+
     <p v-if="printError" class="print-error">{{ printError }}</p>
+
+    <!-- 打印机检测区域 -->
+    <div class="probe-block">
+      <div class="probe-row">
+        <button
+          class="probe-btn"
+          type="button"
+          :disabled="isProbing"
+          @click="probePrinter"
+        >
+          🔍 {{ isProbing ? '检测中…' : '检测打印机' }}
+        </button>
+        <span v-if="isProbing" class="probe-spinner" aria-hidden="true"></span>
+      </div>
+
+      <p v-if="probeError" class="probe-error">{{ probeError }}</p>
+
+      <div v-if="probeData" class="probe-card" :class="{ offline: isDisconnected }">
+        <div class="probe-card-head">
+          <span class="probe-card-title">打印机信息</span>
+          <span class="probe-card-state" :class="{ offline: isDisconnected }">
+            {{ statusText }}
+          </span>
+        </div>
+
+        <ul class="probe-list">
+          <li>
+            <span class="k">型号</span>
+            <span class="v">{{ probeData.modelName || '—' }}</span>
+          </li>
+          <li>
+            <span class="k">序列号</span>
+            <span class="v">{{ probeData.serialNumber || '—' }}</span>
+          </li>
+          <li>
+            <span class="k">固件版本</span>
+            <span class="v">{{ probeData.firmwareVersion || '—' }}</span>
+          </li>
+          <li>
+            <span class="k">status 码</span>
+            <span class="v mono">{{ statusHex }}</span>
+          </li>
+          <li>
+            <span class="k">色带</span>
+            <span class="v">{{ ribbonTypeText }} · 余量 {{ ribbonRemain }}</span>
+          </li>
+          <li>
+            <span class="k">打印张数</span>
+            <span class="v">
+              <template v-if="probeData.counts && probeData.counts.length >= 4">
+                总 {{ probeData.counts[0] }} · 4×6 {{ probeData.counts[1] }} ·
+                5×7 {{ probeData.counts[2] }} · 6×8 {{ probeData.counts[3] }}
+              </template>
+              <template v-else>—</template>
+            </span>
+          </li>
+          <li>
+            <span class="k">Service Code</span>
+            <span class="v mono">
+              <template v-if="probeData.serviceErr">
+                0x{{ probeData.serviceErr.value.toString(16).toUpperCase().padStart(4, '0') }}
+                · {{ probeData.serviceErr.description || 'OK' }}
+              </template>
+              <template v-else>—</template>
+            </span>
+          </li>
+          <li>
+            <span class="k">耗时</span>
+            <span class="v">{{ probeData.elapsedMs }} ms</span>
+          </li>
+        </ul>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -340,5 +613,171 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
   font-size: 18px;
   color: #ff4d4f;
   text-align: center;
+}
+
+/* SampleAPK 风格打印按钮：在原 .print-btn 基础上换上紫色，视觉上和原 HiTi 路径做区分 */
+.print-btn-sample {
+  background: #6f42c1;
+  margin-top: 0;
+  width: 425px;
+  font-size: 24px;
+  height: 80px;
+}
+
+.print-error-sample {
+  color: #b73ad6;
+}
+
+/* sample 路径专属：把 native retrieveSampleData 字符串原样展示给开发者 */
+.sample-native-output {
+  width: 425px;
+  margin: 0;
+  padding: 12px 16px;
+  background: #f3e8ff;
+  border: 1px solid #b73ad6;
+  border-radius: 12px;
+  color: #4a1f6e;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ===== 打印机检测区域 ===== */
+.probe-block {
+  width: 425px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.probe-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.probe-btn {
+  flex: 1;
+  height: 72px;
+  background: #ffffff;
+  color: #1f6feb;
+  border: 1px solid #1f6feb;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+
+  &:active:not(:disabled) {
+    background: #eaf2ff;
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.probe-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid #d0d7de;
+  border-top-color: #1f6feb;
+  border-radius: 50%;
+  animation: probe-spin 0.8s linear infinite;
+}
+
+@keyframes probe-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.probe-error {
+  margin: 0;
+  font-size: 18px;
+  color: #ff4d4f;
+  text-align: center;
+}
+
+.probe-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e5e7eb;
+
+  &.offline {
+    border-color: #ffccc7;
+    background: #fff8f7;
+  }
+}
+
+.probe-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px dashed #e5e5ea;
+}
+
+.probe-card-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111;
+}
+
+.probe-card-state {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2a8a3e;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #e8f7ec;
+
+  &.offline {
+    color: #c53030;
+    background: #ffe7e5;
+  }
+}
+
+.probe-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  li {
+    display: flex;
+    align-items: center;
+    font-size: 18px;
+    min-height: 32px;
+  }
+
+  .k {
+    flex: 0 0 130px;
+    color: #888;
+  }
+
+  .v {
+    flex: 1;
+    color: #1a1a1a;
+    word-break: break-all;
+    text-align: right;
+
+    &.mono {
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 16px;
+    }
+  }
 }
 </style>

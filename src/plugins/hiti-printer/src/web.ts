@@ -30,6 +30,7 @@ export class HiTiPrinterWeb extends WebPlugin implements HiTiPrinterPlugin {
   ejectPaperJam(): Promise<HiTiResult<never>> { return this.unavailable() }
   printPhoto(): Promise<HiTiResult<never>> { return this.unavailable() }
   printPhotoBase64(): Promise<HiTiResult<never>> { return this.unavailable() }
+  printPhotoSample(): Promise<HiTiResult<never>> { return this.unavailable() }
 
   /**
    * Web fallback: no native log file. Return ok with empty path so the TS

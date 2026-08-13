@@ -316,25 +316,19 @@ export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: numb
 
     // 1) 起 service。HiTi SDK 要求所有 USB op 之前必须先 StartService,
     // 否则 USB_CHECK_PRINTER_STATUS 之类直接返回 "Service is not start"。
-    console.log('[print/HiTi] step 1/3: startService...')
+    console.log('[print/HiTi] step 1/2: startService...')
     const startRes = await HiTiPrinter.startService()
     console.log('[print/HiTi] startService result:', startRes)
     if (!startRes.ok) throw new Error(`HiTi service 启动失败：${startRes.error}`)
 
-    // 2) 探测打印机是否就绪
-    console.log('[print/HiTi] step 2/3: getPrinterStatus...')
-    const statusRes = await HiTiPrinter.getPrinterStatus()
-    console.log('[print/HiTi] getPrinterStatus result:', statusRes)
-    if (!statusRes.ok) {
-      throw new Error(`HiTi 打印机不可用：${statusRes.error}`)
-    }
-    // SDK 返回 null 表示"无 status 数据"，但不一定是错；放过继续打。
-    if (statusRes.data && statusRes.data.statusValue === 0x00000080) {
-      throw new Error('HiTi 打印机未连接或未开机（status=0x00000080）')
-    }
+    // 不再做 getPrinterStatus 预检：HiTi SDK 没有不调 USB transfer 的轻量探测，
+    // 预检本身会再发一次 USB_CHECK_PRINTER_STATUS 卡住直到 native 兜底超时，
+    // 体感上跟直接打一样卡，而且错误信息被预检吃掉一层更难看。
+    // 直接走打印，错误信息（包含 SDK 真实 errCode + native 兜底超时）会原样透传。
+    console.log('[print/HiTi] skipping getPrinterStatus pre-check, going straight to print')
 
-    // 3) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
-    console.log('[print/HiTi] step 3/3: printPhotoBase64...', {
+    // 2) 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
+    console.log('[print/HiTi] step 2/2: printPhotoBase64...', {
       paperType: opts.paperType ?? 2,
     })
     const printRes = await HiTiPrinter.printPhotoBase64({
@@ -351,6 +345,157 @@ export async function printPhotoWithHiTi(opts: PrintOptions & { paperType?: numb
       console.log('[print/HiTi] native log session closed:', nativeLogPath)
     } catch (e) {
       console.warn('[print/HiTi] closeLogSession failed:', e)
+    }
+  }
+}
+
+/**
+ * SampleAPK 同款 HiTi 打印入口。区别于 {@link printPhotoWithHiTi}：
+ * <ol>
+ *   <li>打印调用走 {@link HiTiPrinter.printPhotoSample}（对应 native
+ *       {@code HiTiPrinterManager#printPhotoSample}），native 侧在 raw
+ *       {@code new Thread()} 上同步 {@code serviceConnector.doService(job)}，
+ *       <b>不在 io executor 里串行化</b>，因此和原有 HiTi 路径可以真正并行。
+ *       doService 完成后立即把 {@code serviceConnector.m_strTablesRoot}
+ *       清空回 {@code ""}，行为对齐 sample MainActivity 行 651-655。</li>
+ *   <li>所有 MATTE/PRINTCOUNT/PRINTMODE/PaperType 都由 TS 层显式
+ *       传入，默认值与 sample MainActivity 一致：MATTE=1（覆膜）、
+ *       PRINTCOUNT=1、PRINTMODE=0（standard）、PaperType=2（4x6）。
+ *       注意 MATTE=1（覆膜）与 {@link printPhotoWithHiTi}
+ *       内 {@code buildPhotoAttr} 硬编码的 MATTE=0（不覆膜）有实际差异。</li>
+ *   <li>返回值：成功时 {@code data} 是 native {@code retrieveSampleData}
+ *       拼出来的字符串 {@code "<<<USB_PRINT_PHOTOS -ID<id> : err <0x<hex> <desc>>"}，
+ *       失败时 {@code error} 同样会被填上这段字符串以便前端展示。</li>
+ *   <li>日志分层：JS 前缀 {@code [print/sampleHiTi]}；native 侧统一前缀
+ *       {@code [sample]} 与原 {@code printPhoto} 的无 tag 区分。</li>
+ *   <li>不预先做 {@code startService} / {@code getPrinterStatus} 探活——
+ *       sample 原版把这两步拆成 {@code b_startService} 按钮单独跑，{@code b_printPhoto}
+ *       里只调 {@code operatePrinter(USB_PRINT_PHOTOS)}。因此本入口信任调用方
+ *       已经把 Service 起好，否则让 native 端 ErrorCode 自己炸出来。</li>
+ * </ol>
+ *
+ * 二维码仍然被丢弃（HiTi 协议不渲染 HTML），与 {@link printPhotoWithHiTi} 一致。
+ *
+ * @throws SDK 不可用 / 打印机未连接 / 发送失败时抛 Error；Error.message 会包含
+ *         native 侧的 retrieveSampleData 字符串，便于排查。
+ */
+export async function printPhotoWithSampleHiTi(opts: PrintOptions & {
+  paperType?: number
+  printCount?: number
+  matte?: number
+  printMode?: number
+}): Promise<void> {
+  if (!opts.goodImgUrl) throw new Error('goodImgUrl is required')
+
+  // 与 sample MainActivity 完全一致的默认值。允许覆盖但默认贴合 sample。
+  const paperType = opts.paperType ?? 2
+  const printCount = opts.printCount ?? 1
+  const matte = opts.matte ?? 1
+  const printMode = opts.printMode ?? 0
+
+  console.log('[print/sampleHiTi] ====== SampleAPK-style HiTi print 开始 ======')
+  console.log('[print/sampleHiTi] opts:', {
+    goodImgUrlLen: opts.goodImgUrl.length,
+    hasQrcodeUrl: !!opts.qrcodeUrl?.trim(),
+    jobName: opts.jobName,
+    paperType,
+    printCount,
+    matte,
+    printMode,
+    // 与 printPhotoWithHiTi 区分的关键差异：
+    threadModel: 'raw new Thread (NOT io executor)',
+    m_strTablesRootPolicy: 'set → doService → reset to "" (sample 行 651-655)',
+    matte_drift: 'sample 默认 1 (覆膜); printPhotoWithHiTi 硬编码 0 (不覆膜)',
+  })
+
+  // 1) 独立会话：日志写到 sample_print_<timestamp>.log，路径上区别于 HiTi 路径。
+  let nativeLogPath = ''
+  try {
+    const session = await HiTiPrinter.startLogSession()
+    if (session.ok && session.data?.path) {
+      nativeLogPath = session.data.path
+      console.log('[print/sampleHiTi] native log session started (tagged [sample]):', nativeLogPath)
+    } else {
+      console.warn('[print/sampleHiTi] startLogSession failed:', session.ok ? '(empty path)' : session.error)
+    }
+  } catch (e) {
+    console.warn('[print/sampleHiTi] startLogSession threw:', e)
+  }
+
+  try {
+    await HiTiPrinter.captureLog({
+      tag: 'SAMPLE_JS',
+      msg: `printPhotoWithSampleHiTi start, thread=raw-paperType=${paperType} printCount=${printCount} matte=${matte} printMode=${printMode} nativeLog=${nativeLogPath}`,
+    })
+  } catch {}
+
+  try {
+    // 2) 解码图片 → base64（与 printPhotoWithHiTi 同源处理逻辑）
+    const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
+    const comma = resolved.indexOf(',')
+    const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
+    if (!base64) throw new Error('goodImgUrl 解析为空')
+
+    // 3) ★与 printPhotoWithHiTi 的关键差异★：
+    //    不预先调 startService / getPrinterStatus —— sample 原版的 ServiceStart
+    //    是 b_startService 单独操作的。如果 caller 没起 service，让 native 端
+    //    直接抛 errCode，我们再把这个 errCode 装进 Error 抛给前端。
+    console.log('[print/sampleHiTi] skipping pre-check startService/getPrinterStatus (sample behavior)')
+
+    // 4) 真正打印 —— 这一步会在 native 端 raw new Thread 上跑：
+    //    pre-set m_strTablesRoot → doService (sync) → post-clear m_strTablesRoot。
+    //    sample 路径走 raw Thread，native 端用 AtomicBoolean+mainHandler watchdog 兜底（25s）。
+    //    这里再加一层 TS Promise.race 双保险（30s），防止 native watchdog 漏触发。
+    console.log('[print/sampleHiTi] calling HiTiPrinter.printPhotoSample...', {
+      paperType,
+      printCount,
+      matte,
+      printMode,
+      base64Len: base64.length,
+    })
+    const printRes = await Promise.race([
+      HiTiPrinter.printPhotoSample({
+        base64,
+        paperType,
+        printCount,
+        matte,
+        printMode,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('[TS-watchdog] HiTi sample print did not resolve within 30s (likely SDK stuck)')),
+          30_000,
+        ),
+      ),
+    ])
+    console.log('[print/sampleHiTi] printPhotoSample result:', printRes)
+
+    // 5) native 侧 retrieveSampleData 输出被原样塞进 data / error：
+    //    - errCode == 0 时 data 是 "<action> -ID<id> : err <0x0 ...>"
+    //    - errCode != 0 时 error 是同款字符串（喂 Error.message 给前端）
+    if (!printRes.ok) {
+      const detail = printRes.error ?? 'unknown'
+      try {
+        await HiTiPrinter.captureLog({
+          tag: 'SAMPLE_JS',
+          msg: `printPhotoWithSampleHiTi FAILED, errCode=${detail}`,
+        })
+      } catch {}
+      throw new Error(`[sample/rawThread] HiTi sample 打印失败：${detail}`)
+    }
+    try {
+      await HiTiPrinter.captureLog({
+        tag: 'SAMPLE_JS',
+        msg: `printPhotoWithSampleHiTi SUCCESS, nativeOutput=${printRes.data ?? '(no data)'}`,
+      })
+    } catch {}
+    console.log('[print/sampleHiTi] ====== SampleAPK-style HiTi print 完成 ======')
+  } finally {
+    try {
+      await HiTiPrinter.closeLogSession()
+      console.log('[print/sampleHiTi] native log session closed:', nativeLogPath)
+    } catch (e) {
+      console.warn('[print/sampleHiTi] closeLogSession failed:', e)
     }
   }
 }
@@ -388,7 +533,18 @@ export async function printPhoto(opts: PrintOptions & { engine?: PrintEngine; pa
   // auto：先 HiTi，失败回退系统打印
   console.log('[print] auto mode: try HiTi first...')
   try {
-    await printPhotoWithHiTi(opts)
+    // ★双保险兜底：除了 native 端 PRINT_PHOTO_TIMEOUT_SECONDS 的 future.get(timeout)，
+    // 这里再加一层 TS Promise.race，避免 native 端兜底编译失败 / 漏触发时 UI 永久卡在"打印中"。
+    // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
+    await Promise.race([
+      printPhotoWithHiTi(opts),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('[TS-watchdog] HiTi print did not resolve within 25s (likely SDK stuck)')),
+          25_000,
+        ),
+      ),
+    ])
     console.log('[print] HiTi success, done')
   } catch (hitiErr) {
     const msg = hitiErr instanceof Error ? hitiErr.message : String(hitiErr)

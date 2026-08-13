@@ -76,6 +76,25 @@ export interface HiTiPrinterPlugin {
   printPhotoBase64(options: HiTiPrintPhotoBase64Options): Promise<HiTiResult<string>>
 
   /**
+   * SampleAPK-style print entry. Mirrors
+   * {@code com.hiti.test.PrinterOperation#print(photoPath)} —
+   * explicitly forwards {@code PRINTCOUNT / MATTE / PRINTMODE / PaperType}
+   * (the sample's instance fields) instead of {@code printPhotoBase64}'s
+   * hard-coded {@code (1, 0, 1)} triple.
+   *
+   * <p>Behaviour differences from {@link printPhotoBase64}:
+   * <ul>
+   *   <li>Native side calls {@code manager.printPhotoSample} which
+   *       synchronously invokes {@code serviceConnector.doService(job)}
+   *       and inspects {@code job.errCode} — no 3-second fallback timer.</li>
+   *   <li>All native logs are tagged {@code [sample]} so they're easy
+   *       to distinguish from {@code [print/HiTi]} in logcat and the
+   *       per-session log file.</li>
+   * </ul>
+   */
+  printPhotoSample(options: HiTiPrintPhotoSampleOptions): Promise<HiTiResult<string>>
+
+  /**
    * Opens a fresh print session log file. All subsequent native logs go to
    * this file in addition to logcat. Mirrors {@code DualCamera#startLogSession}.
    */
@@ -101,6 +120,27 @@ export interface HiTiPrintPhotoBase64Options {
   /** Base64-encoded JPEG (no data: prefix). */
   base64: string
   paperType?: number
+}
+
+/**
+ * SampleAPK 复刻版打印参数。语义对齐
+ * {@code com.hiti.test.MainActivity#operatePrinter(USB_PRINT_PHOTOS)}
+ * 中的 4 个 PrinterOperation 实例字段：
+ * <ul>
+ *   <li>{@code paperType}: 2=4x6, 3=5x7, 4=6x8, 5=4x6 split 2up, 6=6x6</li>
+ *   <li>{@code printCount}: 打印份数，sample 默认 1</li>
+ *   <li>{@code matte}: 1=覆膜, 0=不覆膜，sample 默认 1</li>
+ *   <li>{@code printMode}: 仅 P232W 有效，0=standard, 1=fine(HOD)，sample 默认 0</li>
+ * </ul>
+ * 缺省值与 sample MainActivity 完全一致，方便做行为对比。
+ */
+export interface HiTiPrintPhotoSampleOptions {
+  /** Base64-encoded JPEG (no data: prefix). */
+  base64: string
+  paperType?: number
+  printCount?: number
+  matte?: number
+  printMode?: number
 }
 
 /**
