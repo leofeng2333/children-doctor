@@ -20,12 +20,16 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-// 二维码 id 优先用 /api/ai/analyze 返回的 llmAnalysisId（让公众号 H5
-// 能关联到这次具体的面型分析），未就绪时回退到 localStorage 里的本地 idid。
-// analysisStore 在 CameraCaptureView 阶段已 fire-and-forget 启动，
-// 到本组件 mount 时大概率已经回来；少数慢网络场景下暂时回退，不阻塞打印。
+// 二维码 id 来自 /api/ai/analyze 返回的 llmAnalysisId；接口未就绪时不显示
+// 二维码、disable 打印 + 完成按钮，等详情页整页 loading 结束自动显现。
+// 不再用 localStorage 本地 idid 作 fallback —— 该 id 没有后端关联，扫到
+// H5 也查不到这次分析结果，发出去会误导用户。
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
+const hasLlmAnalysisId = computed(() => {
+  const v = analysisResult.value as { llmAnalysisId?: string } | null | undefined
+  return !!v?.llmAnalysisId
+})
 const llmAnalysisIdGetter = () => {
   const v = analysisResult.value as { llmAnalysisId?: string } | null | undefined
   return v?.llmAnalysisId
@@ -115,8 +119,11 @@ async function onPrint(goodImgUrl: string) {
     <div class="scan-row">
       <div class="qrcode-block">
         <div class="qrcode-container">
+          <div v-if="!hasLlmAnalysisId" class="qrcode-loading" aria-hidden="true">
+            <div class="qrcode-loading-spinner"></div>
+          </div>
           <VueQrcode
-            v-if="qrcodeUrl"
+            v-else
             :value="qrcodeUrl"
             :width="200"
             :height="200"
@@ -125,7 +132,9 @@ async function onPrint(goodImgUrl: string) {
             type="image/png"
           />
         </div>
-        <div class="qrcode-desc">扫一扫获取电子版</div>
+        <div class="qrcode-desc">
+          {{ hasLlmAnalysisId ? '扫一扫获取电子版' : '准备二维码中...' }}
+        </div>
       </div>
 
       <div class="action-buttons">
@@ -133,7 +142,7 @@ async function onPrint(goodImgUrl: string) {
           class="action-btn primary"
           :class="{ 'is-printed': hasPrinted }"
           type="button"
-          :disabled="isPrinting || hasPrinted"
+          :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId"
           @click="onPrint(goodImgUrl)"
         >
           <template v-if="hasPrinted">
@@ -142,7 +151,13 @@ async function onPrint(goodImgUrl: string) {
           </template>
           <template v-else>{{ printButtonLabel }}</template>
         </PrimaryButton>
-        <PrimaryButton class="action-btn secondary" type="button" :disabled="isFinishing" @click="onFinish">完成诊断
+        <PrimaryButton
+          class="action-btn secondary"
+          type="button"
+          :disabled="isFinishing || !hasLlmAnalysisId"
+          @click="onFinish"
+        >
+          完成诊断
         </PrimaryButton>
       </div>
     </div>
@@ -188,6 +203,31 @@ async function onPrint(goodImgUrl: string) {
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+}
+
+.qrcode-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f7;
+  border-radius: 8px;
+}
+
+.qrcode-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #d0d7de;
+  border-top-color: #1f6feb;
+  border-radius: 50%;
+  animation: qrcode-loading-spin 0.8s linear infinite;
+}
+
+@keyframes qrcode-loading-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
