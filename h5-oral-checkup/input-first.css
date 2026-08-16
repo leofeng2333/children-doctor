@@ -1,0 +1,176 @@
+/* 口腔-面容变化 · 输入页（first 模式）样式
+ * 公共样式见 ./base.css
+ * 这里只放 first 模式特有样式（.field-group / .field-label）
+ * + input 页通用样式。default 模式特有样式（.row-2 / .get-btn）在 input.css。
+ *
+ * 通用样式（.content / .title / .header-illu / .form / .field / .divider /
+ * .view-photos / .footer / .logo）也在 input.css 重复一份（两份各自独立、
+ * 避免互相依赖）；后续如有重构再抽到 base.css。
+ */
+
+.content {
+  padding: 0 8.55vw;
+  padding-top: 40.16vw;
+}
+
+/* 标题 */
+.title {
+  font-size: 5.95vw;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-color);
+  margin-bottom: 9.5vw;
+}
+
+/* 头部装饰图（input-icon 位） */
+.header-illu {
+  position: absolute;
+  top: 10.4vw;
+  left: 5.58vw;
+  width: 35.44vw;
+  height: 30.6vw;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-illu-icon {
+  width: 85%;
+  height: 80%;
+  background-image: url('./html-icon.png');
+  background-repeat: no-repeat;
+  background-size: 700% 400%;
+  background-position: 80% 45%;
+}
+
+/* 表单 */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 4vw;
+}
+
+/* first 模式的 label + 字段组合（label 在上，.field 在下） */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2vw;
+}
+
+.field-group .field-label {
+  font-size: 3.96vw;
+  font-weight: 700;
+  color: var(--text-color, #000000);
+  padding: 0 1vw;
+}
+
+.field {
+  position: relative;
+  width: 83.02vw;
+  height: 8.92vw;
+  background: #ffffff;
+  border-radius: 4.46vw;
+  display: flex;
+  align-items: center;
+  padding: 0 4.46vw;
+  color: #d9d9d9;
+  font-size: 2.47vw;
+  font-weight: 700;
+}
+
+.field input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+}
+
+.field input::placeholder {
+  font-size: 2.47vw;
+  color: #d9d9d9;
+}
+
+/* 分隔线 */
+.divider {
+  width: 82.28vw;
+  height: 0.25vw;
+  background: #ffffff;
+  margin: 2.73vw 0;
+}
+
+/* 查看照片按钮 */
+.view-photos {
+  width: 83.02vw;
+  height: 8.92vw;
+  margin-top: 4vw;
+  background: #ffe361;
+  border: none;
+  border-radius: 4.46vw;
+  color: #000000;
+  font-size: 3.2vw;
+  font-weight: 700;
+  letter-spacing: 0.2vw;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.view-photos:active {
+  transform: scale(0.98);
+}
+
+/* 提交按钮下方的提示文案 */
+.tips {
+  margin-top: 0.5vw;
+  color: #fff;
+  font-size: 2.8vw; /* 24/807*100, 对齐设计稿 24px */
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.85;
+}
+
+/* 响应式微调 */
+@media (max-aspect-ratio: 9 / 16) {
+  .title {
+    font-size: 6.5vw;
+  }
+}
+
+/* 底部 logo 区 (跟 LogoText.vue 视觉一致) */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8vw;
+  background-color: #fff;
+  /* 用负 margin 让 footer 顶到屏底、左右贴屏边，再在内部 padding 还回来 */
+  margin-left: calc(-1 * 8.55vw);
+  margin-right: calc(-1 * 8.55vw);
+  margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
+  padding: 10px 8.55vw calc(env(safe-area-inset-bottom) + 6vw);
+}
+
+.logo {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
+}
+
+.logo-left,
+.logo-right {
+  height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
+  width: auto;
+  display: block;
+}
+
+.logo-left {
+  margin-right: 4vw;
+}
