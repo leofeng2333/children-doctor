@@ -1,6 +1,6 @@
 # h5-oral-checkup
 
-儿童口腔-面容变化 H5 独立子项目（输入信息 + AI 结果页）。
+儿童口腔-面容变化 H5 独立子项目（输入信息 + AI 结果页，单页 React 应用）。
 
 ## 与主项目的关系
 
@@ -8,46 +8,74 @@
 children-doctor/                  ← Vue + Capacitor 主项目（iOS/Android App）
 ├── src/                          ← Vue 源码
 ├── android/ ios/                 ← Capacitor 原生工程
-└── h5-oral-checkup/              ← 本目录：独立的 H5 子项目
-    ├── input.html                  ← 入口：default 模式（手机号 + 验证码）
-    ├── input-first.html            ← 入口：first 模式（姓名 + 手机号）
-    ├── face-result.html            ← 入口：AI 结果展示
-    ├── input/                      ← default 模式 JS：main.js / api.js / validation.js / countdown.js / toast.js
-    ├── input-first/                ← first 模式 JS：main.js（import 复用 ../input/validation.js / toast.js）
-    ├── face-result/                ← ES Module：main.js / data-source.js / diagnosis-copy.js / injector.js / image-splitter.js
-    ├── base.css                    ← 三个 HTML 共享的公共样式
-    ├── input.css                   ← input.html 特有样式
-    ├── input-first.css             ← input-first.html 特有样式
-    ├── face-result.css
-    ├── package.json                ← 独立依赖（只装 vite）
-    ├── vite.config.ts
-    └── dist/                       ← 构建产物（被主项目打包进 App）
+└── h5-oral-checkup/              ← 本目录：独立的 H5 子项目（React + Vite）
+    ├── input.html                ← 唯一 SPA 入口
+    ├── src/
+    │   ├── main.tsx              ← React 挂载
+    │   ├── App.tsx               ← <BrowserRouter> 路由表
+    │   ├── pages/                ← PhoneVerifyPage / NamePhonePage / FaceResultPage
+    │   ├── components/           ← PageShell / Footer / useToast
+    │   ├── lib/                  ← smsApi / dataSource / diagnosisCopy / phoneValidation / splitImage / useCountdown
+    │   └── styles/               ← base.css / phone-verify.css / name-phone.css / face-result.css（全局 CSS，vw 体系原封不动）
+    ├── assets/                   ← logo + html-icon.png
+    ├── public/                   ← （空）
+    ├── scripts/zip-dist.mjs      ← dist → zip，取 assets hash 作为版本号
+    ├── package.json              ← 独立依赖（只装 vite，react 相关装在主项目）
+    ├── tsconfig.json
+    ├── vite.config.ts            ← @vitejs/plugin-react + redirectIndexToInputPlugin（dev fallback 目标改 /input.html）
+    └── dist/                     ← 构建产物（被主项目打包进 App）
 ```
 
 H5 是**完全独立**的 Vite 项目：
-- 自己的 `package.json`，只装 `vite`，不污染主项目依赖
+- 自己的 `package.json`，只装 `vite`，react/react-dom/react-router-dom 装在主项目（`node_modules` 是软链）
 - 自己的 `node_modules`，构建产物在 `dist/`
 - 主项目 Capacitor 打包时，`dist/` 内容会拷贝到主项目的 `public/h5-oral-checkup/` 一并进 App
 
+## 路由表
+
+| 路径 | 组件 | 说明 |
+|---|---|---|
+| `/` | `<Navigate to="/name" />` | 默认跳 first 模式 |
+| `/phone` | `<PhoneVerifyPage />` | default 模式：手机号 + 验证码 |
+| `/name` | `<NamePhonePage />` | first 模式：姓名 + 手机号 |
+| `/face-result` | `<FaceResultPage />` | 结果展示 |
+| `*` | `<Navigate to="/name" />` | 兜底跳 `/name` |
+
+### 扫码链接兼容
+
+旧 QR URL 形如 `<base>/follow?id=<llmAnalysisId>&first=1`，**保持不变**。
+
+部署侧需配置 SPA fallback：把 `/follow`（以及 `/follow/*` 所有未命中静态文件的请求）rewrite 到 `/input.html`。
+QR 始终带 `first=1`，按业务设计永远走 first 模式（`/name`）。
+
+> **重要**：部署在公众号服务器时，**必须**有 SPA fallback（nginx try_files / Node express sendFile / Tomcat RewriteValve 等）。
+> 若服务器不支持 fallback，可以临时把 `BrowserRouter` 切换为 `HashRouter`（仅需改 `App.tsx` 一行）。
+
 ## 输入页模式
 
-`buildQrcodeUrl`（主项目 src/composables/useQrcode.ts）输出的 URL 末尾写死 `&first=1`：
-
-| 扫码链接 | 入口 HTML | 表单 | 提交流程 |
+| 扫码链接 | 进入路径 | 表单 | 提交流程 |
 |---|---|---|---|
-| `<base>/follow?id=...&first=1` | `input-first.html` | 姓名 + 手机号 | 不调接口，直接跳转 face-result.html（TODO 后端验证接口待补） |
-| `<base>/follow?id=...` | `input.html` | 手机号 + 验证码 | 完整 SMS 验证码流程 |
+| `<base>/follow?id=...&first=1` | `/name` | 姓名 + 手机号 | 不调接口，直接跳 `/face-result`（TODO 后端验证接口待补） |
+| `<base>/follow?id=...` | `/name` | 同上 | 同上（兜底） |
+| `/phone`（直接访问） | `/phone` | 手机号 + 验证码 | 完整 SMS 验证码流程 |
 
-扫码链接始终带 `first=1`，所以用户**走 first 模式**。`input.html` 留给直接访问 / 调试 / 旧链兼容。
-
-> `input.html` 是 first 模式拆分前的总入口，**保持原状**未做修改。新增的 first 模式单独放在 `input-first.html` / `input-first.css` / `input-first/main.js`；first 模式只复用 input/ 下的 validation.js / toast.js。
+主项目 `src/composables/useQrcode.ts` 输出的 URL 始终带 `&first=1`，所以默认走 first 模式。
+`/phone` 留给直接访问 / 调试（无 `?first=1` 时也会被重定向到 `/name`，所以要走 `/phone` 必须显式访问 `/phone`）。
 
 ## 开发
 
 ```bash
 cd h5-oral-checkup
-pnpm install        # 首次安装依赖（只装 vite）
-pnpm dev            # 启动 dev server: http://localhost:5180
+pnpm dev            # 启动 dev server: http://localhost:5182
+```
+
+dev server 已包含 SPA fallback，`/phone` `/name` `/face-result` 直接访问都能渲染对应组件。
+
+## 类型检查
+
+```bash
+cd h5-oral-checkup
+npx tsc --noEmit    # TS 类型检查（不构建）
 ```
 
 ## 构建
@@ -61,30 +89,23 @@ pnpm build          # 产出到 dist/
 
 ```
 dist/
-├── input-default.html           ← 业务入口（强缓存）
-├── input-first.html             ← 业务入口（强缓存）
-├── face-result.html
-├── base-[hash].css              ← content-hash 缓存（三页共享）
-├── input-default-[hash].css     ← content-hash 缓存（default 页特有）
-├── input-first-[hash].css       ← content-hash 缓存（first 页特有）
-├── face-result-[hash].css       ← content-hash 缓存（结果页特有）
-├── input-default-[hash].js      ← content-hash 缓存（default 页 JS）
-├── input-first-[hash].js        ← content-hash 缓存（first 页 JS）
-├── face-result-[hash].js        ← content-hash 缓存（结果页 JS）
-├── shared/[name].js             ← 共用模块（不带 hash）
-├── assets/*.js                 ← 依赖模块（带 hash）
-├── html-icon.png
-└── version.json                ← 版本号（前端启动时检测）
+├── input.html                   ← 业务入口（强缓存）
+├── assets/
+│   ├── input-[hash].css         ← content-hash 缓存（全部样式打包到一个文件）
+│   ├── input-[hash].js          ← content-hash 缓存（React + 全部业务代码）
+│   ├── html-icon-[hash].png     ← sprite
+│   ├── logo-left-[hash].png
+│   └── logo-right-[hash].png
 ```
 
-### Cache-Bust 机制（不需要手写）
+### Cache-Bust 机制
 
-vite 自动给引用的 JS/CSS 加 content-hash：
-- 业务代码变了 → 文件名 `face-result-AbCdEf.js` → 浏览器发现 URL 变了 → 拉新文件
+vite 自动给 `assets/input-[hash].css|js` 加 content-hash：
+- 业务代码变了 → 文件名变 → 浏览器拉到新文件
 - 业务代码没变 → 文件名不变 → 浏览器 304 命中缓存
 
-`<script>` 启动时会 `fetch('./version.json')` 比对 `sessionStorage.__h5_version`，
-变了就 `location.reload(true)` 强制重载（应对 HTML 强缓存命中 + 服务器只更新了 JS 的场景）。
+部署侧需保证 `input.html` 不强缓存（或者走 SPA fallback 返同一份 input.html），
+否则 HTML 被缓存时新发版的 `assets/input-[hash].js` 用户拿不到。
 
 ## 与主项目的对接
 
@@ -110,8 +131,26 @@ pnpm h5:zip
 ```
 
 等价于 `pnpm h5:sync && node h5-oral-checkup/scripts/zip-dist.mjs`，输出位置：
-`public/release/h5-oral-checkup-<version>.zip`，其中 `<version>` 取自 `dist/version.json` 的 `version` 字段。
+`public/release/h5-oral-checkup-<version>.zip`，其中 `<version>` 取自 `dist/assets/input-[hash].js` 的 hash 前 8 位（vite 自带）。
 
-- 不带时间戳；业务代码变了 → `version` 自动变 → 包名变 → 不会出现"重名但内容不一样"的歧义
+- 不带时间戳；业务代码变了 → hash 自动变 → 包名变 → 不会出现"重名但内容不一样"的歧义
 - 同 version 重跑是**原地覆盖**（幂等），不会累积同名文件
 - Windows 上脚本会走 PowerShell 的 `Compress-Archive`
+
+## 部署侧要求
+
+部署到公众号服务器时，**必须**配置 SPA fallback（因为用了 BrowserRouter），例：
+
+**nginx**
+```nginx
+location /follow {
+  try_files $uri /input.html;
+}
+```
+
+**Express**
+```js
+app.get('/follow{,/(*)?}', (req, res) => res.sendFile('dist/input.html', { root: '.' }))
+```
+
+若服务器不支持 fallback，把 `src/App.tsx` 里的 `<BrowserRouter>` 改成 `<HashRouter>`，路径变成 `/#/phone` `/#/name` `/#/face-result`，无需 fallback，但 QR URL 也要同步改。

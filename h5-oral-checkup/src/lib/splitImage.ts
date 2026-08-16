@@ -8,7 +8,12 @@
 
 const JPEG_QUALITY = 0.92
 
-export function splitFullImage(url) {
+export interface SplitResult {
+  badImgUrl: string
+  goodImgUrl: string
+}
+
+export function splitFullImage(url: string): Promise<SplitResult> {
   return new Promise((resolve, reject) => {
     if (!url) {
       reject(new Error('[splitFullImage] url 为空'))
@@ -24,11 +29,12 @@ export function splitFullImage(url) {
         const OVERLAP_PX = 10
         const leftEnd = Math.min(w, half + OVERLAP_PX)
         const rightStart = Math.max(0, half - OVERLAP_PX)
-        const make = (sx, sw) => {
+        const make = (sx: number, sw: number): string => {
           const canvas = document.createElement('canvas')
           canvas.width = sw
           canvas.height = h
           const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('[splitFullImage] canvas 2d ctx unavailable')
           ctx.drawImage(img, sx, 0, sw, h, 0, 0, sw, h)
           return canvas.toDataURL('image/jpeg', JPEG_QUALITY)
         }

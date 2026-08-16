@@ -1,4 +1,4 @@
-/* 口腔-面容变化 · 输入页（first 模式）样式
+/* 口腔-面容变化 · 输入页（first 模式）样式（name-phone）
  * 公共样式见 ./base.css
  * 这里只放 first 模式特有样式（.field-group / .field-label）
  * + input 页通用样式。default 模式特有样式（.row-2 / .get-btn）在 input.css。
@@ -6,7 +6,10 @@
  * 通用样式（.content / .title / .header-illu / .form / .field / .divider /
  * .view-photos / .footer / .logo）也在 input.css 重复一份（两份各自独立、
  * 避免互相依赖）；后续如有重构再抽到 base.css。
+ *
+ * 【CSS Layer】包在 @layer page-name，与 phone-verify 互不污染。
  */
+@layer page-name {
 
 .content {
   padding: 0 8.55vw;
@@ -38,7 +41,7 @@
 .header-illu-icon {
   width: 85%;
   height: 80%;
-  background-image: url('./html-icon.png');
+  background-image: url('../assets/html-icon.png');
   background-repeat: no-repeat;
   background-size: 700% 400%;
   background-position: 80% 45%;
@@ -173,4 +176,6 @@
 
 .logo-left {
   margin-right: 4vw;
+}
+
 }

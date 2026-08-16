@@ -5,7 +5,7 @@
  * 保持 8 套文案（编码 0~7）以及骨性版本的备用文案。
  */
 
-export const DiagnosisCode = Object.freeze({
+export const DiagnosisCode = {
   NORMAL: 0,
   ASYMMETRY: 1,
   ANTERIOR_CROSSBITE: 2,
@@ -14,13 +14,24 @@ export const DiagnosisCode = Object.freeze({
   UPPER_PROTRUSION: 5,
   CROWDING: 6,
   SPACING: 7,
-})
+} as const
 
-export const DIAGNOSIS_COPY_MAP = {
+Object.freeze(DiagnosisCode)
+
+export type DiagnosisCodeValue = (typeof DiagnosisCode)[keyof typeof DiagnosisCode]
+
+export interface DiagnosisCopy {
+  title: string
+  opening: string
+  body: string[]
+  careTips: string
+  habitNote: string
+}
+
+export const DIAGNOSIS_COPY_MAP: Record<DiagnosisCodeValue, DiagnosisCopy> = {
   [DiagnosisCode.NORMAL]: {
     title: '正常面容',
-    opening:
-      '恭喜宝贝！根据拍摄的照片分析，你的面型发育正常，五官协调，棒棒哒！',
+    opening: '恭喜宝贝！根据拍摄的照片分析，你的面型发育正常，五官协调，棒棒哒！',
     body: [
       '温馨提醒：线上评估仅供参考，牙齿和面型也会随着成长发生变化，建议每6个月做一次口腔检查，继续好好爱护牙齿，保持健康习惯，给快乐成长持续护航哦~',
     ],
@@ -106,7 +117,7 @@ export const DIAGNOSIS_COPY_MAP = {
   },
 }
 
-export const UPPER_PROTRUSION_BONE = {
+export const UPPER_PROTRUSION_BONE: DiagnosisCopy = {
   title: '上颌前突/下颌后缩',
   opening: '宝贝存在上颌前突 / 下颌后缩情况哦～',
   body: [
@@ -118,29 +129,30 @@ export const UPPER_PROTRUSION_BONE = {
   habitNote: '对应不良口腔习惯：张口呼吸',
 }
 
-function normalizeCode(rawCode) {
+function normalizeCode(rawCode: unknown): DiagnosisCodeValue | null {
   if (typeof rawCode === 'number' && Number.isInteger(rawCode)) {
-    return rawCode
+    return rawCode as DiagnosisCodeValue
   }
   if (typeof rawCode === 'string') {
     const n = Number(rawCode)
-    if (Number.isInteger(n)) return n
+    if (Number.isInteger(n)) return n as DiagnosisCodeValue
   }
   return null
 }
 
-export function getDiagnosisCopy(code) {
+export function getDiagnosisCopy(code: DiagnosisCodeValue | null): DiagnosisCopy {
   if (code == null) return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
   return DIAGNOSIS_COPY_MAP[code] ?? DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
 }
 
-export function getDiagnosisCopyFromLLMResult(llmResult) {
+export function getDiagnosisCopyFromLLMResult(llmResult: unknown): DiagnosisCopy {
   if (!llmResult || typeof llmResult !== 'object') {
     return DIAGNOSIS_COPY_MAP[DiagnosisCode.NORMAL]
   }
-  return getDiagnosisCopy(normalizeCode(llmResult.categoryCode))
+  const code = normalizeCode((llmResult as { categoryCode?: unknown }).categoryCode)
+  return getDiagnosisCopy(code)
 }
 
-export function getHabitShort(habitNote) {
+export function getHabitShort(habitNote: string): string {
   return (habitNote || '').replace(/^对应不良口腔习惯[：:]\s*/, '').trim()
 }

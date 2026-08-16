@@ -1,7 +1,10 @@
-/* 口腔-面容变化 · 输入页 样式
+/* 口腔-面容变化 · 输入页 样式（phone-verify）
  * 公共样式见 ./base.css
  * 这里只放输入页特有样式。
+ *
+ * 【CSS Layer】包在 @layer page-phone，base 永远赢；与其它 page 互不污染。
  */
+@layer page-phone {
 
 .content {
   padding: 0 8.55vw;
@@ -33,7 +36,7 @@
 .header-illu-icon {
   width: 85%;
   height: 80%;
-  background-image: url('./html-icon.png');
+  background-image: url('../assets/html-icon.png');
   background-repeat: no-repeat;
   background-size: 700% 400%;
   background-position: 80% 45%;
@@ -213,4 +216,6 @@
 
 .logo-left {
   margin-right: 4vw;
+}
+
 }

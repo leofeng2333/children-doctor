@@ -1,9 +1,12 @@
-/* 口腔-面容变化 · 结果页 样式
+/* 口腔-面容变化 · 结果页 样式（face-result）
  * 公共样式见 ./base.css
  * 这里只放结果页特有样式。
  *
  * 移动端 H5 单页，基准设计稿 807px；通过 vw 自适应屏幕宽度。
+ *
+ * 【CSS Layer】包在 @layer page-face，与 phone/name 互不污染。
  */
+@layer page-face {
 
 .content {
   padding: 0 7.68vw;
@@ -79,7 +82,7 @@
   right: 0;
   width: 28.94vw;
   height: 26.61vw;
-  background-image: url('./html-icon.png');
+  background-image: url('../assets/html-icon.png');
   background-repeat: no-repeat;
   background-size: 720% 400%;
   background-position: 80% 10%;
@@ -126,7 +129,7 @@
   transform: translateX(-50%);
   width: 27vw;
   height: 25vw;
-  background: url('./html-icon.png') no-repeat;
+  background: url('../assets/html-icon.png') no-repeat;
   background-size: 720% 400%;
   background-position: 80% 45%;
 }
@@ -199,4 +202,6 @@
 
 .save-btn:active {
   transform: scale(0.98);
+}
+
 }
