@@ -21,20 +21,20 @@ withDefaults(defineProps<Props>(), {
 const router = useRouter()
 
 // 二维码 id 来自 /api/ai/analyze 返回的 llmAnalysisId（让公众号 H5
-// 能关联到这次具体的面型分析）；接口未就绪时 url 为空字符串，模板里
-// spinner 占位 + 按钮 disabled。不做本地 idid 兜底——本地 id 没有后端
-// 关联，发出去扫码也查不到这次分析，对用户造成误导。
+// 能关联到这次具体的面型分析）；后端当前以 number 返回（之前曾以
+// string 返回，兼容两种）。useQrcodeIdid 内部归一化为 string。
+// 接口未就绪时 url 为空字符串，模板里 spinner 占位 + 按钮 disabled。
+// 不做本地 idid 兜底——本地 id 没有后端关联，发出去扫码也查不到这次
+// 分析，对用户造成误导。
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
-const hasLlmAnalysisId = computed(() => {
-  const v = analysisResult.value as { llmAnalysisId?: string } | null | undefined
-  return !!v?.llmAnalysisId
-})
+type AnalysisResult = { llmAnalysisId?: string | number } | null | undefined
 const llmAnalysisIdGetter = () => {
-  const v = analysisResult.value as { llmAnalysisId?: string } | null | undefined
+  const v = analysisResult.value as AnalysisResult
   return v?.llmAnalysisId
 }
 const { url: qrcodeUrl } = useQrcodeIdid(llmAnalysisIdGetter)
+const hasLlmAnalysisId = computed(() => !!qrcodeUrl.value)
 const isFinishing = ref(false)
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
