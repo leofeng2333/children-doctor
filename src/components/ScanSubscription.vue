@@ -20,10 +20,10 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-// 二维码 id 来自 /api/ai/analyze 返回的 llmAnalysisId；接口未就绪时不显示
-// 二维码、disable 打印 + 完成按钮，等详情页整页 loading 结束自动显现。
-// 不再用 localStorage 本地 idid 作 fallback —— 该 id 没有后端关联，扫到
-// H5 也查不到这次分析结果，发出去会误导用户。
+// 二维码 id 来自 /api/ai/analyze 返回的 llmAnalysisId（让公众号 H5
+// 能关联到这次具体的面型分析）；接口未就绪时 url 为空字符串，模板里
+// spinner 占位 + 按钮 disabled。不做本地 idid 兜底——本地 id 没有后端
+// 关联，发出去扫码也查不到这次分析，对用户造成误导。
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
 const hasLlmAnalysisId = computed(() => {
