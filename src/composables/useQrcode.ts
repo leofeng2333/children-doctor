@@ -25,25 +25,29 @@ function readStoredIdid(): string {
 }
 
 /**
- * 构造扫码链接：<baseUrl>/<path>?id=<idid>
+ * 构造扫码链接：<baseUrl>/<path>?id=<id>
  *
  * baseUrl 来自环境变量 VITE_QRCODE_BASE_URL，未配置时使用当前 origin。
- * idid 优先取 localStorage 中已存的标识（同一用户多次打印复用同一个），
- * 没有则现场生成并写回 localStorage。
+ * `id` 通常是后端返回的 llmAnalysisId（公众号 H5 据此关联这次面型分析），
+ * 在 llmAnalysisId 尚未就绪时调用方会回退到本地持久化的 idid。
  */
-export function buildQrcodeUrl(path = 'follow', idid: string): string {
+export function buildQrcodeUrl(path = 'follow', id: string): string {
   const base = (import.meta.env.VITE_QRCODE_BASE_URL as string | undefined)?.trim()
   const baseUrl = base && base.length > 0 ? base : window.location.origin
   const normalizedBase = baseUrl.replace(/\/+$/, '')
   const normalizedPath = path.replace(/^\/+/, '')
-  return `${normalizedBase}/${normalizedPath}?id=${encodeURIComponent(idid)}`
+  return `${normalizedBase}/${normalizedPath}?id=${encodeURIComponent(id)}`
 }
 
 /**
- * 订阅二维码状态：返回当前扫码链接 idid。
- * 第一次访问时本地生成并持久化，后续复用同一 idid。
+ * 订阅二维码状态：返回当前扫码链接。
+ *
+ * - 优先使用 `overrideId`（来自后端 /api/ai/analyze 的 `llmAnalysisId`），
+ *   若未提供或为空，回退到 localStorage 中持久化的本地 idid。
+ * - 同一 `overrideId` 下多次打印复用同一个二维码 URL，避免热敏打印机
+ *   重复出纸时给到不同链接。
  */
-export function useQrcodeIdid() {
+export function useQrcodeIdid(overrideId?: () => string | undefined) {
   const idid = ref<string>(readStoredIdid() || generateIdid())
 
   if (!readStoredIdid()) {
@@ -54,7 +58,10 @@ export function useQrcodeIdid() {
     }
   }
 
-  const url = computed(() => buildQrcodeUrl('follow', idid.value))
+  const url = computed(() => {
+    const external = overrideId?.()?.trim()
+    return buildQrcodeUrl('follow', external && external.length > 0 ? external : idid.value)
+  })
 
   return { idid, url }
 }

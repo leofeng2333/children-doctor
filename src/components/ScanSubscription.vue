@@ -2,8 +2,10 @@
 import { computed, ref } from 'vue'
 import QRCode from 'qrcode'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import VueQrcode from 'vue-qrcode'
 import { useQrcodeIdid } from '@/composables/useQrcode'
+import { useAnalysisStore } from '@/stores'
 import { DualCamera } from '@/plugins/dual-camera'
 import { printPhoto } from '@/utils/print'
 
@@ -18,9 +20,17 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-// 直接使用本地二维码 composable：链接从 .env 里的 VITE_QRCODE_BASE_URL
-// 拼出，idid 在 localStorage 持久化。
-const { url: qrcodeUrl } = useQrcodeIdid()
+// 二维码 id 优先用 /api/ai/analyze 返回的 llmAnalysisId（让公众号 H5
+// 能关联到这次具体的面型分析），未就绪时回退到 localStorage 里的本地 idid。
+// analysisStore 在 CameraCaptureView 阶段已 fire-and-forget 启动，
+// 到本组件 mount 时大概率已经回来；少数慢网络场景下暂时回退，不阻塞打印。
+const analysisStore = useAnalysisStore()
+const { result: analysisResult } = storeToRefs(analysisStore)
+const llmAnalysisIdGetter = () => {
+  const v = analysisResult.value as { llmAnalysisId?: string } | null | undefined
+  return v?.llmAnalysisId
+}
+const { url: qrcodeUrl } = useQrcodeIdid(llmAnalysisIdGetter)
 const isFinishing = ref(false)
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
