@@ -9,6 +9,7 @@ import { defineConfig } from 'vite'
  */
 const ENTRY_CANDIDATES = [
   { key: 'input', file: 'input.html' },
+  { key: 'input-first', file: 'input-first.html' },
   { key: 'face-result', file: 'face-result.html' },
 ]
 

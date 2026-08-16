@@ -2,7 +2,7 @@
  * 入口
  *
  * 启动流程：
- *   1. 挂载 input.html 写入的 verifyData 到 window.__verifyData
+ *   1. 挂载 input-default.html 写入的 verifyData 到 window.__verifyData
  *   2. 解析数据源（URL > analysisResult > verifyData > mock）
  *   3. 解析诊断文案（从 llmResult.categoryCode 走 DIAGNOSIS_COPY_MAP）
  *   4. 注入 DOM

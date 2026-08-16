@@ -5,7 +5,7 @@
 
 .content {
   padding: 0 8.55vw;
-  padding-top: 52.16vw;
+  padding-top: 40.16vw;
 }
 
 /* 标题 */
@@ -20,7 +20,7 @@
 /* 头部装饰图（input-icon 位） */
 .header-illu {
   position: absolute;
-  top: 25.4vw;
+  top: 10.4vw;
   left: 5.58vw;
   width: 35.44vw;
   height: 30.6vw;

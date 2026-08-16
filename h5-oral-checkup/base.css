@@ -1,5 +1,5 @@
 /* 口腔-面容变化 · 公共基础样式
- * input.html 和 face-result.html 共享：
+ * input-default.html / input-first.html / face-result.html 共享：
  *   - 主题色（页面背景 / 装饰 / 文字）
  *   - CSS reset
  *   - 设计稿基准宽 807px → 1vw 自适应
@@ -7,7 +7,7 @@
  *   - .content 内容容器
  *   - .toast 通用浮层（任一页面都可调用）
  *
- * 页面特有样式写在各自的 input.css / face-result.css 里。
+ * 页面特有样式写在各自的 input-default.css / input-first.css / face-result.css 里。
  */
 
 :root {

@@ -14,19 +14,23 @@ function normalizeId(raw: string | number | null | undefined): string {
 }
 
 /**
- * 构造扫码链接：<baseUrl>/<path>?id=<id>
+ * 构造扫码链接：<baseUrl>/<path>?id=<id>&first=1
  *
  * baseUrl 来自环境变量 VITE_QRCODE_BASE_URL，未配置时使用当前 origin。
  * `id` 是后端 /api/ai/analyze 返回的 llmAnalysisId（公众号 H5 据此关联
  * 这次面型分析），不持久化到本地——避免老链接被扫到查无结果。
  * 后端当前以 number 返回，规范化在 useQrcodeIdid 内部完成，这里接受字符串。
+ * `first=1` 是写死参数：H5 入口（input-first.html）收到该参数后切换为
+ * "姓名 + 手机号" 表单、跳过短信验证码流程；后续接入后端验证接口再补。
+ * 注意：扫码链接默认 path='follow'，需要部署侧把 /follow 路由映射到
+ * H5 的 input-first.html（H5 是纯静态，无 SPA 路由）。
  */
 export function buildQrcodeUrl(path = 'follow', id: string): string {
   const base = (import.meta.env.VITE_QRCODE_BASE_URL as string | undefined)?.trim()
   const baseUrl = base && base.length > 0 ? base : window.location.origin
   const normalizedBase = baseUrl.replace(/\/+$/, '')
   const normalizedPath = path.replace(/^\/+/, '')
-  return `${normalizedBase}/${normalizedPath}?id=${encodeURIComponent(id)}`
+  return `${normalizedBase}/${normalizedPath}?id=${encodeURIComponent(id)}&first=1`
 }
 
 /**

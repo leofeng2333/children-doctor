@@ -20,12 +20,12 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-// 二维码 id 来自 /api/ai/analyze 返回的 llmAnalysisId（让公众号 H5
-// 能关联到这次具体的面型分析）；后端当前以 number 返回（之前曾以
-// string 返回，兼容两种）。useQrcodeIdid 内部归一化为 string。
-// 接口未就绪时 url 为空字符串，模板里 spinner 占位 + 按钮 disabled。
-// 不做本地 idid 兜底——本地 id 没有后端关联，发出去扫码也查不到这次
-// 分析，对用户造成误导。
+// 二维码 url 形如 <base>/follow?id=<llmAnalysisId>&first=1。
+// first=1 写死在 buildQrcodeUrl，H5 入口 input-first.html 收到此参数
+// 后切换为"姓名 + 手机号"表单、跳过短信验证码流程（后端验证接口待补）。
+// llmAnalysisId 后端以 number 返回（之前曾以 string 返回），归一化
+// 在 useQrcodeIdid 内部完成。接口未就绪时 url 为空字符串，模板里
+// spinner 占位 + 按钮 disabled。
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
 type AnalysisResult = { llmAnalysisId?: string | number } | null | undefined

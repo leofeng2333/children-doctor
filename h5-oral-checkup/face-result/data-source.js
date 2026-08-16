@@ -4,7 +4,7 @@
  * 数据源优先级（先查 → 后查 → 兜底 mock）：
  *   1. URL query (?data=<base64-json>)               — 调试/分享
  *   2. sessionStorage.faceResult:analysisResult      — Vue analysisStore.result（startAnalysis 返回）
- *   3. sessionStorage.faceResult:verifyData          — input.html 写入的 SMS 验证 API 响应
+ *   3. sessionStorage.faceResult:verifyData          — input-default.html 写入的 SMS 验证 API 响应
  *   4. DEFAULT_MOCK                                  — 兜底 mock
  *
  * 输出统一的 ResultShape：
@@ -131,7 +131,7 @@ export function readLlmResult() {
 export function loadVerifyDataToWindow() {
   const raw = readFromStorage(STORAGE_KEYS.verifyData)
   if (!raw) {
-    console.log('[face-result] 没有来自 input.html 的校验数据')
+    console.log('[face-result] 没有来自 input-default.html 的校验数据')
     return null
   }
   window.__verifyData = raw

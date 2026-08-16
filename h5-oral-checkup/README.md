@@ -1,6 +1,6 @@
 # h5-oral-checkup
 
-儿童口腔-面容变化 H5 独立子项目（输入手机号 + AI 结果页）。
+儿童口腔-面容变化 H5 独立子项目（输入信息 + AI 结果页）。
 
 ## 与主项目的关系
 
@@ -9,22 +9,38 @@ children-doctor/                  ← Vue + Capacitor 主项目（iOS/Android Ap
 ├── src/                          ← Vue 源码
 ├── android/ ios/                 ← Capacitor 原生工程
 └── h5-oral-checkup/              ← 本目录：独立的 H5 子项目
-    ├── input.html                 ← 入口：输入手机号 + 验证码
-    ├── face-result.html          ← 入口：AI 结果展示
-    ├── input/                     ← ES Module：main.js / api.js / validation.js / countdown.js / toast.js
-    ├── face-result/              ← ES Module：main.js / data-source.js / diagnosis-copy.js / injector.js / image-splitter.js
-    ├── base.css                   ← 两页共享的公共样式
-    ├── input.css                  ← input 页特有样式
+    ├── input.html                  ← 入口：default 模式（手机号 + 验证码）
+    ├── input-first.html            ← 入口：first 模式（姓名 + 手机号）
+    ├── face-result.html            ← 入口：AI 结果展示
+    ├── input/                      ← default 模式 JS：main.js / api.js / validation.js / countdown.js / toast.js
+    ├── input-first/                ← first 模式 JS：main.js（import 复用 ../input/validation.js / toast.js）
+    ├── face-result/                ← ES Module：main.js / data-source.js / diagnosis-copy.js / injector.js / image-splitter.js
+    ├── base.css                    ← 三个 HTML 共享的公共样式
+    ├── input.css                   ← input.html 特有样式
+    ├── input-first.css             ← input-first.html 特有样式
     ├── face-result.css
-    ├── package.json              ← 独立依赖（只装 vite）
+    ├── package.json                ← 独立依赖（只装 vite）
     ├── vite.config.ts
-    └── dist/                     ← 构建产物（被主项目打包进 App）
+    └── dist/                       ← 构建产物（被主项目打包进 App）
 ```
 
 H5 是**完全独立**的 Vite 项目：
 - 自己的 `package.json`，只装 `vite`，不污染主项目依赖
 - 自己的 `node_modules`，构建产物在 `dist/`
 - 主项目 Capacitor 打包时，`dist/` 内容会拷贝到主项目的 `public/h5-oral-checkup/` 一并进 App
+
+## 输入页模式
+
+`buildQrcodeUrl`（主项目 src/composables/useQrcode.ts）输出的 URL 末尾写死 `&first=1`：
+
+| 扫码链接 | 入口 HTML | 表单 | 提交流程 |
+|---|---|---|---|
+| `<base>/follow?id=...&first=1` | `input-first.html` | 姓名 + 手机号 | 不调接口，直接跳转 face-result.html（TODO 后端验证接口待补） |
+| `<base>/follow?id=...` | `input.html` | 手机号 + 验证码 | 完整 SMS 验证码流程 |
+
+扫码链接始终带 `first=1`，所以用户**走 first 模式**。`input.html` 留给直接访问 / 调试 / 旧链兼容。
+
+> `input.html` 是 first 模式拆分前的总入口，**保持原状**未做修改。新增的 first 模式单独放在 `input-first.html` / `input-first.css` / `input-first/main.js`；first 模式只复用 input/ 下的 validation.js / toast.js。
 
 ## 开发
 
@@ -45,13 +61,17 @@ pnpm build          # 产出到 dist/
 
 ```
 dist/
-├── input.html                   ← 业务入口（强缓存）
+├── input-default.html           ← 业务入口（强缓存）
+├── input-first.html             ← 业务入口（强缓存）
 ├── face-result.html
-├── base-[hash].css              ← content-hash 缓存（两页共享）
-├── input-[hash].css             ← content-hash 缓存（input 页特有）
+├── base-[hash].css              ← content-hash 缓存（三页共享）
+├── input-default-[hash].css     ← content-hash 缓存（default 页特有）
+├── input-first-[hash].css       ← content-hash 缓存（first 页特有）
 ├── face-result-[hash].css       ← content-hash 缓存（结果页特有）
-├── input-[hash].js              ← content-hash 缓存（input 页 JS）
+├── input-default-[hash].js      ← content-hash 缓存（default 页 JS）
+├── input-first-[hash].js        ← content-hash 缓存（first 页 JS）
 ├── face-result-[hash].js        ← content-hash 缓存（结果页 JS）
+├── shared/[name].js             ← 共用模块（不带 hash）
 ├── assets/*.js                 ← 依赖模块（带 hash）
 ├── html-icon.png
 └── version.json                ← 版本号（前端启动时检测）
