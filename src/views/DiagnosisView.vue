@@ -97,7 +97,9 @@ onUnmounted(() => {
 
         <!-- 第一步 -->
         <div class="step step-left first-step">
-          <div class="step-circle"></div>
+          <div class="step-circle">
+            <img src="@/assets/images/step1.png" alt="第一步" class="step-circle-img" />
+          </div>
           <div class="step-text">
             <h2 class="step-text-title">第一步，</h2>
             <p class="step-text-content">由一些简单的问题开启问诊</p>
@@ -110,12 +112,16 @@ onUnmounted(() => {
             <h2 class="step-text-title">快好了！</h2>
             <p class="step-text-content">看镜头，我们来观测一下面容</p>
           </div>
-          <div class="step-circle"></div>
+          <div class="step-circle">
+            <img src="@/assets/images/step2.png" alt="第二步" class="step-circle-img" />
+          </div>
         </div>
 
         <!-- 第三步 -->
         <div class="step step-left step-last">
-          <div class="step-circle"></div>
+          <div class="step-circle">
+            <img src="@/assets/images/step3.png" alt="第三步" class="step-circle-img" />
+          </div>
           <div class="step-text">
             <h2 class="step-text-title">结束！</h2>
             <p class="step-text-content">领取你的面容预测报告</p>
@@ -140,7 +146,7 @@ onUnmounted(() => {
     height: 100dvh;
   }
 
-  background: #ffffff;
+  background: #FAFAFA;
   display: flex;
   flex-direction: column;
   padding: 0 90px;
@@ -255,6 +261,39 @@ onUnmounted(() => {
   background: #d9d9d9;
   flex-shrink: 0;
   align-self: center;
+  // overflow: hidden;
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.step-circle-img {
+  width: 90%;
+  height: 100%;
+  object-fit: scale;
+  display: block;
+  margin-left: 12px;
+}
+
+.first-step {
+  .step-circle {
+    background-color: #FF9900;
+  }
+}
+
+.step-second {
+  .step-circle {
+    background-color: #F2A4A2;
+
+    .step-circle-img {
+      transform: scaleX(-1) rotate(20deg);
+    }
+  }
+}
+
+.step-last {
+  .step-circle {
+    background-color: #F2684E;
+  }
 }
 
 /* 步骤文字 */

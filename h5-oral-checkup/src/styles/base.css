@@ -4,13 +4,13 @@
  *   - CSS reset
  *   - 设计稿基准宽 807px → 1vw 自适应
  *   - .page 容器、3 个 .bg-deco 背景装饰
- *   - .page > .content 内容容器（提升 specificity，避免被 page CSS 覆盖）
+ *   - .content 内容容器基类（flex 子项 / 层级 / 定位；padding 由各 page 自己用 CSS 变量 --content-px 提供）
+ *   - .footer / .logo 底部 logo 区（三个 page 共用，因为 Footer 是 PageShell 统一挂载）
  *   - .toast 通用浮层（任一页面都可调用）
  *
- * 页面特有样式写在各自的 phone-verify.css / name-phone.css / face-result.css 里。
- *
- * 【CSS Layer 隔离】SPA 把所有 CSS 打包到 1 个文件，所有 page CSS 都会匹配到所有页面。
- * 用 @layer 隔离：base 永远赢，page 之间互不污染；同名 layer 内后定义赢。
+ * 页面特有样式写在各自的 phone-verify.css / name-phone.css / face-result.css 里，
+ * 根选择器用 `.page-name.content` / `.page-phone.content` / `.page-face-result.content`
+ * 精确匹配本页面根 div（class 由各 page 组件自己加）。
  */
 @layer base;
 
@@ -92,14 +92,52 @@
     border-radius: 40% 60% 50% 50% / 50% 50% 60% 40%;
   }
 
-  /* 内容容器基类：默认无内边距，页面按需覆盖。
-   * 用 .page > .content 提升 specificity，避免 page CSS 的 .content { padding:... }
-   * 被 base 后定义覆盖；同时 base 用 @layer 隔离，永远赢 page 的 .content。
+  /* 内容容器基类：默认无内边距（页面按需覆盖 padding）。
+   * PageShell 的根 .page 同时带 .page-name / .page-phone / .page-face-result，
+   * 各 page-*.css 用 `.page-name .content { padding: ... }` 这种前缀选择器，
+   * specificity (0,1,1) > base 的 (0,1,0)，padding 自然生效。
+   * 这里只声明与排版结构相关的通用属性（flex 子项 / 层级 / 定位）。
    */
-  .page > .content {
+  .content {
     position: relative;
     z-index: 1;
     flex: 1 1 auto; /* 让 .content 占满 .page 的剩余空间，把 footer 顶到屏底 */
+  }
+
+  /* 底部 logo 区 (跟 LogoText.vue 视觉一致) — 三个页面共用，由 PageShell 在
+   * <Outlet/> 之后统一挂载 .footer > .logo。logo 白条需要左右贴屏边、底贴屏底，
+   * 所以用负 margin 抵消 .content 的左右 padding 和 .page 的底部 padding，
+   * 再在内部 padding 还回来。各 page-*.css 不再重复声明 .footer / .logo。
+   */
+  .footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 8vw;
+    background-color: #fff;
+    margin-left: calc(-1 * var(--content-px, 0px));
+    margin-right: calc(-1 * var(--content-px, 0px));
+    margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
+    padding: 10px var(--content-px, 0px) calc(env(safe-area-inset-bottom) + 6vw);
+  }
+
+  .logo {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
+  }
+
+  .logo-left,
+  .logo-right {
+    height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
+    width: auto;
+    display: block;
+  }
+
+  .logo-left {
+    margin-right: 4vw; /* 30/807 * 100, 对齐 LogoText.vue 的 margin-left: 30px */
   }
 
   /* Toast 通用浮层（input 页用到，face-result 也可复用） */

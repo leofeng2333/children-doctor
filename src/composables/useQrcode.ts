@@ -25,7 +25,7 @@ function normalizeId(raw: string | number | null | undefined): string {
  * 注意：扫码链接默认 path='follow'，需要部署侧把 /follow 路由映射到
  * H5 的 input-first.html（H5 是纯静态，无 SPA 路由）。
  */
-export function buildQrcodeUrl(path = 'follow', id: string): string {
+export function buildQrcodeUrl(path = 'name', id: string): string {
   const base = (import.meta.env.VITE_QRCODE_BASE_URL as string | undefined)?.trim()
   const baseUrl = base && base.length > 0 ? base : window.location.origin
   const normalizedBase = baseUrl.replace(/\/+$/, '')
@@ -44,7 +44,7 @@ export function buildQrcodeUrl(path = 'follow', id: string): string {
 export function useQrcodeIdid(getId: () => string | number | null | undefined) {
   const url = computed(() => {
     const id = normalizeId(getId())
-    return id ? buildQrcodeUrl('follow', id) : ''
+    return id ? buildQrcodeUrl('name', id) : ''
   })
 
   return { url }

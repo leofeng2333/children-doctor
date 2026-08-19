@@ -1,9 +1,15 @@
 /**
  * 图片切割
  *
- * 把 fullImgUrl（左右拼接的整图）等分为左右两半：
- *   左半 [0, w/2)        = 矫正前(bad)  → badImgUrl
- *   右半 [w/2, w)        = 矫正后(good) → goodImgUrl
+ * 把 fullImgUrl 等分为左右两半（始终走 canvas 真实切割）：
+ *   左半 [rightStart, w)  = badImgUrl
+ *   右半 [0, leftEnd)     = goodImgUrl
+ *
+ * 异常面容（矫正前 vs 矫正后）：左右两半是不一样的两张图，用于对照展示。
+ * 正常面容（categoryCode=0）：虽然原图本身已是完整面容，并没有"左右拼接"的概念，
+ *                            但仍按统一的 split 流程走 canvas 切割，
+ *                            切出来的 left/right 视觉上一致（同一张原图的两半），
+ *                            UI 端任取一张渲染即可。
  */
 
 const JPEG_QUALITY = 0.92

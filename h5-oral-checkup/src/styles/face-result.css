@@ -4,16 +4,20 @@
  *
  * 移动端 H5 单页，基准设计稿 807px；通过 vw 自适应屏幕宽度。
  *
- * 【CSS Layer】包在 @layer page-face，与 phone/name 互不污染。
+ * 【页面隔离】所有规则用 `.page-face-result.content ...` 前缀，精确匹配本页面根 div
+ *  （同时拥有 page-face-result 和 content 类）。类名由各 page 组件在自己根 div 上加
+ *  （不放 PageShell 统一处理），与其它页面互不污染。
+ *  padding 直接写在 root selector 上 —— root 自己就是 .content，padding 自然生效。
+ *  Footer 由 PageShell 统一挂载在 .content 之外，样式在 base.css。
  */
-@layer page-face {
-
-.content {
+.page-face-result.content {
+  /* 页面根 div 的左右内边距 —— 同时作为 CSS 变量传给 base.css 里的 .footer。 */
   padding: 0 7.68vw;
+  --content-px: 7.68vw;
 }
 
-.title-after,
-.title-warning {
+.page-face-result.content .title-after,
+.page-face-result.content .title-warning {
   font-size: 5.95vw;
   font-weight: 700;
   line-height: 1.35;
@@ -22,30 +26,30 @@
   margin-bottom: 5vw;
 }
 
-.title-after {
+.page-face-result.content .title-after {
   width: 70.47vw;
   text-align: left;
   margin-top: 8.34vw;
 }
 
-.title-after--normal {
+.page-face-result.content .title-after--normal {
   width: 100%;
 }
 
-.title-warning {
+.page-face-result.content .title-warning {
   width: 67.66vw;
   text-align: right;
   margin-left: auto;
 }
 
-.card {
+.page-face-result.content .card {
   position: relative;
   width: 87.49vw;
   margin: 0 auto;
   height: 115.71vw;
 }
 
-.card .card-base {
+.page-face-result.content .card .card-base {
   position: absolute;
   top: 15.61vw;
   left: 0;
@@ -61,7 +65,7 @@
   padding-top: 3.6vw;
 }
 
-.card .card-img-wrap {
+.page-face-result.content .card .card-img-wrap {
   width: 64.54vw;
   height: 81.47vw;
   border-radius: 2.23vw;
@@ -69,14 +73,14 @@
   overflow: hidden;
 }
 
-.card .card-img {
+.page-face-result.content .card .card-img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.card .sticker {
+.page-face-result.content .card .sticker {
   position: absolute;
   top: -5vw;
   right: 0;
@@ -89,26 +93,26 @@
   transform: scaleX(-1) rotate(0deg);
 }
 
-.card1 {
+.page-face-result.content .card1 {
   transform: translateX(-3vw) rotate(4deg);
   margin-right: 2vw;
 }
 
-.card1 .card-base {
+.page-face-result.content .card1 .card-base {
   left: auto;
   right: 0;
 }
 
-.card2 {
+.page-face-result.content .card2 {
   transform: rotate(-4deg);
 }
 
-.card2 .sticker {
+.page-face-result.content .card2 .sticker {
   left: 0;
   background-position: 38% 56%;
 }
 
-.description {
+.page-face-result.content .description {
   font-size: 2.48vw;
   font-weight: 400;
   line-height: 2.5;
@@ -122,7 +126,7 @@
   position: relative;
 }
 
-.description-icon {
+.page-face-result.content .description-icon {
   position: absolute;
   top: -18vw;
   left: 50%;
@@ -134,62 +138,27 @@
   background-position: 80% 45%;
 }
 
-.description p {
+.page-face-result.content .description p {
   margin: 0;
 }
 
-.description #desc-care {
+.page-face-result.content .description #desc-care {
   margin-top: 2vw;
 }
 
-.description #desc-habit {
+.page-face-result.content .description #desc-habit {
   color: #c0392b;
   font-weight: 600;
   margin-top: 1vw;
 }
 
-.footer {
-  margin-top: 8vw;
-  text-align: center;
-  /* 按钮保持粉色背景上的白按钮风格，不加白底 */
-}
-
-.logo {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
-  margin-top: 8vw;
-  background-color: #fff;
-  /* 抵消 .content 的 7.68vw 左右内边距，让 logo 区撑到屏边 */
-  margin-left: calc(-1 * 7.68vw);
-  margin-right: calc(-1 * 7.68vw);
-  /* 抵消 .page 底部的 6vw + 安全区，让 logo 区顶到屏底 */
-  margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
-  /* 把被抵消掉的 padding 还回来给 logo 内部呼吸 */
-  padding: 10px 7.68vw calc(env(safe-area-inset-bottom) + 6vw);
-}
-
-.logo-left,
-.logo-right {
-  height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
-  width: auto;
-  display: block;
-}
-
-.logo-left {
-  /* 30/807 * 100, 对齐 LogoText.vue 的 margin-left: 30px */
-  margin-right: 4vw;
-}
-
-.save-btn {
+.page-face-result.content .save-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 84.51vw;
   height: 9.79vw;
-  margin: 0 auto;
+  margin: 8vw auto 0;
   background: #ffffff;
   color: #000000;
   border: none;
@@ -200,8 +169,8 @@
   cursor: pointer;
 }
 
-.save-btn:active {
+.page-face-result.content .save-btn:active {
   transform: scale(0.98);
 }
 
-}
+/* 底部 logo 区样式见 ./base.css（三个页面共用） */

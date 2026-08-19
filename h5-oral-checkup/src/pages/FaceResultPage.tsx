@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import '@/styles/face-result.css'
-import Footer from '@/components/Footer'
 import {
   resolveResult,
   readLlmResult,
@@ -128,10 +127,11 @@ export default function FaceResultPage() {
 
   const isNormal = data.categoryCode === DiagnosisCode.NORMAL
   const badImgSrc = data.badImgUrl || ''
+  // NORMAL 时 split 出来的左右两半来自同一张原图，视觉一致 → UI 任取一张（card1 的 good 图）即可
   const goodImgSrc = data.goodImgUrl || ''
 
   return (
-    <div className="content">
+    <div className="content page-face-result">
       {!isNormal && (
         <h2 className="title-warning">
           啊哦，
@@ -200,12 +200,9 @@ export default function FaceResultPage() {
         </div>
       </div>
 
-      <div className="footer">
-        <button className="save-btn" id="save-btn" onClick={handleSave}>
-          保 存 到 手 机
-        </button>
-        <Footer />
-      </div>
+      <button className="save-btn" id="save-btn" onClick={handleSave}>
+        保 存 到 手 机
+      </button>
     </div>
   )
 }

@@ -6,9 +6,14 @@ import react from '@vitejs/plugin-react'
 /**
  * 单页 React 应用，入口 HTML 名为 `input.html`（与历史部署保持一致）。
  *
+ * 部署目标：https://m.hangxiaoya.com/zt/input/
+ *  - `base: '/zt/input/'` 让 vite 构建产物的所有相对路径都基于该子路径
+ *    （dist/assets/*.js 的引用、动态导入都从 /zt/input/ 算起）
+ *  - React Router 的 basename 见 src/App.tsx，必须与 vite base 一致
+ *
  * 旧扫码链接：<base>/follow?id=<llmAnalysisId>&first=1
- *   - 旧多页产物（input.html / input-first.html / face-result.html）已废弃，
- *     全部走 SPA 路由 /name /phone /face-result。
+ * 旧多页产物（input.html / input-first.html / face-result.html）已废弃，
+ * 全部走 SPA 路由 /name /phone /face-result。
  */
 
 /**
@@ -37,7 +42,8 @@ function redirectIndexToInputPlugin(): Plugin {
 
 export default defineConfig({
   root: '.',
-  base: './',
+  // 部署到 https://m.hangxiaoya.com/zt/input/ —— 静态资源路径必须从该子路径出发
+  base: '/zt/input/',
   plugins: [react(), redirectIndexToInputPlugin()],
   resolve: {
     alias: {

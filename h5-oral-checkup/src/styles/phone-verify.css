@@ -2,17 +2,21 @@
  * 公共样式见 ./base.css
  * 这里只放输入页特有样式。
  *
- * 【CSS Layer】包在 @layer page-phone，base 永远赢；与其它 page 互不污染。
+ * 【页面隔离】所有规则用 `.page-phone.content ...` 前缀，精确匹配本页面根 div
+ *  （同时拥有 page-phone 和 content 类）。类名由各 page 组件在自己根 div 上加
+ *  （不放 PageShell 统一处理），与其它页面互不污染。
+ *  padding 直接写在 root selector 上 —— root 自己就是 .content，padding 自然生效。
+ *  Footer 由 PageShell 统一挂载在 .content 之外，样式在 base.css。
  */
-@layer page-phone {
-
-.content {
-  padding: 0 8.55vw;
-  padding-top: 40.16vw;
+.page-phone.content {
+  /* 页面根 div 的左右内边距 —— 同时作为 CSS 变量传给 base.css 里的 .footer，
+   * 让 footer 的负 margin 知道该抵消多少。 */
+  padding: 40.16vw 8.55vw 0;
+  --content-px: 8.55vw;
 }
 
 /* 标题 */
-.title {
+.page-phone.content .title {
   font-size: 5.95vw;
   font-weight: 700;
   line-height: 1.35;
@@ -21,7 +25,7 @@
 }
 
 /* 头部装饰图（input-icon 位） */
-.header-illu {
+.page-phone.content .header-illu {
   position: absolute;
   top: 10.4vw;
   left: 5.58vw;
@@ -33,7 +37,7 @@
   justify-content: center;
 }
 
-.header-illu-icon {
+.page-phone.content .header-illu-icon {
   width: 85%;
   height: 80%;
   background-image: url('../assets/html-icon.png');
@@ -43,13 +47,13 @@
 }
 
 /* 表单 */
-.form {
+.page-phone.content .form {
   display: flex;
   flex-direction: column;
   gap: 3vw;
 }
 
-.field {
+.page-phone.content .field {
   position: relative;
   width: 83.02vw;
   height: 8.92vw;
@@ -63,7 +67,7 @@
   font-weight: 700;
 }
 
-.field input {
+.page-phone.content .field input {
   flex: 1;
   border: none;
   outline: none;
@@ -72,12 +76,12 @@
   font: inherit;
 }
 
-.field input::placeholder {
+.page-phone.content .field input::placeholder {
   color: #d9d9d9;
 }
 
 /* 第二行：验证码输入 + 获取按钮 */
-.row-2 {
+.page-phone.content .row-2 {
   display: flex;
   align-items: center;
   gap: 0;
@@ -85,7 +89,7 @@
   position: relative;
 }
 
-.row-2 .code-field {
+.page-phone.content .row-2 .code-field {
   flex: 1 1 0;
   min-width: 0; /* 让 flex shrink 真生效，否则 <input> 的 intrinsic min-width 会把容器撑超 */
   height: 8.92vw;
@@ -99,7 +103,7 @@
   font-weight: 700;
 }
 
-.row-2 .code-field input {
+.page-phone.content .row-2 .code-field input {
   flex: 1 1 0;
   min-width: 0;
   width: 100%;
@@ -110,11 +114,11 @@
   font: inherit;
 }
 
-.row-2 .code-field input::placeholder {
+.page-phone.content .row-2 .code-field input::placeholder {
   color: #d9d9d9;
 }
 
-.row-2 .get-btn {
+.page-phone.content .row-2 .get-btn {
   flex: 0 0 auto;
   /* 设计稿 807 → 100vw, 24px ≈ 2.97vw, 12px ≈ 1.49vw */
   height: 8.92vw;
@@ -133,23 +137,23 @@
   justify-content: center;
 }
 
-.row-2 .get-btn.sending {
+.page-phone.content .row-2 .get-btn.sending {
   padding: 0 1.8vw;
   background: #d9d9d9;
   cursor: wait;
 }
 
-.row-2 .get-btn:active {
+.page-phone.content .row-2 .get-btn:active {
   transform: scale(0.98);
 }
 
-.row-2 .get-btn:disabled {
+.page-phone.content .row-2 .get-btn:disabled {
   background: #d9d9d9;
   cursor: not-allowed;
 }
 
 /* 分隔线 */
-.divider {
+.page-phone.content .divider {
   width: 82.28vw;
   height: 0.25vw;
   background: #ffffff;
@@ -157,7 +161,7 @@
 }
 
 /* 查看照片按钮 */
-.view-photos {
+.page-phone.content .view-photos {
   width: 83.02vw;
   height: 8.92vw;
   background: #ffffff;
@@ -174,48 +178,15 @@
   text-decoration: none;
 }
 
-.view-photos:active {
+.page-phone.content .view-photos:active {
   transform: scale(0.98);
 }
 
 /* 响应式微调 */
 @media (max-aspect-ratio: 9 / 16) {
-  .title {
+  .page-phone.content .title {
     font-size: 6.5vw;
   }
 }
 
-/* 底部 logo 区 (跟 LogoText.vue 视觉一致) */
-.footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 8vw;
-  background-color: #fff;
-  /* 用负 margin 让 footer 顶到屏底、左右贴屏边，再在内部 padding 还回来 */
-  margin-left: calc(-1 * 8.55vw);
-  margin-right: calc(-1 * 8.55vw);
-  margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
-  padding: 10px 8.55vw calc(env(safe-area-inset-bottom) + 6vw);
-}
-
-.logo {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
-}
-
-.logo-left,
-.logo-right {
-  height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
-  width: auto;
-  display: block;
-}
-
-.logo-left {
-  margin-right: 4vw;
-}
-
-}
+/* 底部 logo 区样式见 ./base.css（三个页面共用） */

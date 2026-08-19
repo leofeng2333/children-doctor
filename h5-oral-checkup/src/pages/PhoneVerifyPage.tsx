@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useRef, useState } from 'react'
 import '@/styles/phone-verify.css'
-import Footer from '@/components/Footer'
 import { isValidPhone, normalizePhone } from '@/lib/phoneValidation'
 import { requestSmsApi, SMS_API, SMS_VERIFY_API, SMS_SUCCESS_CODES } from '@/lib/smsApi'
 import { useCountdown } from '@/lib/useCountdown'
@@ -142,7 +141,7 @@ export default function PhoneVerifyPage() {
   const submitLabel = submitting ? '校 验 中 …' : '查 看 照 片'
 
   return (
-    <div className="content">
+    <div className="content page-phone">
       <div className="header-illu" aria-hidden="true">
         <span className="header-illu-icon" />
       </div>
@@ -200,8 +199,6 @@ export default function PhoneVerifyPage() {
           {submitLabel}
         </button>
       </form>
-
-      <Footer />
     </div>
   )
 }

@@ -1,27 +1,45 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useRef, useState } from 'react'
 import '@/styles/name-phone.css'
-import Footer from '@/components/Footer'
 import { isValidPhone, normalizePhone } from '@/lib/phoneValidation'
 import { showToast } from '@/components/useToast'
+import {
+  LLM_TASK_BIND_PHONE_API,
+  LLM_TASK_RESULT_API,
+  isLlmTaskSuccess,
+  requestLlmTaskGetApi,
+  requestLlmTaskPostApi,
+} from '@/lib/llmTaskApi'
+import { STORAGE_KEYS } from '@/lib/dataSource'
 
 /**
  * first 模式：姓名 + 手机号 输入页（首次扫码进入）
  *
  * 流程：
  *   1. 称呼语必填 + 手机号格式校验
- *   2. TODO: 后端验证接口接入后再写 verifyData
- *   3. 校验通过 → 跳 /face-result
+ *   2. 从 URL query 读 llmAnalysisId（优先 id，兼容 llmAnalysisId）
+ *   3. POST /api/ai/llm-task/bind-phone 绑定 llmAnalysisId + phone
+ *   4. GET  /api/ai/llm-task?llmAnalysisId=xxx  拿结果
+ *   5. 把结果以 verifyData 格式写入 sessionStorage，跳 /face-result
+ *
+ * 跳转逻辑与 PhoneVerifyPage 一致：toast 提示 + 500ms 后 navigate。
  */
 export default function NamePhonePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
   const phoneInputRef = useRef<HTMLInputElement | null>(null)
 
-  function handleSubmit(e: React.FormEvent) {
+  function readLlmAnalysisId(): string {
+    const params = new URLSearchParams(location.search)
+    const id = (params.get('id') || params.get('llmAnalysisId') || '').trim()
+    return id
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const n = name.trim()
     const p = normalizePhone(phone.trim())
@@ -36,19 +54,68 @@ export default function NamePhonePage() {
       return
     }
 
-    // TODO: 后端验证接口接入后再写 verifyData
-    console.log('[first] submit', { name: n, phone: p })
+    const llmAnalysisId = readLlmAnalysisId()
+    if (!llmAnalysisId) {
+      showToast('报告链接无效，请重新扫码', 'error')
+      return
+    }
 
     setSubmitting(true)
-    window.setTimeout(() => {
-      navigate('/face-result')
-    }, 300)
+    try {
+      // 1) 绑定手机号
+      const bindResp = await requestLlmTaskPostApi(LLM_TASK_BIND_PHONE_API, {
+        llmAnalysisId,
+        phone: p,
+      })
+      if (!isLlmTaskSuccess(bindResp.status, bindResp.data)) {
+        showToast(
+          (bindResp.data as { message?: string } | null)?.message ||
+            `绑定失败 (HTTP ${bindResp.status})`,
+          'error',
+        )
+        return
+      }
+
+      // 2) 拉取任务结果
+      const resultResp = await requestLlmTaskGetApi(LLM_TASK_RESULT_API, { llmAnalysisId })
+      if (!isLlmTaskSuccess(resultResp.status, resultResp.data)) {
+        showToast(
+          (resultResp.data as { message?: string } | null)?.message ||
+            `获取报告失败 (HTTP ${resultResp.status})`,
+          'error',
+        )
+        return
+      }
+
+      // 3) 写 sessionStorage（face-result 兼容 verifyData 格式）
+      try {
+        sessionStorage.setItem(
+          STORAGE_KEYS.verifyData,
+          JSON.stringify(resultResp.data),
+        )
+      } catch (err) {
+        console.warn('[first] sessionStorage 写入失败', err)
+      }
+
+      showToast((resultResp.data as { message?: string } | null)?.message || '校验成功', 'success')
+
+      // 4) 跳转（与 PhoneVerifyPage 一致：500ms 后 navigate）
+      window.setTimeout(() => {
+        navigate('/face-result')
+      }, 500)
+    } catch (err) {
+      console.error('[first] submit error', err)
+      const msg = (err instanceof Error && err.message) || '网络错误'
+      showToast(`请求失败: ${msg}\n请检查网络或 CORS 配置`, 'error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const submitLabel = submitting ? '查 看 中 …' : '查 看 报 告'
+  const submitLabel = submitting ? '查看中 …' : '查看报告'
 
   return (
-    <div className="content">
+    <div className="content page-name">
       <div className="header-illu" aria-hidden="true">
         <span className="header-illu-icon" />
       </div>
@@ -103,8 +170,6 @@ export default function NamePhonePage() {
 
         <p className="tips">* 请记住所填写的手机号，方便下次查看电子诊断结果时使用哦！</p>
       </form>
-
-      <Footer />
     </div>
   )
 }
