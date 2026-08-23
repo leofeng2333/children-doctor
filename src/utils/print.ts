@@ -16,6 +16,54 @@ export interface PrintOptions {
 }
 
 /**
+ * HiTi 4×6 打印输出规范（landscape 6×4 inch）。
+ *
+ * HiTi SDK 不会按 PaperSize 自动按比例适配输入图——它把 bitmap center-crop 到
+ * 当前 PaperSize 的物理像素。如果输入图比例 = 6:4 landscape 就会刚刚好顶满；
+ * 比例不一致的图，要么被裁掉主体（portrait 输进 landscape 纸）要么周围留白
+ *（landscape 输进 portrait 纸）。
+ *
+ * 这里在 TS 端先做一次 normalization：把任意比例/分辨率的输入图，统一处理成
+ * 1536×1024 (3:2 = 6:4 landscape) JPEG 喂给 native。这样不管调用方塞进来
+ * 的是手机拍的竖版 1080×1920、相机横版 4032×3024、还是带圆形 logo 的合成图，
+ * 最终打出来的方向都是 6×4 landscape 顶满（中心 crop），与 paperType=2
+ * (PAPER_SIZE_6X4_PHOTO) 完全吻合。
+ *
+ * 为什么不直接选 SDK 最大像素（1844×1240）？
+ * - 1536×1024 已经够 6×4 @ 256 dpi，肉眼清晰足够
+ * - HiTi SDK 对超大 bitmap 解码会慢一截（带颜色表查表），1536×1024 居中
+ * - 同一张照片传到 SD 卡/相册的体积更小，Wi-Fi 链路更短
+ */
+const PAPER_W = 1536
+const PAPER_H = 1024 // 3:2 = 6:4 landscape
+const PAPER_JPEG_QUALITY = 0.92
+
+/**
+ * 加载 input dataURL / URL / path 为 HTMLImageElement。
+ * 用 `decode()` 而不是 onload，明确等解码完成（特别是大图，避免画到
+ * canvas 时还未就绪导致 blank bitmap）。
+ */
+async function loadImage(input: string): Promise<HTMLImageElement> {
+  const dataUrl = await resolveImageAsDataUrl(input)
+  if (!dataUrl) throw new Error('fitImageToPaper: empty image source')
+
+  const img = new Image()
+  img.decoding = 'async'
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error(`fitImageToPaper: image failed to decode (src prefix="${dataUrl.slice(0, 40)}")`))
+    img.src = dataUrl
+  })
+  try {
+    await img.decode()
+  } catch (e) {
+    // decode() 在某些 base64 data URL 上不稳定；onload 已通过，继续走
+    console.warn('[print/fit] img.decode() rejected, continuing on onload:', e)
+  }
+  return img
+}
+
+/**
  * Resolves an image URL into a base64 dataURL.
  *
  * Inputs that are already `data:` URLs are returned unchanged. `http(s)://`
@@ -56,6 +104,98 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
   const { base64 } = await DualCamera.readImageAsBase64({ input })
   console.log('[print/resolve] DualCamera.readImageAsBase64 OK, base64 len=' + base64.length)
   return `data:image/jpeg;base64,${base64}`
+}
+
+/**
+ * Fit an arbitrary image into the HiTi 4×6 landscape paper by center-cropping
+ * (a.k.a. "cover fit" / "fill"). The result is a {@code PAPER_W × PAPER_H}
+ * JPEG dataURL whose aspect ratio exactly matches
+ * {@code PaperSize.PAPER_SIZE_6X4_PHOTO} (paperType=2).
+ *
+ * <p><b>为什么是 center-crop 而不是 letterbox？</b>
+ * <ul>
+ *   <li>当前观察到的现象是"打印方向对，照片未能占满整个打印纸"——表明需要
+ *       cover 模式让图撑满纸。</li>
+ *   <li>HiTi SDK 拿到 bitmap 后会按 PaperSize 物理像素再做一次 center-crop
+ *       居中，如果输入图比例 = 6:4 就正好对齐；不一致就会再次被 SDK 二级
+ *       裁切/留白。我们这里在 TS 端提前 normalize 到 1536×1024 (3:2 = 6:4)
+ *       等同于把二级 crop 取消掉。</li>
+ *   <li>中心 crop 对人像类照片最安全（主体通常在中央）。如果以后要避开头顶
+ *       /下巴等特殊部位，可以再加 face detection / smart crop。</li>
+ * </ul>
+ *
+ * <p><b>流程：</b>
+ * <ol>
+ *   <li>把输入图（dataURL / URL / path）解析为 HTMLImageElement</li>
+ *   <li>计算"cover 到 PAPER_W × PAPER_H"的源矩形 sx/sy/sw/sh（等比放大，
+ *       长边顶满）</li>
+ *   <li>创建 PAPER_W × PAPER_H canvas，白底</li>
+ *   <li>drawImage 把源矩形画到画布 (0,0)-(PAPER_W,PAPER_H)</li>
+ *   <li>导出 JPEG，quality = PAPER_JPEG_QUALITY</li>
+ *   <li>返回带 data:image/jpeg;base64, 前缀的 dataURL</li>
+ * </ol>
+ *
+ * @returns {Promise<string>} JPEG dataURL，always data: scheme, never raw base64
+ * @throws {Error} 图像 decode 失败 / canvas 不可用 / 导出空数据
+ */
+export async function fitImageToPaper(input: string): Promise<string> {
+  if (!input) throw new Error('fitImageToPaper: input is empty')
+  console.log('[print/fit] start, PAPER=' + PAPER_W + 'x' + PAPER_H + ' input prefix=' + input.slice(0, 40))
+
+  const img = await loadImage(input)
+  const srcW = img.naturalWidth || img.width
+  const srcH = img.naturalHeight || img.height
+  if (!srcW || !srcH) throw new Error(`fitImageToPaper: image has zero dimensions (${srcW}x${srcH})`)
+
+  // 等比放大 + center-crop：求 cover scale（取较大者）和源矩形
+  const targetRatio = PAPER_W / PAPER_H // 1.5  → landscape
+  const srcRatio = srcW / srcH
+  let sx: number, sy: number, sw: number, sh: number
+  if (srcRatio > targetRatio) {
+    // 原图比目标更"宽"——按高度对齐，左右两边各裁掉一些
+    sh = srcH
+    sw = srcH * targetRatio
+    sx = (srcW - sw) / 2
+    sy = 0
+  } else {
+    // 原图比目标更"高"——按宽度对齐，上下两边各裁掉一些
+    sw = srcW
+    sh = srcW / targetRatio
+    sx = 0
+    sy = (srcH - sh) / 2
+  }
+  console.log('[print/fit] src=' + srcW + 'x' + srcH + ' ratio=' + srcRatio.toFixed(3)
+    + ' targetRatio=' + targetRatio.toFixed(3)
+    + ' coverRect=(' + Math.round(sx) + ',' + Math.round(sy) + ',' + Math.round(sw) + ',' + Math.round(sh) + ')')
+
+  // 创建画布：白底
+  const canvas = document.createElement('canvas')
+  canvas.width = PAPER_W
+  canvas.height = PAPER_H
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('fitImageToPaper: 2d context unavailable')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, PAPER_W, PAPER_H)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, PAPER_W, PAPER_H)
+
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    try {
+      const out = canvas.toDataURL('image/jpeg', PAPER_JPEG_QUALITY)
+      if (!out || out === 'data:,') reject(new Error('fitImageToPaper: toDataURL returned empty'))
+      else resolve(out)
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+    }
+  })
+  console.log('[print/fit] done, dataUrlLen=' + dataUrl.length
+    + ' head=' + dataUrl.slice(0, 40))
+
+  // 让 gc 回收 img
+  img.src = ''
+  return dataUrl
 }
 
 /**
@@ -105,8 +245,12 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
     // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
     await Promise.race([
       (async () => {
-        const resolved = await resolveImageAsDataUrl(opts.goodImgUrl)
-        console.log('[print/HiTi] resolved goodImgUrl:', {
+        // 直接 fit 到 HiTi 4×6 landscape paper (1536×1024, 3:2)。
+        // 不做 normalize，SDK 会自己 center-crop，留白/裁切不可控。
+        // fitImageToPaper 内部已经处理 URL → dataURL → image decode → cover-fit → JPEG；
+        // 这里是源头，不需要再单独 resolve。
+        const resolved = await fitImageToPaper(opts.goodImgUrl)
+        console.log('[print/HiTi] fitted goodImgUrl:', {
           isDataUrl: resolved.startsWith('data:'),
           length: resolved.length,
           prefix: resolved.slice(0, 40),
