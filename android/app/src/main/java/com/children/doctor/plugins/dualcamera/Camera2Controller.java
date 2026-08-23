@@ -49,7 +49,11 @@ public class Camera2Controller {
     private TextureView[] textureViews;
     private android.widget.ImageView[] photoImageViews;
     private Camera2Session[] sessions;
-    private android.widget.LinearLayout containerView;
+    private android.widget.FrameLayout containerView;
+    /** 每列的对焦辅助椭圆虚线框（索引对齐 slot）。仅在 native 预览开启时显示。 */
+    private android.view.View[] focusOverlays;
+    /** container 底部跨列引导文案（单预览/双预览都用同一个）。 */
+    private android.widget.TextView focusCaption;
     private int slotCount;
     private int screenWidthPx;
 
@@ -115,13 +119,13 @@ public class Camera2Controller {
     }
 
     private void buildTextureViews(ViewGroup rootView, int slotCount) {
-        android.widget.LinearLayout container = new android.widget.LinearLayout(context);
+        // 修订 D：防止上次 preview 残留字段穿到新一次预览（虽然 stopPreview 会清理，双保险）
+        focusOverlays = new android.view.View[slotCount];
+        focusCaption = null;
+
+        android.widget.FrameLayout container = new android.widget.FrameLayout(context);
         container.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        container.setGravity(android.view.Gravity.CENTER);
-        container.setOrientation(slotCount == 1
-                ? android.widget.LinearLayout.VERTICAL
-                : android.widget.LinearLayout.HORIZONTAL);
 
         containerView = container;
         screenWidthPx = context.getResources().getDisplayMetrics().widthPixels;
@@ -183,6 +187,25 @@ public class Camera2Controller {
             container.addView(root);
         }
 
+        // 底部跨列引导文案（单预览/双预览都用同一个，浮在底部）
+        focusCaption = new android.widget.TextView(context);
+        focusCaption.setText("请将面部置于椭圆虚线框内");
+        focusCaption.setTextSize(14);
+        focusCaption.setTextColor(0xFF1A1A1A);
+        focusCaption.setBackgroundColor(0x00000000); // 透明
+        focusCaption.setSingleLine(true);
+        focusCaption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        android.widget.FrameLayout.LayoutParams capParams =
+                new android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        capParams.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+        capParams.bottomMargin = dpToPx(24);
+        capParams.leftMargin = dpToPx(24);
+        capParams.rightMargin = dpToPx(24);
+        focusCaption.setLayoutParams(capParams);
+        container.addView(focusCaption);
+
         rootView.addView(container);
     }
 
@@ -223,12 +246,32 @@ public class Camera2Controller {
         previewWrapper.addView(textureView);
         previewWrapper.addView(photoView);
 
+        // 对焦辅助椭圆虚线框（仅装饰）：MATCH_PARENT × MATCH_PARENT，与 textureView 同层
+        // 但作为最上层的第三个 child，paint 只画 stroke，中央完全透明不挡画面
+        FaceDetectionOverlay focusOverlay = new FaceDetectionOverlay(context);
+        android.widget.FrameLayout.LayoutParams overlayParams =
+                new android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        previewWrapper.addView(focusOverlay, overlayParams);
+        // 字段由 buildTextureViews 创建为 focusOverlays[index] 数组占位
+        if (focusOverlays != null && index < focusOverlays.length) {
+            focusOverlays[index] = focusOverlay;
+        }
+
         android.widget.LinearLayout col = new android.widget.LinearLayout(context);
         col.setOrientation(android.widget.LinearLayout.VERTICAL);
         col.setGravity(android.view.Gravity.CENTER);
 
-        android.widget.LinearLayout.LayoutParams colParams =
-                new android.widget.LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        // 修订 A：container 是 FrameLayout，col 不再用 LinearLayout.LayoutParams，
+        // 改用 FrameLayout.LayoutParams，并通过 gravity 区分 START / END，
+        // 避免两列在 FrameLayout 下叠在同一坐标
+        android.widget.FrameLayout.LayoutParams colParams =
+                new android.widget.FrameLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        colParams.gravity = slotCount == 1
+                ? android.view.Gravity.CENTER
+                : (index == 0
+                        ? android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.START
+                        : android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.END);
         int marginStart = slotCount == 1 ? colMargin
                 : (index == 0 ? colMargin : colMargin / 2);
         int marginEnd = slotCount == 1 ? colMargin
@@ -501,6 +544,17 @@ public class Camera2Controller {
         mainHandler.post(() -> {
             if (photoImageViews == null || photoPaths == null) return;
 
+            // 修订 B：拍照确认时先同步隐藏对焦辅助与底部文案，避免 200ms 渐显期内
+            // 椭圆线叠在拍照结果上。早于 photoView.post() 内的 animatePhotoTransition。
+            if (focusOverlays != null) {
+                for (android.view.View v : focusOverlays) {
+                    if (v != null) v.setVisibility(android.view.View.GONE);
+                }
+            }
+            if (focusCaption != null) {
+                focusCaption.setVisibility(android.view.View.GONE);
+            }
+
             Log.d(TAG, "displayPhotos: " + photoImageViews.length + " slots");
 
             for (int i = 0; i < photoImageViews.length; i++) {
@@ -596,6 +650,21 @@ public class Camera2Controller {
                                 .setDuration(150)
                                 .start();
                     }
+
+                    // 修订 C：椭圆与 caption 跟随 textureView 同步 150ms alpha 渐显，
+                    // 避免"黑屏上先出现椭圆再填入画面"的违和感
+                    if (focusOverlays != null && focusOverlays[i] != null) {
+                        android.view.View overlay = focusOverlays[i];
+                        overlay.setAlpha(0f);
+                        overlay.setVisibility(android.view.View.VISIBLE);
+                        overlay.animate().alpha(1f).setDuration(150).start();
+                    }
+                }
+                // caption 整体渐显一次（跨列，仅一个 TextView）
+                if (focusCaption != null) {
+                    focusCaption.setAlpha(0f);
+                    focusCaption.setVisibility(android.view.View.VISIBLE);
+                    focusCaption.animate().alpha(1f).setDuration(150).start();
                 }
             } else if (textureViews != null) {
                 for (int i = 0; i < textureViews.length; i++) {
@@ -667,6 +736,9 @@ public class Camera2Controller {
             clearTextureViewListeners();
             textureViews = null;
             photoImageViews = null;
+            // 内存卫生：release 引用（container 已 removeView，但字段仍持有，可能泄漏）
+            focusOverlays = null;
+            focusCaption = null;
             Log.d(TAG, "Preview stopped, camera resources and views released");
         });
     }
@@ -702,6 +774,8 @@ public class Camera2Controller {
             clearTextureViewListeners();
             textureViews = null;
             photoImageViews = null;
+            focusOverlays = null;
+            focusCaption = null;
             Log.d(TAG, "Shutdown complete");
         });
     }
