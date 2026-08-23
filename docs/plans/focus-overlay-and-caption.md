@@ -1,8 +1,8 @@
 # Plan: 对焦辅助椭圆虚线框 + 底部引导文案
 
-> 状态：方案（待实施）
+> 状态：**实施完成，文档已对齐 `FaceDetectionOverlay.java` / `Camera2Controller.java` 实现**（2026-08-24）
 > 关联视图：`CameraCaptureView.vue` → `CaptureSession.vue`（双预览由 native 渲染，本方案对 Vue 层零改动）
-> 关联组件：`android/app/src/main/java/com/children/doctor/plugins/dualcamera/Camera2Controller.java`
+> 关联文件：`android/app/src/main/java/com/children/doctor/plugins/dualcamera/FaceDetectionOverlay.java`（新）、`Camera2Controller.java`（改）
 
 ---
 
@@ -104,18 +104,131 @@
 - **改为 FrameLayout**：cols 用 `layout_gravity=CENTER` 保持居中，caption 用 `layout_gravity=BOTTOM|CENTER_HORIZONTAL` 浮在底部。
 - 单预览模式（slotCount==1）当前是 `LinearLayout VERTICAL`，本方案同样改为 `FrameLayout` 保证行为一致。
 
-### 3.4 文案与样式（与你确认的选项对齐）
+### 3.4 文案与样式（与 `FaceDetectionOverlay.java`、`Camera2Controller.java` 实现对齐）
 
-| 项 | 值 |
-|---|---|
-| 文案内容 | **"请将面部置于椭圆虚线框内"** |
-| 文案颜色 | **#1A1A1A**（黑字） |
-| 文案背景 | **透明**（仅靠 ellipse 与原背景区分） |
-| 文案字号 | 14sp（与现有 label 同号；增大需复审） |
-| ellipse 颜色 | **#FF9900**（品牌橙） |
-| ellipse 风格 | strokeWidth=4px、`DashPathEffect(24,16)`、`STROKE` 模式 |
-| ellipse 尺寸 | 占 previewWrapper 宽 80% × 高 60%，居中 |
-| ellipse alpha | 0xFF（不透明） |
+| 项 | 值 | 出处 |
+|---|---|---|
+| 文案内容 | **"请将面部置于椭圆虚线框内"** | `Camera2Controller.focusCaption.setText()` |
+| 文案颜色 | **#1A1A1A**（ARGB `0xFF1A1A1A`，黑字） | `focusCaption.setTextColor(0xFF1A1A1A)` |
+| 文案背景 | **透明**（ARGB `0x00000000`） | `focusCaption.setBackgroundColor(0x00000000)` |
+| 文案字号 | 14sp（TextView 默认 sp 单位） | `focusCaption.setTextSize(14)` |
+| 文案省略 | `singleLine` + `ellipsize=END`（窄屏下防溢出） | `focusCaption.setSingleLine(true)` + `setEllipsize(...)` |
+| ellipse 颜色 | **#FF9900**（ARGB `0xFFFF9900`，品牌橙） | `FaceDetectionOverlay` 默认 `Color.parseColor("#FF9900")` |
+| ellipse 风格 | `STROKE` 模式、strokeWidth = **4 px**、`DashPathEffect({24px on, 16px off}, 0)` | `onDraw(Canvas)` |
+| ellipse alpha | 0xFF（不透明） | `colorArgb` 默认 `#FF9900` 的 alpha = `0xFF` |
+| ellipse 尺寸 | **占 previewWrapper 宽 × 80%，高 × 60%，相对 View 中心居中** | `widthRatio=0.8f`，`heightRatio=0.6f`（默认构造器） |
+
+#### 3.4.1 椭圆几何：尺寸 + 中心的计算公式
+
+在 `onSizeChanged(w, h, oldw, oldh)` 触发时一次性算出 `overlayRect` 并缓存（不每帧重算，避免 gc）：
+
+```java
+float ellipseW = w * widthRatio;     // = w * 0.8f
+float ellipseH = h * heightRatio;    // = h * 0.6f
+float left = (w - ellipseW) / 2f;    // 水平居中
+float top = (h - ellipseH) / 2f;     // 垂直居中
+overlayRect.set(left, top, left + ellipseW, top + ellipseH);
+```
+
+绘制时用 `canvas.drawOval(overlayRect, overlayPaint)`，`Paint.Style = STROKE` 让矩形内部完全透明，不挡摄像头画面。
+
+> 注：`(w, h)` 取的是 `FaceDetectionOverlay` 自身尺寸 = `previewWrapper` 的 MATCH_PARENT × MATCH_PARENT，即与 textureView 同层的覆盖范围；视觉上椭圆跟随纹理大小自适应。
+
+#### 3.4.2 触摸 / 可访问性
+
+`FaceDetectionOverlay` 构造器强制设：
+
+```java
+setClickable(false);
+setFocusable(false);
+setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+```
+
+确保 ellipse 不拦截拍照按钮/重拍按钮的触摸事件，也不参与 TalkBack 节点树。
+
+### 3.5 几何位置计算（与 `Camera2Controller.java` 实现对齐）
+
+#### 3.5.1 列（col）的位置
+
+```java
+// buildCameraSlotView
+int w = slotCount == 1
+        ? (int) (screenWidthPx * 0.85f)        // 单列 85% 屏宽
+        : (int) (screenWidthPx * 0.415f);      // 双列各 41.5%
+int h = (int) (w * 4f / 3f);                    // 4:3 高度
+
+FrameLayout.LayoutParams colParams =
+        new FrameLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+colParams.gravity = slotCount == 1
+        ? Gravity.CENTER
+        : (index == 0
+                ? Gravity.CENTER_VERTICAL | Gravity.START
+                : Gravity.CENTER_VERTICAL | Gravity.END);
+int marginStart = slotCount == 1 ? colMargin
+        : (index == 0 ? colMargin : colMargin / 2);
+int marginEnd   = slotCount == 1 ? colMargin
+        : (index == slotCount - 1 ? colMargin : colMargin / 2);
+colParams.setMargins(marginStart, 0, marginEnd, 0);
+col.setLayoutParams(colParams);
+```
+
+公式要点：
+
+- 双预览模式：col[0] 重力 `START`，col[1] 重力 `END`，二者纵向都是 `CENTER_VERTICAL`。这样 FrameLayout 不会把它们压到同一坐标（修订 A）。
+- col[0] `marginStart = colMargin`、`marginEnd = colMargin/2`；col[1] 反之；最外侧 col 加满 `colMargin`。
+- `colMargin = dpToPx(16)`，由 `dpToPx(int dp) = dp * displayMetrics.density` 计算，按设备 dpi 自动缩放。
+
+#### 3.5.2 previewWrapper 内子 view 的位置
+
+```java
+// previewWrapper: MATCH_PARENT × (h + dpToPx(24))
+FrameLayout previewWrapper = new FrameLayout(context);
+previewWrapper.setLayoutParams(new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, h + dpToPx(24)));
+
+// textureView: MATCH_PARENT × h，垂直上下各 dpToPx(12) margin
+FrameLayout.LayoutParams tvParams =
+        new FrameLayout.LayoutParams(MATCH_PARENT, h);
+tvParams.setMargins(0, dpToPx(12), 0, dpToPx(12));
+textureView.setLayoutParams(tvParams);
+
+// photoView 同上（默认 GONE）
+
+// focusOverlay: MATCH_PARENT × MATCH_PARENT，覆盖整个 previewWrapper
+FrameLayout.LayoutParams overlayParams =
+        new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT);
+previewWrapper.addView(focusOverlay, overlayParams);
+```
+
+要点：overlay 是 `previewWrapper` 内的**第三个 child**（顺序：textureView → photoView → focusOverlay），保证在摄像头画面之上、不会被 photoView 盖住。
+
+#### 3.5.3 caption 的位置（container 内跨列浮在最底部）
+
+```java
+// buildTextureViews（每个列循环结束后）
+focusCaption = new TextView(context);
+focusCaption.setText("请将面部置于椭圆虚线框内");
+focusCaption.setTextSize(14);
+focusCaption.setTextColor(0xFF1A1A1A);
+focusCaption.setBackgroundColor(0x00000000); // 透明
+focusCaption.setSingleLine(true);
+focusCaption.setEllipsize(TextUtils.TruncateAt.END);
+
+FrameLayout.LayoutParams capParams =
+        new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+capParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+capParams.bottomMargin = dpToPx(24);
+capParams.leftMargin   = dpToPx(24);
+capParams.rightMargin  = dpToPx(24);
+focusCaption.setLayoutParams(capParams);
+container.addView(focusCaption);   // 在 cols 之后 add，Z 序压在 cols 之上但不挤压 cols
+```
+
+公式要点：
+
+- gravity = `BOTTOM | CENTER_HORIZONTAL`：底端、水平居中；与 cols 在同一 FrameLayout 共存时，cols 高度不受 caption 包裹高度影响（caption wrap_content，但 FrameLayout 不挤压子 view）。
+- 三向 margin = `dpToPx(24)`：让 caption 在底/左/右各留一截安全区，避免贴边；窄屏上文案会被 ellipsize=END 截断为 "请将面部置于椭圆虚线…"，不会撑破布局。
+- `dpToPx` 已沿用项目内既有的私有方法：`return (int) (dp * context.getResources().getDisplayMetrics().density)`，与 label / textureView 等现有视觉元素的 dp 单位一致，跨设备表现一致。
 
 ---
 
@@ -422,6 +535,7 @@ pnpm build           # Vite 编译通过
 | 项 | 值 |
 |---|---|
 | 创建时间 | 2026-08-20 |
+| 实施时间 | 2026-08-24 |
 | 适用版本 | children-doctor >= 1.0.7 |
-| 涉及 PR / 任务 | （待定） |
+| 涉及 commit | `e2e27f0`（方案文档）、`9b32e5a`（双 JAVA 文件实施） |
 | 评审人 | （待定） |
