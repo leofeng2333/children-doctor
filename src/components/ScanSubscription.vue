@@ -28,10 +28,9 @@ const router = useRouter()
 // spinner 占位 + 按钮 disabled。
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
-type AnalysisResult = { llmAnalysisId?: string | number } | null | undefined
 const llmAnalysisIdGetter = () => {
-  const v = analysisResult.value as AnalysisResult
-  return v?.llmAnalysisId
+  const v = analysisResult.value;
+  return v?.llmAnalysis.llmAnalysisId;
 }
 const { url: qrcodeUrl } = useQrcodeIdid(llmAnalysisIdGetter)
 const hasLlmAnalysisId = computed(() => !!qrcodeUrl.value)
@@ -122,15 +121,8 @@ async function onPrint(goodImgUrl: string) {
           <div v-if="!hasLlmAnalysisId" class="qrcode-loading" aria-hidden="true">
             <div class="qrcode-loading-spinner"></div>
           </div>
-          <VueQrcode
-            v-else
-            :value="qrcodeUrl"
-            :width="200"
-            :height="200"
-            :margin="2"
-            :color="{ dark: '#000000ff', light: '#ffffffff' }"
-            type="image/png"
-          />
+          <VueQrcode v-else :value="qrcodeUrl" :width="200" :height="200" :margin="2"
+            :color="{ dark: '#000000ff', light: '#ffffffff' }" type="image/png" />
         </div>
         <div class="qrcode-desc">
           {{ hasLlmAnalysisId ? '扫一扫获取电子版' : '准备二维码中...' }}
@@ -138,25 +130,16 @@ async function onPrint(goodImgUrl: string) {
       </div>
 
       <div class="action-buttons">
-        <PrimaryButton
-          class="action-btn primary"
-          :class="{ 'is-printed': hasPrinted }"
-          type="button"
-          :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId"
-          @click="onPrint(goodImgUrl)"
-        >
+        <PrimaryButton class="action-btn primary" :class="{ 'is-printed': hasPrinted }" type="button"
+          :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId" @click="onPrint(goodImgUrl)">
           <template v-if="hasPrinted">
             <span>已打印完成</span>
             <span>请在下方取走宝贝照片</span>
           </template>
           <template v-else>{{ printButtonLabel }}</template>
         </PrimaryButton>
-        <PrimaryButton
-          class="action-btn secondary"
-          type="button"
-          :disabled="isFinishing || !hasLlmAnalysisId"
-          @click="onFinish"
-        >
+        <PrimaryButton class="action-btn secondary" type="button" :disabled="isFinishing || !hasLlmAnalysisId"
+          @click="onFinish">
           完成诊断
         </PrimaryButton>
       </div>
@@ -275,7 +258,7 @@ async function onPrint(goodImgUrl: string) {
   gap: 4px;
   padding: 18px 32px;
 
-  & > span {
+  &>span {
     font-size: 22px;
     font-weight: 700;
     line-height: 1.2;
