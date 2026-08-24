@@ -48,7 +48,7 @@ onUnmounted(async () => {
   if (isPreviewReady.value) {
     try {
       await DualCamera.stopPreview()
-    } catch (_) {}
+    } catch (_) { }
     isPreviewReady.value = false
   }
 })
@@ -65,7 +65,7 @@ const handleConfirmed = (photo: DualCameraPhoto) => {
   if (confirmedSessions.value.length >= 2) {
     captureState.value = 'finalReview'
     // 进入最终确认时停止摄像头预览
-    DualCamera.stopPreview().catch(() => {})
+    DualCamera.stopPreview().catch(() => { })
     console.log('[CameraCapture] finalReview, stopped preview')
   } else {
     currentRound.value++
@@ -121,26 +121,15 @@ const startAnalysis = async () => {
     <div class="capture-content">
       <div v-if="errorMsg" class="error-tip">{{ errorMsg }}</div>
       <!-- CaptureSession 仅在 capturing 阶段显示，内部自行管理 pendingPhoto 状态（重拍/确认） -->
-      <CaptureSession
-        v-if="isPreviewReady && captureState === 'capturing'"
-        :round="currentRound"
-        @confirmed="handleConfirmed"
-      />
+      <CaptureSession v-if="isPreviewReady && captureState === 'capturing'" :round="currentRound"
+        @confirmed="handleConfirmed" />
       <!-- finalReview：全部4张照片，按 2x2 网格分组（行=露齿/非露齿，列=正视图/右侧视图） -->
       <div v-if="captureState === 'finalReview'" class="review-state">
         <div v-for="(row, rowIndex) in columnTitles" :key="rowIndex" class="photo-row">
-          <div
-            v-for="(title, columnIndex) in row"
-            :key="`${rowIndex}-${columnIndex}`"
-            class="photo-column"
-          >
+          <div v-for="(title, columnIndex) in row" :key="`${rowIndex}-${columnIndex}`" class="photo-column">
             <div class="column-title">{{ title }}</div>
             <div class="column-photo">
-              <img
-                class="photo-img"
-                :src="allPhotos[rowIndex * 2 + columnIndex]"
-                :alt="`${title} ${rowIndex + 1}`"
-              />
+              <img class="photo-img" :src="allPhotos[rowIndex * 2 + columnIndex]" :alt="`${title} ${rowIndex + 1}`" />
             </div>
           </div>
         </div>
@@ -158,11 +147,7 @@ const startAnalysis = async () => {
     <!-- 底部区域 -->
     <div class="bottom-section">
       <!-- finalReview: 两个按钮 -->
-      <primary-button
-        v-if="captureState === 'finalReview'"
-        @click="handleFinalConfirmed"
-        text="开始分析"
-      ></primary-button>
+      <primary-button v-if="captureState === 'finalReview'" @click="handleFinalConfirmed" text="开始分析"></primary-button>
       <LogoText class="logo" />
     </div>
   </div>
