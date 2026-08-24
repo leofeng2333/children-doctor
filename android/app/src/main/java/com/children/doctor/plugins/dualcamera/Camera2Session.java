@@ -1107,19 +1107,34 @@ public class Camera2Session {
         return baos.toByteArray();
     }
 
+    // 全局兜底：所有后置（UVC / 内置后置）拍照时是否强制水平镜像。
+    // 一些 UVC 摄像头的硬件层在预览路径已做水平镜像，但拍照走 raw 输出未镜像，
+    // 表现为"预览正常，拍照左右翻转"。打开此开关后所有 slot 的后置摄像头拍照都会镜像。
+    private static volatile boolean globalForceBackMirror = false;
+    // 单 session 覆盖：高于全局开关。用于对某些特殊机型精细控制。
+    private boolean forceMirrorBack = false;
+
+    /** 全局开关：true 时所有后置摄像头的拍照输出都会水平镜像。 */
+    public static void setGlobalForceBackMirror(boolean v) { globalForceBackMirror = v; }
+    /** 单 session 覆盖。 */
+    public void setForceMirrorBack(boolean v) { this.forceMirrorBack = v; }
+
     private byte[] applyFrontMirrorIfNeeded(byte[] bytes) {
         // JPEG 路径下，HAL 已通过 CaptureRequest.JPEG_ORIENTATION 写入 EXIF，
         // BitmapFactory.decodeByteArray 会自动按 EXIF 旋转，所以这里只需要水平镜像前置摄像头。
         // YUV 路径下，JPEG_ORIENTATION 不生效，需要我们手动旋转。
         boolean wasAlreadyRotatedByExif = (captureImageFormat == ImageFormat.JPEG);
 
-        if (lensFacing != CameraCharacteristics.LENS_FACING_FRONT) {
+        boolean isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT);
+        boolean needMirror = isFront || forceMirrorBack || globalForceBackMirror;
+
+        if (!needMirror) {
             if (wasAlreadyRotatedByExif) return bytes;
             return rotateJpeg(bytes, getJpegOrientation(getDisplayRotation()));
         }
 
         if (wasAlreadyRotatedByExif) {
-            // 前置 JPEG：EXIF 已经旋转，只做水平镜像
+            // 前置 JPEG / 强制镜像的后置 JPEG：EXIF 已经旋转，只做水平镜像
             Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
             if (original == null) return bytes;
             int w = original.getWidth();
@@ -1137,7 +1152,7 @@ public class Camera2Session {
             return baos.toByteArray();
         }
 
-        // 前置 YUV：手动旋转 + 水平镜像
+        // 前置 YUV / 强制镜像的后置 YUV：手动旋转 + 水平镜像
         return rotateAndMirrorJpeg(bytes, getJpegOrientation(getDisplayRotation()));
     }
 

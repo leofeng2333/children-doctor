@@ -36,7 +36,7 @@ public class FaceDetectionOverlay extends View {
     private final float dashOffPx;
 
     public FaceDetectionOverlay(Context context) {
-        this(context, Color.parseColor("#FF9900"), 0.8f, 0.6f, 4f, 24f, 16f);
+        this(context, Color.parseColor("#BCBCBC"), 0.65f, 0.5f, 4f, 24f, 16f);
     }
 
     public FaceDetectionOverlay(
@@ -65,8 +65,8 @@ public class FaceDetectionOverlay extends View {
     public FaceDetectionOverlay(Context context, AttributeSet attrs) {
         super(context, attrs);
         // XML 入口目前未使用，给一个安全默认；任何真实使用都走上面的构造器
-        this.colorArgb = Color.parseColor("#FF9900");
-        this.widthRatio = 0.8f;
+        this.colorArgb = Color.parseColor("#BCBCBC");
+        this.widthRatio = 0.65f;
         this.heightRatio = 0.6f;
         this.strokeWidthPx = 4f;
         this.dashOnPx = 24f;

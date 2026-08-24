@@ -11,6 +11,7 @@ import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.TextureView;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -52,8 +53,10 @@ public class Camera2Controller {
     private android.widget.FrameLayout containerView;
     /** 每列的对焦辅助椭圆虚线框（索引对齐 slot）。仅在 native 预览开启时显示。 */
     private android.view.View[] focusOverlays;
-    /** container 底部跨列引导文案（单预览/双预览都用同一个）。 */
+    /** 贴在预览下沿的跨列引导文案 TextView，仅有一个（slotCount>=1 时都显示）。 */
     private android.widget.TextView focusCaption;
+    /** 单/双列预览画面纹理高（4:3 高度），caption 位置计算用。 */
+    private int previewHeightPx;
     private int slotCount;
     private int screenWidthPx;
 
@@ -187,9 +190,22 @@ public class Camera2Controller {
             container.addView(root);
         }
 
-        // 底部跨列引导文案（单预览/双预览都用同一个，浮在底部）
+        // 计算单列宽（与 buildCameraSlotView 内部 0.85/0.415 严格一致），在 caption 创建前
+        // 算出来供后续 OnLayout 阶段做精确底部偏移。
+        int colW = slotCount == 1
+                ? (int) (screenWidthPx * 0.85f)
+                : (int) (screenWidthPx * 0.415f);
+        previewHeightPx = (int) (colW * 4f / 3f);
+
+        // 跨列引导文案（单预览/双预览都用同一个；详见设计文档 §3.5.3）
+        //
+        // 坑：previewWrapper 高度 = label(32) + textureView(h) + previewWrapper上下padding(24)，
+        // 但 FrameLayout 是 MATCH_PARENT，col 用 Gravity.CENTER_VERTICAL 时 col 上下留白
+        // 大小依赖容器实际高度。硬算 topMargin 会因为 container 可能被子元素挤压 / 顶部有
+        // status bar 影响而不准。这里改用：Gravity.BOTTOM + 在首次 layout 后取
+        // previewWrapper.getBottom() 反算精确 bottomMargin。
         focusCaption = new android.widget.TextView(context);
-        focusCaption.setText("请将面部置于椭圆虚线框内");
+        focusCaption.setText("请保证自己的面部与虚线区域大小尽量吻合");
         focusCaption.setTextSize(14);
         focusCaption.setTextColor(0xFF1A1A1A);
         focusCaption.setBackgroundColor(0x00000000); // 透明
@@ -199,14 +215,36 @@ public class Camera2Controller {
                 new android.widget.FrameLayout.LayoutParams(
                         android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                         android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        // 调试期：caption 相对设备底部的百分比距离（0.0 = 贴底，1.0 = 屏顶）
+        // 0.3 = 距设备底部 30% 屏高处。先用这个手调出合适位置，
+        // 之后再决定要不要换回"贴 preview 底 + 13dp"。
+        final float bottomRatio = 0.3f;
         capParams.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
-        capParams.bottomMargin = dpToPx(24);
         capParams.leftMargin = dpToPx(24);
         capParams.rightMargin = dpToPx(24);
+        // 兜底：取一个略大于预览 + 相机按钮区的高，避开屏底按钮
+        capParams.bottomMargin = dpToPx(160);
         focusCaption.setLayoutParams(capParams);
         container.addView(focusCaption);
-
         rootView.addView(container);
+
+        // 一次性把 caption 定位到距屏底 bottomRatio 高度处。
+        // post 到主线程队尾：此时 rootView/container 已 layout 完，getHeight() 是真实值。
+        focusCaption.post(() -> {
+            int containerH = container.getHeight();
+            if (containerH == 0) return;
+            float density = context.getResources().getDisplayMetrics().density;
+            int wantedPx = (int) (containerH * bottomRatio);
+            Log.d(TAG, "caption-percent: containerH=" + containerH
+                    + " ratio=" + bottomRatio
+                    + " wantedPx=" + wantedPx
+                    + " wantedDp=" + (int)(wantedPx / density)
+                    + " prevBottomMargin=" + ((android.widget.FrameLayout.LayoutParams) focusCaption.getLayoutParams()).bottomMargin);
+            android.widget.FrameLayout.LayoutParams lp =
+                    (android.widget.FrameLayout.LayoutParams) focusCaption.getLayoutParams();
+            lp.bottomMargin = wantedPx;
+            focusCaption.setLayoutParams(lp);
+        });
     }
 
     private ViewGroup buildCameraSlotView(int index, TextureView textureView, int colMargin) {
@@ -823,6 +861,33 @@ public class Camera2Controller {
 
     private int dpToPx(int dp) {
         return (int) (dp * context.getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * 深度查找第一个在层级中匹配 "容器含 TextureView 子节点" 的 FrameLayout；
+     * 用于 caption 锚定场景。返回 null 时调用方应跳过本次 layout 修正。
+     */
+    private android.view.View findPreviewWrapperDeep(android.view.View root) {
+        if (root instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) root;
+            // 当前层先看：是否当前 vg 同时满足 "是 FrameLayout" 且 "子节点里至少有一个 TextureView"
+            boolean hasTextureViewChild = false;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                if (vg.getChildAt(i) instanceof TextureView) {
+                    hasTextureViewChild = true;
+                    break;
+                }
+            }
+            if (hasTextureViewChild && vg instanceof android.widget.FrameLayout) {
+                return vg;
+            }
+            // 否则递归
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                android.view.View found = findPreviewWrapperDeep(vg.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
