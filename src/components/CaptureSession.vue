@@ -156,7 +156,7 @@ const handleRetry = async () => {
   countdown.value = COUNTDOWN_SECONDS
   try {
     await DualCamera.resumePreviewFromPhotos()
-  } catch (_) {}
+  } catch (_) { }
 }
 
 const handleConfirm = async () => {
@@ -164,7 +164,7 @@ const handleConfirm = async () => {
   log(`confirm click, round=${props.round}`)
   try {
     await DualCamera.resumePreviewFromPhotos()
-  } catch (_) {}
+  } catch (_) { }
   emit('confirmed', pendingPhoto.value)
   pendingPhoto.value = null
 }
@@ -175,12 +175,10 @@ const handleConfirm = async () => {
     <!-- 顶部提示 -->
     <div v-if="pendingPhoto" class="confirm-tip">请确认图片</div>
     <div v-else class="session-tip">
-      <span class="countdown-text">{{ countdownText }}</span>
       <span class="tip-text"> 请正面看向屏幕 </span>
       <span v-if="round === 1 && !pendingPhoto" class="round-badge">开心地露出牙齿拍摄哦！</span>
-      <span v-if="round === 2 && !pendingPhoto" class="round-badge"
-        >合上小嘴巴，让我来看看面部！</span
-      >
+      <span v-if="round === 2 && !pendingPhoto" class="round-badge">合上小嘴巴，让我来看看面部！</span>
+      <span class="countdown-text">{{ countdownText }}</span>
     </div>
 
     <div v-if="errorMsg" class="error-tip">{{ errorMsg }}</div>
@@ -188,12 +186,8 @@ const handleConfirm = async () => {
     <!-- 操作区 -->
     <div class="session-actions">
       <template v-if="!pendingPhoto">
-        <PrimaryButton
-          class="capture-btn"
-          :class="{ counting: isCounting, capturing: isCapturing }"
-          :disabled="isCapturing"
-          @click="handleCaptureClick"
-        >
+        <PrimaryButton class="capture-btn" :class="{ counting: isCounting, capturing: isCapturing }"
+          :disabled="isCapturing" @click="handleCaptureClick">
           <span v-if="isCapturing">拍摄中...</span>
           <span v-else-if="isCounting">取消 <span class="countdown-num">{{ countdown }}</span></span>
           <span v-else>咔嚓！</span>
@@ -229,10 +223,10 @@ const handleConfirm = async () => {
   align-items: center;
 
   .countdown-text {
-    margin-bottom: 18px;
     font-weight: 400;
-    font-size: 32px;
+    font-size: 42px;
     line-height: 52px;
+    font-weight: 700;
   }
 
   .tip-text {
@@ -252,6 +246,8 @@ const handleConfirm = async () => {
     font-size: 32px;
     line-height: 52px;
     font-weight: 700;
+    margin-bottom: 18px;
+
   }
 }
 
@@ -342,8 +338,15 @@ const handleConfirm = async () => {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.75; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.75;
+  }
 }
 
 .retry-btn {
