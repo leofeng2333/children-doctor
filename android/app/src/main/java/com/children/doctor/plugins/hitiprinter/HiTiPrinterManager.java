@@ -304,26 +304,23 @@ public class HiTiPrinterManager {
 
                     logD("printPhoto: pre-set serviceConnector.m_strTablesRoot='" + tablesRoot + "'");
                     serviceConnector.m_strTablesRoot = tablesRoot;
-                    final Throwable[] errHolder = new Throwable[1];
-                    doServiceWithTimeout(job, new Callback<String>() {
-                        @Override public void onSuccess(String errStr) {
-                            // doService 返回后立即把 m_strTablesRoot 置空（sample MainActivity 行 655）。
-                            String before = serviceConnector.m_strTablesRoot;
-                            serviceConnector.m_strTablesRoot = "";
-                            logD("printPhoto: post-clear serviceConnector.m_strTablesRoot, was='" + before + "'");
-                        }
-                        @Override public void onError(String error) {
-                            serviceConnector.m_strTablesRoot = "";
-                            errHolder[0] = new RuntimeException(error);
-                        }
-                    });
-                    if (errHolder[0] != null) {
-                        Throwable cause = errHolder[0];
-                        logE("printPhoto: doServiceWithTimeout failed, jobId=" + jobId, cause);
-                        String msg = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
-                        post(cb, "USB_PRINT_PHOTOS -ID" + jobId
-                                + " : err <0x? " + msg + ">", null);
-                        return;
+
+                    // 严格按 sample MainActivity#operatePrinter(USB_PRINT_PHOTOS) 行 651-655：
+                    //   raw Thread 里同步 set m_strTablesRoot → 同步 doService → 同步 reset。
+                    // a3fd715 引入 printExecutor.submit(() -> doService) 会把 doService 从 raw Thread
+                    // 移到独立线程，HiTi SDK 的 doService 在 rockchip/SDK 34 上偶发卡死 20s。
+                    // 实测在 raw Thread 里直接同步调用更接近 sample APK 行为，能正常返回。
+                    logD("printPhoto: calling serviceConnector.doService synchronously on " + Thread.currentThread().getName());
+                    long doServiceStartMs = System.currentTimeMillis();
+                    try {
+                        serviceConnector.doService(job);
+                    } finally {
+                        // 不管 doService 成功还是抛错，都把 m_strTablesRoot 立刻置空（sample 行为）。
+                        String before = serviceConnector.m_strTablesRoot;
+                        serviceConnector.m_strTablesRoot = "";
+                        long doServiceMs = System.currentTimeMillis() - doServiceStartMs;
+                        logD("printPhoto: doService returned on " + Thread.currentThread().getName()
+                                + " after " + doServiceMs + "ms; m_strTablesRoot was='" + before + "'");
                     }
 
                     String errCodeStr;
@@ -333,7 +330,7 @@ public class HiTiPrinterManager {
                         errCodeStr = "0x" + Integer.toHexString(job.errCode.value)
                                 + " " + String.valueOf(job.errCode.description);
                     }
-                    logD("printPhoto: doService returned, errCode=" + errCodeStr
+                    logD("printPhoto: post-doService errCode=" + errCodeStr
                             + " retData=" + job.retData);
 
                     // 5) 走 sample retrieveData 字符串化输出
@@ -397,12 +394,13 @@ public class HiTiPrinterManager {
                                         String tablesRootForPara) {
         logD("buildPhotoAttrSample: bitmapPath=" + bitmapPath + " paperType=" + paperType
                 + " printCount=" + printCount + " matte=" + matte + " printMode=" + printMode);
-        android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(bitmapPath);
-        if (bitmap == null) {
+        android.graphics.Bitmap rawBitmap = android.graphics.BitmapFactory.decodeFile(bitmapPath);
+        if (rawBitmap == null) {
             logE("buildPhotoAttrSample: BitmapFactory.decodeFile returned null");
             return null;
         }
-        logD("buildPhotoAttrSample: decoded bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
+        logD("buildPhotoAttrSample: decoded bitmap " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight());
+
         PaperSize size;
         switch (paperType) {
             case 3: size = PaperSize.PAPER_SIZE_5X7_PHOTO; break;
@@ -413,11 +411,84 @@ public class HiTiPrinterManager {
             default: size = PaperSize.PAPER_SIZE_6X4_PHOTO; break;
         }
         logD("buildPhotoAttrSample: PaperSize=" + size);
+
+        // 双保险归一化：TS 端 fitImageToPaper 已输出 1536×1024，但实测偶发
+        // （PNG dataURL / image.decode() 失败回退 / Capacitor 内嵌图）下 Java 端
+        // 仍会拿到 portrait bitmap，SDK 默认行为是 letterbox 上下留白。
+        // 这里强制按 PaperSize 期望比例 center-crop，确保无论上层是否
+        // 归一化，bitmap 比例都对得上 paper —— 不 rotate，保留主体方向。
+        android.graphics.Bitmap bitmap = normalizeBitmapToPaperSize(rawBitmap, size);
+        if (bitmap != rawBitmap) {
+            logD("buildPhotoAttrSample: normalized to " + bitmap.getWidth() + "x" + bitmap.getHeight()
+                    + " (was " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight() + ")");
+        }
+
         Object para = PrintPara.getPrintPhotoPara(bitmap,
                 (short) printCount, matte, printMode, size, tablesRootForPara);
         logD("buildPhotoAttrSample: PrintPara.getPrintPhotoPara returned "
                 + (para == null ? "null" : para.getClass().getSimpleName()));
         return para;
+    }
+
+    /**
+     * 强制把 bitmap 归一化到 PaperSize 期望的宽高比（宽比高）。
+     *
+     * <p>不同 PaperSize 的目标比例（来自 HiTi SDK 注释）：
+     * <ul>
+     *   <li>6×4 / 6×4 SPLIT_2UP → 1.487 (1844/1240 ≈ 1240/1844 取决于方向，按 landscape 算)</li>
+     *   <li>5×7 → 1548/2140 ≈ 0.723 (portrait)</li>
+     *   <li>6×8 → 1844/2434 ≈ 0.758 (portrait)</li>
+     *   <li>6×6 → 1.0 (square)</li>
+     * </ul>
+     *
+     * <p>实测在 6×4 landscape paper 上，SDK 收到 portrait bitmap 会 letterbox
+     * 上下留白（不 rotate）。所以这里做 cover-fit center-crop：保留主体方向，
+     * 按 PaperSize 比例切掉多余部分（左右或上下），让 bitmap 比例严格等于
+     * paper 比例。
+     */
+    private android.graphics.Bitmap normalizeBitmapToPaperSize(
+            android.graphics.Bitmap src, PaperSize size) {
+        int srcW = src.getWidth();
+        int srcH = src.getHeight();
+        if (srcW <= 0 || srcH <= 0) return src;
+
+        // 目标比例：宽 / 高（landscape > 1；portrait < 1；square = 1）
+        float targetRatio;
+        switch (size) {
+            case PAPER_SIZE_6X4_PHOTO:        targetRatio = 1844f / 1240f; break; // ~1.487
+            case PAPER_SIZE_6X4_SPLIT_2UP:    targetRatio = 1240f / 1844f; break; // ~0.672 (portrait split)
+            case PAPER_SIZE_5X7_PHOTO:        targetRatio = 1548f / 2140f; break; // ~0.723
+            case PAPER_SIZE_5X7_SPLIT_2UP:    targetRatio = 2152f / 1548f; break; // ~1.390
+            case PAPER_SIZE_6X8_PHOTO:        targetRatio = 1844f / 2434f; break; // ~0.758
+            case PAPER_SIZE_6X9_PHOTO:        targetRatio = 1844f / 2740f; break; // ~0.673
+            case PAPER_SIZE_6X9_SPLIT_2UP:    targetRatio = 2492f / 1844f; break; // ~1.351
+            case PAPER_SIZE_6X6_PHOTO:        targetRatio = 1.0f; break;
+            default:                          targetRatio = 1844f / 1240f;
+        }
+
+        float srcRatio = (float) srcW / (float) srcH;
+        if (Math.abs(srcRatio - targetRatio) < 0.01f) {
+            return src; // 比例已经一致
+        }
+
+        int outW, outH;
+        if (srcRatio > targetRatio) {
+            // src 比 target 更宽，按高度对齐（左右各裁一些）
+            outH = srcH;
+            outW = Math.round(srcH * targetRatio);
+        } else {
+            // src 比 target 更高，按宽度对齐（上下各裁一些）
+            outW = srcW;
+            outH = Math.round(srcW / targetRatio);
+        }
+        int sx = (srcW - outW) / 2;
+        int sy = (srcH - outH) / 2;
+        android.graphics.Bitmap cropped = android.graphics.Bitmap.createBitmap(
+                src, sx, sy, outW, outH);
+        logD("normalizeBitmapToPaperSize: center-cropped " + srcW + "x" + srcH
+                + " → " + outW + "x" + outH
+                + " (srcRatio=" + srcRatio + " targetRatio=" + targetRatio + ")");
+        return cropped;
     }
 
     /** 与 sample PrinterOperation 字段语义对齐的参数包。 */
@@ -454,8 +525,8 @@ public class HiTiPrinterManager {
         logD("startService() called, serviceConnector=" + serviceConnector);
         mainHandler.post(() -> {
             if (serviceConnector == null) {
-                logE("startService: ServiceConnector is null");
-                post(cb, null, "ServiceConnector not initialized");
+                logE("startService: ServiceConnector is null (was releaseForPage called on page exit?)");
+                post(cb, null, "ServiceConnector not initialized — call initForPage first");
                 return;
             }
             try {
