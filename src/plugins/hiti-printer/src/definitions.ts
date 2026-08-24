@@ -85,6 +85,22 @@ export interface HiTiPrinterPlugin {
    * Mirror a single JS-side log line to the native session file (layer=JS).
    */
   captureLog(options: { tag?: string; msg: string }): Promise<HiTiResult<string>>
+
+  /**
+   * 页面级 init：在打印相关页面（ScanSubscription / PrintTestView）进入前调用。
+   * bind HiTi ServiceConnector + 注册 USB attach/detach 监听。
+   * 离开页面时必须 {@link #releaseForPage} 让 HiTi 释放 USB。
+   *
+   * <p>app 启动时不会自动 init（避免 HiTi 在 Camera2 启动时占 USB interface
+   * 导致 Camera2 预览起不来）。
+   */
+  initForPage(): Promise<HiTiResult<string>>
+
+  /**
+   * 页面级 release：在打印相关页面离开时调用。unbind HiTi ServiceConnector +
+   * 注销 USB 监听 + 释放 USB interface。Camera2 此时可以 claim UVC interface。
+   */
+  releaseForPage(): Promise<HiTiResult<string>>
 }
 
 /**

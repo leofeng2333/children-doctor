@@ -41,4 +41,15 @@ export class HiTiPrinterWeb extends WebPlugin implements HiTiPrinterPlugin {
   async captureLog(): Promise<HiTiResult<string>> {
     return { ok: true, data: '' }
   }
+  /**
+   * Web fallback for page-level init/release: always a no-op.
+   * HiTi SDK is Android-only; on web these calls just resolve
+   * so the caller's print-page onMounted/onUnmounted sequence stays uniform.
+   */
+  async initForPage(): Promise<HiTiResult<string>> {
+    return { ok: true, data: 'web_noop' }
+  }
+  async releaseForPage(): Promise<HiTiResult<string>> {
+    return { ok: true, data: 'web_noop' }
+  }
 }

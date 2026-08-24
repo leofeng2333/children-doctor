@@ -44,7 +44,10 @@ public class DualCameraPlugin extends Plugin {
         // 把 logger 注入到静态类，让 Camera2Session / Camera2Controller 也能用它。
         Camera2Session.setCaptureLogger(captureLogger);
         Camera2Controller.setCaptureLogger(captureLogger);
-        Log.d(TAG, "DualCamera plugin loaded");
+        // 当前项目的 UVC 摄像头存在"预览已镜像但拍照未镜像"导致拍照输出左右翻转。
+        // 摄像头型号已确认不再变化，全局开启后置拍照镜像。
+        Camera2Session.setGlobalForceBackMirror(true);
+        Log.d(TAG, "DualCamera plugin loaded (globalForceBackMirror=true)");
     }
 
     @Override
@@ -199,6 +202,11 @@ public class DualCameraPlugin extends Plugin {
             return;
         }
 
+        // 之前这里调过 portReleaseDelegate（让 HiTi USB 让位给 Camera2）。
+        // 现在 HiTi 改成页面级 init/release：在没有打印页面的期间 HiTi 不占 USB，
+        // Camera2 可以直接拿到 UVC interface，不需要再去 release HiTi。
+        // 保留这个注释作为变更说明。
+
         cameraManager = new DualCameraManager(
                 getContext(),
                 new DualCameraManager.EventCallback() {
@@ -238,6 +246,9 @@ public class DualCameraPlugin extends Plugin {
     @PluginMethod()
     public void stopPreview(PluginCall call) {
         if (cameraManager == null) {
+            // 之前这里调过 portRestoreDelegate（HiTi USB 监听恢复）。
+            // 现在 HiTi 改成页面级 init/release，离开打印页时已经 release，
+            // Camera2 期间 HiTi 根本不占 USB；离开 Camera2 时也无需恢复 HiTi。
             call.resolve();
             return;
         }
@@ -476,6 +487,21 @@ public class DualCameraPlugin extends Plugin {
             return;
         }
         cameraManager.capture(call);
+    }
+
+    /**
+     * 全局开关：是否对所有后置摄像头的拍照输出做水平镜像。
+     * 用于解决 UVC 摄像头"预览已镜像但拍照未镜像"导致的左右翻转问题。
+     * 必须在 startPreview 之前调用才能影响本次预览周期。
+     */
+    @PluginMethod()
+    public void setGlobalForceBackMirror(PluginCall call) {
+        Boolean v = call.getBoolean("enabled", false);
+        Camera2Session.setGlobalForceBackMirror(v != null && v);
+        Log.d(TAG, "setGlobalForceBackMirror=" + v);
+        JSObject ret = new JSObject();
+        ret.put("enabled", v != null && v);
+        call.resolve(ret);
     }
 
     @PluginMethod()

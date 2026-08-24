@@ -2,6 +2,50 @@ import { Capacitor } from '@capacitor/core'
 import { DualCamera } from '@/plugins/dual-camera'
 import { HiTiPrinter } from '@/plugins/hiti-printer'
 
+/**
+ * 页面级 HiTi USB 占用：调用时机与具体组件生命周期耦合，详见
+ * {@link #printPageMounted} / {@link #printPageUnmounted}。
+ *
+ * <p>背景：HiTi SDK 启动后会立刻通过 attach 监听主动 claim 自己的 USB interface
+ * (VID=0x0D16)，如果 app 启动时就 init，会导致同一 USB controller 上的 UVC camera
+ * 在 Camera2 openCamera 时拿到 ERROR_IN_USE，预览起不来。修复策略：
+ * HiTi 不在 app 启动时 init，只在打印相关页面（ScanSubscription / PrintTestView）
+ * 进入前 init，离开后 release。这样其他页面（特别是 Camera2 预览）期间 HiTi
+ * 不占 USB，UVC camera 永远拿到独占 access。
+ */
+
+/**
+ * 打印页面 mount hook。PrintTestView / DetailAnalysisView 挂载时调一次。
+ *
+ * <p>注意：必须 await 完成后再开始用 HiTi（startService / printPhoto），
+ * 因为 init 内部执行 ServiceConnector.register 是异步的（main looper post）。
+ */
+export async function printPageMounted(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'android') return
+  console.log('[print/port] print page mounted, init HiTi (bind service + claim USB interface)')
+  try {
+    const r = await HiTiPrinter.initForPage()
+    console.log('[print/port] initForPage result:', r)
+  } catch (e) {
+    console.warn('[print/port] initForPage threw:', e)
+  }
+}
+
+/**
+ * 打印页面 unmount hook。PrintTestView / DetailAnalysisView 卸载时调一次。
+ * release 后 HiTi 完全不占 USB，Camera2 / 其他 USB 设备可以无障碍使用 USB bus。
+ */
+export async function printPageUnmounted(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'android') return
+  console.log('[print/port] print page unmounted, release HiTi (unbind service + release USB interface)')
+  try {
+    const r = await HiTiPrinter.releaseForPage()
+    console.log('[print/port] releaseForPage result:', r)
+  } catch (e) {
+    console.warn('[print/port] releaseForPage threw:', e)
+  }
+}
+
 export interface PrintOptions {
   /** 主图 URL（good-img / 静态 success 图） */
   goodImgUrl: string
@@ -255,6 +299,13 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
           length: resolved.length,
           prefix: resolved.slice(0, 40),
         })
+        // Mirror 到 native log：fit 输出尺寸判断端口（PNG/JPEG header 字节数估计）
+        try {
+          await HiTiPrinter.captureLog({
+            tag: 'TS',
+            msg: `fitImageToPaper done, dataUrlLen=${resolved.length} prefix=${resolved.slice(0, 40)}`,
+          })
+        } catch {}
         const comma = resolved.indexOf(',')
         const base64 = comma >= 0 ? resolved.slice(comma + 1) : resolved
         if (!base64) throw new Error('goodImgUrl 解析为空')

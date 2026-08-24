@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { printPhoto } from '@/utils/print'
+import { printPhoto, printPageMounted, printPageUnmounted } from '@/utils/print'
 // Vite 的 `?url` 拿 URL；`?inline` 直接拿 base64 dataURL（编译期内联）。
 // 用 inline 让原生侧跳过 readImageAsBase64, 避免 Vite 的 /assets/*.png
 // 在 Android Capacitor 里没有对应 ContentResolver 条目而读不到的问题。
@@ -14,6 +14,22 @@ const goBack = () => router.push('/')
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
 const printError = ref('')
+
+// 页面级 HiTi USB 占用：进入页面 init（bind service + claim USB），离开页面 release。
+// 不在 app 启动时 init HiTi，是为了避免与 UVC camera 抢占同一 USB bus。
+onMounted(async () => {
+  await printPageMounted()
+})
+onBeforeUnmount(async () => {
+  // router.push 之后 beforeUnmount 触发；这时先 release USB，让其它页面（特别是
+  // CameraCaptureView 之类需要 USB 的）能继续使用 USB bus。
+  await printPageUnmounted()
+})
+onUnmounted(async () => {
+  // 兜底：万一 onBeforeUnmount 漏了，再 release 一次（HiTi release 是 idempotent，
+  // serviceConnector 已经是 null 时第二次 release 是 no-op）。
+  await printPageUnmounted()
+})
 
 // 本地选择图片打印
 const pickedImgUrl = ref<string>('') // 当前选中的图片（dataURL）

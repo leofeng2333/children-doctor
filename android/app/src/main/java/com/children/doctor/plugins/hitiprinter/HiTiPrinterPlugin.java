@@ -62,10 +62,59 @@ public class HiTiPrinterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+        // 只创建 manager + printLogger；不在 plugin load 时 bind HiTi ServiceConnector
+        // 或监听 USB。实测 HiTi SDK 启动后会立刻通过 attach 监听主动 claim 自己
+        // 的 USB interface（VID=0x0D16），导致同一 USB controller 上的 UVC camera
+        // 在 Camera2 openCamera 时拿到 ERROR_IN_USE，预览起不来。
+        // 现在改为页面级 init：进入打印页面时 {@link #initForPage}；离开时
+        // {@link #releaseForPage}。app 启动和其它页面（截图、摄像头预览）期间
+        // HiTi 不占 USB，UVC camera 完全可用。
         printLogger = new PrintLogger(getContext());
         manager = new HiTiPrinterManager(getContext(), printLogger);
-        manager.init();
-        logD("HiTiPrinter plugin loaded");
+        logD("HiTiPrinter plugin loaded (lazy init deferred to print-page entry)");
+    }
+
+    /**
+     * 页面级 init：让打印页面（PrintTestView / DetailAnalysisView 内嵌 ScanSubscription）
+     * 进入前调一次，bind HiTi ServiceConnector + 注册 USB attach/detach 监听。
+     * 等价于旧版 plugin load() 时的自动 init，但延迟到页面级，
+     * 让其它无关页面（特别是 CameraCaptureView）不被 HiTi USB claim 影响。
+     */
+    @PluginMethod()
+    public void initForPage(PluginCall call) {
+        logD("initForPage: called (page-level HiTi init, will claim USB interface)");
+        if (manager == null) {
+            call.resolve(buildErr("manager_not_initialized"));
+            return;
+        }
+        try {
+            manager.init();
+            call.resolve(buildOk("init_for_page"));
+        } catch (Throwable t) {
+            logE("initForPage: failed", t);
+            call.resolve(buildErr(t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+        }
+    }
+
+    /**
+     * 页面级 release：离开打印页面时调一次，unbind HiTi ServiceConnector
+     * + 注销 USB attach/detach 监听 + 释放 USB interface。释放后 Camera2
+     * service 可以再次拿到 UVC interface，不会再出现端口冲突。
+     */
+    @PluginMethod()
+    public void releaseForPage(PluginCall call) {
+        logD("releaseForPage: called (releasing HiTi USB so other pages can use USB bus)");
+        if (manager == null) {
+            call.resolve(buildOk("not_initialized"));
+            return;
+        }
+        try {
+            manager.release();
+            call.resolve(buildOk("released"));
+        } catch (Throwable t) {
+            logE("releaseForPage: failed", t);
+            call.resolve(buildErr(t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+        }
     }
 
     @Override

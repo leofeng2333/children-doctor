@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
@@ -10,11 +10,30 @@ import {
   getDiagnosisCopy,
   type DiagnosisCopy,
 } from '@/utils/diagnosisCopy'
+import { printPageMounted, printPageUnmounted } from '@/utils/print'
 
 const router = useRouter()
 
 const analysisStore = useAnalysisStore()
 const { result: analysisResult, isLoading } = storeToRefs(analysisStore)
+
+/**
+ * 页面级 HiTi USB 占用：此页面内嵌 ScanSubscription 组件有"打印"按钮。
+ * 进入页面 init HiTi（bind service + claim USB interface），离开时 release。
+ *
+ * <p>不再在 app 启动时 init HiTi，避免 Camera2 预览与 HiTi 抢 USB bus。
+ */
+onMounted(async () => {
+  await printPageMounted()
+})
+onBeforeUnmount(async () => {
+  await printPageUnmounted()
+})
+onUnmounted(async () => {
+  // 兜底：再 release 一次（HiTi release 是 idempotent，serviceConnector null 时
+  // 第二次 release 是 no-op）。
+  await printPageUnmounted()
+})
 
 const analysisCompleted = computed(() => {
   return !!analysisResult.value
