@@ -191,39 +191,62 @@ export async function fitImageToPaper(input: string): Promise<string> {
   const srcH = img.naturalHeight || img.height
   if (!srcW || !srcH) throw new Error(`fitImageToPaper: image has zero dimensions (${srcW}x${srcH})`)
 
-  // 等比放大 + center-crop：求 cover scale（取较大者）和源矩形
+  // Letterbox 模式：保持原图方向，不做 cover-fit 裁切。
+  //
+  // cover-fit 问题：portrait 输入（竖图，人脸在上半部分）按宽度对齐后，
+  // canvas 上下各裁掉 (srcH - sh)/2，只保留中间一条横带。
+  // 这条横带里的人脸被拦腰截断，进 SDK 后方向也变成横的，打印出来是横的。
+  //
+  // letterbox 做法：portrait 输入时把完整图像居中画到 canvas，两边留白。
+  // 白色背景保证留白区域可打印。Java 端检测 portrait bitmap 后会旋转 90°
+  // 变成 landscape，再 normalize 填满纸张 —— 这样竖图能正确竖着打印。
   const targetRatio = PAPER_W / PAPER_H // 1.5  → landscape
   const srcRatio = srcW / srcH
   let sx: number, sy: number, sw: number, sh: number
+  let destW = PAPER_W
+  let destH = PAPER_H
   if (srcRatio > targetRatio) {
-    // 原图比目标更"宽"——按高度对齐，左右两边各裁掉一些
+    // landscape 输入（宽 > 高）—— 按高度对齐，左右各裁一点（cover-fit）
     sh = srcH
     sw = srcH * targetRatio
     sx = (srcW - sw) / 2
     sy = 0
   } else {
-    // 原图比目标更"高"——按宽度对齐，上下两边各裁掉一些
+    // portrait 输入（高 > 宽）—— 按宽度缩放，居中画到 canvas，两边留白
     sw = srcW
-    sh = srcW / targetRatio
+    sh = srcH
     sx = 0
-    sy = (srcH - sh) / 2
+    sy = 0
+    // 竖图宽度按比例映射到 canvas 高度，宽度方向两边留白
+    destH = Math.round(srcH * (PAPER_W / srcW))
+    destW = PAPER_W
   }
   console.log('[print/fit] src=' + srcW + 'x' + srcH + ' ratio=' + srcRatio.toFixed(3)
     + ' targetRatio=' + targetRatio.toFixed(3)
-    + ' coverRect=(' + Math.round(sx) + ',' + Math.round(sy) + ',' + Math.round(sw) + ',' + Math.round(sh) + ')')
+    + ' srcRect=(' + Math.round(sx) + ',' + Math.round(sy) + ',' + Math.round(sw) + ',' + Math.round(sh) + ')'
+    + ' destCanvas=' + destW + 'x' + destH)
 
   // 创建画布：白底
   const canvas = document.createElement('canvas')
-  canvas.width = PAPER_W
-  canvas.height = PAPER_H
+  canvas.width = destW
+  canvas.height = destH
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('fitImageToPaper: 2d context unavailable')
 
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, PAPER_W, PAPER_H)
+  ctx.fillRect(0, 0, destW, destH)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, PAPER_W, PAPER_H)
+  // portrait：居中画；landscape：填满
+  if (srcRatio <= targetRatio) {
+    // portrait：图像填满 destH，水平居中
+    const drawW = destH * srcRatio
+    const drawX = (destW - drawW) / 2
+    ctx.drawImage(img, sx, sy, sw, sh, drawX, 0, drawW, destH)
+  } else {
+    // landscape：填满整个 canvas
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, destW, destH)
+  }
 
   const dataUrl: string = await new Promise((resolve, reject) => {
     try {
@@ -289,7 +312,7 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
     // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
     await Promise.race([
       (async () => {
-        // 直接 fit 到 HiTi 4×6 landscape paper (1536×1024, 3:2)。
+        // 把原图 cover-fit 到 HiTi 4×6 landscape paper (1536×1024, 3:2)。
         // 不做 normalize，SDK 会自己 center-crop，留白/裁切不可控。
         // fitImageToPaper 内部已经处理 URL → dataURL → image decode → cover-fit → JPEG；
         // 这里是源头，不需要再单独 resolve。

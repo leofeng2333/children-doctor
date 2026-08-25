@@ -412,12 +412,27 @@ public class HiTiPrinterManager {
         }
         logD("buildPhotoAttrSample: PaperSize=" + size);
 
-        // 双保险归一化：TS 端 fitImageToPaper 已输出 1536×1024，但实测偶发
-        // （PNG dataURL / image.decode() 失败回退 / Capacitor 内嵌图）下 Java 端
-        // 仍会拿到 portrait bitmap，SDK 默认行为是 letterbox 上下留白。
-        // 这里强制按 PaperSize 期望比例 center-crop，确保无论上层是否
-        // 归一化，bitmap 比例都对得上 paper —— 不 rotate，保留主体方向。
-        android.graphics.Bitmap bitmap = normalizeBitmapToPaperSize(rawBitmap, size);
+        // 竖图旋转：HiTi 6×4 paper 是 landscape（宽 > 高）。竖图直接进 SDK 会 letterbox
+        // 左右留白，打印出来感觉"方向不对"。这里检测 portrait bitmap 并旋转 90° 顺时针，
+        // 让主体填满 landscape paper。rotation 只做一次，normalize 接着按 landscape 比例裁切。
+        android.graphics.Bitmap bitmap = rawBitmap;
+        if (rawBitmap.getWidth() < rawBitmap.getHeight()) {
+            logD("buildPhotoAttrSample: portrait bitmap detected ("
+                    + rawBitmap.getWidth() + "x" + rawBitmap.getHeight()
+                    + "), rotating 90° clockwise for landscape paper");
+            android.graphics.Matrix matrix = new android.graphics.Matrix();
+            matrix.postRotate(90f);
+            android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
+                    rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(),
+                    matrix, true);
+            bitmap = rotated;
+            logD("buildPhotoAttrSample: rotated bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
+        }
+
+        // 归一化到 PaperSize 比例：按 landscape 比例 center-crop。
+        // fitImageToPaper 已输出一致的 1536×1024 landscape，这里只处理偶发的
+        // PNG dataURL / image.decode() 回退 / Capacitor 内嵌图等异常路径。
+        bitmap = normalizeBitmapToPaperSize(bitmap, size);
         if (bitmap != rawBitmap) {
             logD("buildPhotoAttrSample: normalized to " + bitmap.getWidth() + "x" + bitmap.getHeight()
                     + " (was " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight() + ")");
