@@ -158,6 +158,7 @@ public class Camera2Controller {
 
                     Size preview = sessions[slot].getPreviewSize();
                     st.setDefaultBufferSize(preview.getWidth(), preview.getHeight());
+                    Log.d(TAG, "setDefaultBufferSize: " + preview.getWidth() + "x" + preview.getHeight());
                     surfaceTexture = st;
                     surface = new Surface(surfaceTexture);
                     mainHandler.post(this::openCameraIfReady);
@@ -327,6 +328,40 @@ public class Camera2Controller {
             @Override
             public void onOpened() {
                 if (isStopped.get()) return;
+
+                // 对 TextureView 应用旋转变换，使预览画面正立显示。
+                //
+                // TextureView 直接渲染 SurfaceTexture 的原始 buffer（摄像头原生方向），
+                // 不做变换时 UVC 摄像头（landscape 传感器）在 portrait 机器上会整体
+                // 旋转，画面不"正"。
+                //
+                // TextureView.setTransform(Matrix) 对已渲染内容做 2D 仿射变换：
+                // 正旋转值 = 顺时针旋转内容。getDisplayRotation() 返回
+                // Surface.ROTATION_*（0=0°, 1=90°, 2=180°, 3=270°）。
+                //
+                // 公式（与 JPEG_ORIENTATION 补偿方向相同——都是让内容旋到屏幕方向）：
+                //   后置：(sensorOrientation - displayRotationDeg + 360) % 360
+                //   前置：(sensorOrientation - displayRotationDeg + 360) % 360
+                // 前置不需要额外的镜像（applyFrontMirrorIfNeeded 已在拍照路径处理），
+                // 预览也不需要额外的镜像，直接旋转变换即可。
+                TextureView tv = (textureViews != null && slot < textureViews.length)
+                        ? textureViews[slot] : null;
+                if (tv != null) {
+                    Camera2Session session = (sessions != null && slot < sessions.length)
+                            ? sessions[slot] : null;
+                    if (session != null) {
+                        int sensorOrientation = session.getSensorOrientation();
+                        int displayRotationDeg = session.getDisplayRotation() * 90;
+                        float rotation = (sensorOrientation - displayRotationDeg + 360) % 360f;
+                        applyRotationTransform(tv, rotation);
+                        Log.d(TAG, "applyRotationTransform: slot=" + slot
+                                + " lensFacing=" + session.getLensFacing()
+                                + " sensorOrient=" + sensorOrientation
+                                + " displayRot=" + displayRotationDeg + "°"
+                                + " → correction=" + rotation + "°");
+                    }
+                }
+
                 synchronized (Camera2Controller.this) {
                     openedCount++;
                     Log.d(TAG, "Camera slot " + slot + " opened (opened=" + openedCount + "/" + slotCount + ")");
@@ -888,6 +923,34 @@ public class Camera2Controller {
             }
         }
         return null;
+    }
+
+    /**
+     * 对 TextureView 应用旋转变换，使画面在当前屏幕方向上正立显示。
+     *
+     * <p>TextureView 直接渲染 SurfaceTexture 的原始 buffer（摄像头原生方向），
+     * 不做变换时 UVC 摄像头（landscape 传感器，sensorOrientation=90°）
+     * 在 portrait 机器上会整体旋转 90°。
+     *
+     * <p>Matrix.setRotate(cx, cy, degrees) 绕点 (cx, cy) 旋转——
+     * 等价于 translate(-cx,-cy) → rotate → translate(cx,cy)，
+     * 内部已实现，不需要手动 preTranslate/postTranslate。
+     *
+     * <p>TextureView.setTransform() 在每次 SurfaceTexture 有新帧时自动应用矩阵。
+     * rotationDegrees=0 时跳过（identity matrix = 不变换）。
+     */
+    private void applyRotationTransform(TextureView tv, float rotationDegrees) {
+        if (tv == null || rotationDegrees == 0f) return;
+        int vw = tv.getWidth();
+        int vh = tv.getHeight();
+        if (vw <= 0 || vh <= 0) {
+            Log.w(TAG, "applyRotationTransform: TextureView size not ready (" + vw + "x" + vh + "), skipping");
+            return;
+        }
+        android.graphics.Matrix m = new android.graphics.Matrix();
+        m.setRotate(rotationDegrees, vw / 2f, vh / 2f);
+        tv.setTransform(m);
+        Log.d(TAG, "applyRotationTransform: " + vw + "x" + vh + " rotated " + rotationDegrees + "°");
     }
 
     private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
