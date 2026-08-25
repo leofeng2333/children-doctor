@@ -298,6 +298,150 @@ await Promise.race([
 | 7 | 错误处理 | UI TextView 追加 | Capacitor bridge 返回 `{ok, data/error}` | 实现差异 |
 | 8 | TS Promise.race 兜底 | 无 | 25s race（`print.ts:309-...`）| 二次保险 |
 | 9 | 默认 PRINTMODE | 1（fine mode）| 0（standard mode）| 实际打印调用显式传 0，无影响 |
+| **10** | **`USB_CHECK_PRINTER_STATUS` 预检** | ✅ **持续探测**（ClockTask 3s/次，StartService 后立刻 schedule）| ❌ **不做预检**（`print.ts:343-346`）| **疑似根因：冷启动 USB 通道未热身** |
+| **11** | **`StopService` 调用** | ✅ **显式调用**（b_stopService onClick）| ❌ **不调用**（release 只 unregister）| **疑似影响：service 状态可能不一致** |
+| **12** | **`serviceConnector.m_strTablesRoot` 在 PRINT 路径** | ❌ **不设**（保持 `""`，`PrinterOperation.java:308-316` printerSetService 内部不设）| ✅ **设成 tablesRoot**（`HiTiPrinterManager.java:306`）| **疑似影响：SDK 内部对 m_strTablesRoot 的行为可能不同** |
+
+---
+
+## 5. SDK API 调用差异（应用代码层对比）
+
+> 本节只看两边 app 自己的代码——`HiTiPrinterManager.java` / `HiTiPrinterPlugin.java` / `print.ts`
+> vs `MainActivity.java` / `PrinterOperation.java`——列出**调用了哪些 SDK 方法、调用多少次、什么线程、什么参数**。
+> 不展开 SDK 字节码或内部实现，仅基于应用代码层判定哪些差异可能导致功能问题。
+
+### 5.1 SDK 方法调用清单
+
+| SDK 方法 | sampleAPK 调用位置 | children-doctor 调用位置 | 是否对称 |
+|---------|-------------------|----------------------|---------|
+| `ServiceConnector.register(context, null)` | `MainActivity.java:148`（onCreate）| `HiTiPrinterManager.java:149`（init, main thread）| ✅ 一致 |
+| `ServiceConnector.unregister()` | `MainActivity.java:302`（onDestroy）| `HiTiPrinterManager.java:170`（release, main thread）| ✅ 一致 |
+| `serviceConnector.StartService()` | `MainActivity.java:321`（b_startService onClick）| `HiTiPrinterManager.java:526`（startService, main thread）| ✅ 一致 |
+| `serviceConnector.StopService()` | `MainActivity.java:336`（b_stopService onClick）| `HiTiPrinterManager.java:545`（stopService, main thread）| ✅ 一致 |
+| `serviceConnector.doService(job)` | `PrinterOperation.java:299 / 313 / 328`（raw Thread）| `HiTiPrinterManager.java:633`（printExecutor via doServiceWithTimeout）| ✅ 调用点一致，线程不同 |
+| `serviceConnector.m_strTablesRoot = ...` | `PrinterOperation.java:298`（raw Thread，**仅 printerService 路径**，**不含 PRINT_PHOTOS**）| `HiTiPrinterManager.java:306 / 582`（print / runOp 路径）| ⚠️ **sample 在 PRINT_PHOTOS 路径不设，children-doctor 设了** |
+| `operation.m_strTablesRoot = ...` | `MainActivity.java:212 / 567 / 652`（ClockTask + operatePrinter case，含 PRINT_PHOTOS）| 不使用（无 operation 字段）| — 字段级差异 |
+| `PrintPara.getPrintPhotoPara(bmp, count, matte, mode, size, tablesRoot)` | `PrinterOperation.java:248 / 252 / 256 / 260 / 265 / 269` | `HiTiPrinterManager.java:419`（6 参数重载）| ✅ 同一重载，参数顺序一致 |
+| `PrintPara.getSetCommandPara(short)` | `PrinterOperation.java:278`（USB_SET_AUTO_POWER_OFF）| 未实现 | — 非打印必需 |
+
+### 5.2 USB 命令（Action）覆盖度
+
+| Action | sampleAPK 入口 | children-doctor 入口 | 打印必需 |
+|--------|---------------|----------------------|---------|
+| **USB_CHECK_PRINTER_STATUS** | **ClockTask.scheduleAtFixedRate 3s/次 + b_serviceStatus** | `getPrinterStatus()`（5s 短超时）| **疑似必需**：sample 持续，children-doctor 单次 + 不预检 |
+| USB_DEVICE_MODEL_NAME | b_printerInfo | `getModelName()` | 否 |
+| USB_DEVICE_SERIAL_NUM | b_printerInfo | `getSerialNumber()` | 否 |
+| USB_DEVICE_FW_VERSION | b_printerInfo | `getFirmwareVersion()` | 否 |
+| USB_DEVICE_RIBBON_INFO | b_printerInfo | `getRibbonInfo()` | 否 |
+| USB_DEVICE_PRINT_COUNT | b_printerInfo | `getPrintCount()` | 否 |
+| USB_COMMAND_RESET_PRINTER | b_resetPrinter | `resetPrinter()` | 否 |
+| USB_COMMAND_CALIBRATE_RIBBON_LED | b_calibrateRibbonLED | ❌ 未实现 | 否 |
+| USB_COMMAND_RESUME_JOB | b_resumeJob | `resumeJob()` | 否 |
+| USB_EJECT_PAPER_JAM | b_ejectPaperJam | `ejectPaperJam()` | 否 |
+| USB_COMMAND_CLEAN_PAPER_PATH | b_cleanPaperPath | ❌ 未实现 | 否 |
+| **USB_PRINT_PHOTOS** | **b_printPhoto** | **printPhoto()** | ✅ 必需 |
+| USB_SET_AUTO_POWER_OFF | b_setAutoPowerOff | ❌ 未实现 | 否 |
+| USB_GET_STORAGE_ID 等 PTP 操作 | b_getObjectID 等 | ❌ 未实现 | 否 |
+| USB_COMMAND_UPDATE_FW | b_updateFW | ❌ 未实现 | 否 |
+
+**只有 2 个 Action 是打印相关且行为不一致**：
+
+#### 5.2.1 USB_CHECK_PRINTER_STATUS 🐛 **疑似根因之一**
+
+| 维度 | sampleAPK | children-doctor |
+|------|-----------|-----------------|
+| 调用时机 | `StartService()` 之后**立刻** schedule `ClockTask`，3 秒一次持续调 | 主动 `getPrinterStatus()` 才调，5s 短超时 |
+| 打印流程是否预检 | ✅ 是（ClockTask 已经在跑）| ❌ 否（`print.ts:343-346` 注释明确"不做预检"）|
+| 每次调用前的 tablesRoot set | ✅ 是（`MainActivity.java:567`）| ✅ 是（`HiTiPrinterManager.java:582` `runOp`）|
+| 区别 | 持续 keepalive + 探测 | 单次 + 不预检 |
+
+```java
+// sampleAPK MainActivity.java:320-325
+case R.id.b_startService:
+    errorCode = serviceConnector.StartService();
+    exec3 = Executors.newSingleThreadScheduledExecutor();
+    exec3.scheduleAtFixedRate(new ClockTask(), 3000, 3000, TimeUnit.MILLISECONDS);
+    break;
+```
+
+```java
+// sampleAPK MainActivity.java:208-218（ClockTask 定义）
+private class ClockTask extends TimerTask {
+    @Override public void run() {
+        PrinterJob job = null;
+        operation.m_strTablesRoot = m_strTablesRoot;  // 每次前 set
+        job = operation.getPrinterStatus();           // 每次 USB_CHECK_PRINTER_STATUS
+        ...
+    }
+}
+```
+
+```typescript
+// children-doctor print.ts:343-346
+// 不做 getPrinterStatus 预检：HiTi SDK 没有不调 USB transfer 的轻量探测，
+// 预检本身会再发一次 USB_CHECK_PRINTER_STATUS 卡住直到 native 兜底超时，
+// 体感上跟直接打一样卡，而且错误信息被预检吃掉一层更难看。
+console.log('[print/HiTi] skipping getPrinterStatus pre-check, going straight to print')
+```
+
+**潜在影响**：
+
+- sample 持续探测 = USB control transfer 通道始终活跃，第一次 `USB_PRINT_PHOTOS` 走的是"已经热身的 USB 通道"。
+- children-doctor 不预检 = 冷启动第一次 `USB_PRINT_PHOTOS` 直接打，USB control transfer 通道可能没热身，SDK 内部可能进入异常分支（USB endpoint stall / NAK 等），进而导致 doService 卡死或 timeout。
+
+#### 5.2.2 USB_PRINT_PHOTOS — `m_strTablesRoot` set 时机 ⚠️ **潜在 bug**
+
+| 维度 | sampleAPK | children-doctor |
+|------|-----------|-----------------|
+| `operation.m_strTablesRoot = m_strTablesRoot`（**PRINT 之前**）| ✅ 是（`MainActivity.java:652`）| — 不适用（无 operation 字段）|
+| `serviceConnector.m_strTablesRoot = m_strTablesRoot`（**PRINT 之前**）| ❌ 否（`PrinterOperation.printerSetService` 行 308-316 没 set）| ✅ 是（`HiTiPrinterManager.java:306`）|
+| `serviceConnector.m_strTablesRoot = ""`（**PRINT 之后**）| — 不需要（printerSetService 内部没改）| ✅ 是（`HiTiPrinterManager.java:316 / 325`，onSuccess/onError 两个分支）|
+| `PrintPara.getPrintPhotoPara(..., m_strTablesRoot)` | ✅ 是（行 248）| ✅ 是（行 419，传 `tablesRootForPara`）|
+
+**观察**：
+
+- sample 在 PRINT 路径**只**通过 `operation.m_strTablesRoot` 设置，且 `PrinterOperation.print → printerSetService` **不**改 `serviceConnector.m_strTablesRoot`（行 313 之前没看到 `serviceConnector.m_strTablesRoot = ...`）。
+- children-doctor 在 PRINT 路径**同时**设了 `serviceConnector.m_strTablesRoot`（行 306）和传 `tablesRootForPara` 给 PrintPara（行 419）。
+
+**潜在影响**：
+
+- sample 是"双轨但只走一轨"——只设 `operation.m_strTablesRoot`，`serviceConnector.m_strTablesRoot` 保持 onCreate 时 set 的 `""`（`MainActivity.java:153`）。
+- children-doctor 是"双轨且都走"——`serviceConnector.m_strTablesRoot` 设成 `tablesRoot`（已 extracted 的目录），doService 完成后清成 `""`。
+- **如果 SDK 内部对 `serviceConnector.m_strTablesRoot` 在 PRINT_PHOTOS 路径有特殊行为**，children-doctor 设的 `tablesRoot` 与 sample 的 `""` 行为可能不同。具体 SDK 内部行为需要 vendor 确认，应用代码层无法判定。
+
+### 5.3 调用顺序对照
+
+| 顺序 | sampleAPK | children-doctor | 是否一致 |
+|------|-----------|----------------|---------|
+| 1 | `ServiceConnector.register`（onCreate）| `initForPage → manager.init()` | ✅ |
+| 2 | 用户点 b_startService | TS `step 1/2: startService` | ✅ |
+| 3 | `StartService()` | `startService()` | ✅ |
+| 4 | `ClockTask.scheduleAtFixedRate`（持续 3s/次 USB_CHECK_PRINTER_STATUS）| **无** | ❌ |
+| 5 | 用户选 photo path | `fitImageToPaper → base64 → ExternalCacheDir/hiti_print_*.jpg` | ✅（实现路径不同）|
+| 6 | `operation.m_strTablesRoot = m_strTablesRoot` | `serviceConnector.m_strTablesRoot = tablesRoot` | ⚠️ 不同对象字段 |
+| 7 | `PrintPara.getPrintPhotoPara(bitmap, count, matte, mode, size, m_strTablesRoot)` | `PrintPara.getPrintPhotoPara(bitmap, count, matte, mode, size, tablesRootForPara)` | ✅ |
+| 8 | `serviceConnector.doService(job)` 同步 | `doServiceWithTimeout(job, cb)` 异步（20s future.get）| ⚠️ 同步 vs 异步 |
+| 9 | `job.errCode` 透传到 UI TextView | `cb.onSuccess` / `cb.onError` → Capacitor bridge → TS Promise | ✅ |
+| 10 | `operation.m_strTablesRoot = ""`（PRINT 后清空）| `serviceConnector.m_strTablesRoot = ""`（onSuccess/onError 清空）| ✅（不同对象）|
+| 11 | 用户点 b_stopService（可选）| **不调用**（release 只 unregister）| ⚠️ |
+| 12 | onDestroy 时 `serviceConnector.unregister()` | `releaseForPage → manager.release()` | ✅ |
+
+### 5.4 应用代码层能判定的"嫌疑点"
+
+下面 4 个点是**仅凭应用代码对比**就能识别的，不需要看 SDK 源码：
+
+1. **`USB_CHECK_PRINTER_STATUS` 不预检**（§5.2.1）—— sample 持续探测 vs 我们冷启动直接打
+2. **`StopService` 不调用**（§5.3 步骤 11）—— sample 显式 StopService，我们 release 只 unregister
+3. **`serviceConnector.m_strTablesRoot` 在 PRINT 路径设值**（§5.2.2）—— sample 不设（保持 `""`），我们设成 `tablesRoot`
+4. **`doService` 异步 vs 同步**（§3.6）—— sample 同步立即返回，我们异步 + 20s future.get
+
+### 5.5 应用代码层无法判定的"嫌疑点"
+
+下面这些点**需要 SDK 内部行为或 vendor 文档**才能判定，应用代码层看不出：
+
+- `StartService()` 返回成功 ≠ SDK service 已 bind 完毕，期间 doService 行为如何
+- `serviceConnector.m_strTablesRoot` 在 SDK 内部对 PRINT_PHOTOS 的影响
+- SDK 卡死的真正原因（USB endpoint stall / native lib 卡死 / PrinterService 内部锁）
 
 ---
 

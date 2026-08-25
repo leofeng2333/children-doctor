@@ -24,8 +24,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import com.children.doctor.plugins.hitiprinter.PrintLogger;
 
 /**
  * Wraps the HiTi (HiTi Inc.) USB photo-printer SDK
@@ -79,6 +83,21 @@ public class HiTiPrinterManager {
         t.setPriority(Thread.NORM_PRIORITY - 1);
         return t;
     });
+
+    /**
+     * sampleAPK MainActivity 在 StartService() 后 schedule 一个固定周期 3 秒的 ClockTask，
+     * 持续调用 getPrinterStatus()。作用是：
+     * (1) keep USB control transfer 通道活跃，避免冷启动时 endpoint stall/NAK；
+     * (2) 实时反映打印机状态到 UI（sample 是 TextView，children-doctor 只需要后台探测）。
+     *
+     * <p>children-doctor 原本不做预检直接打印，冷启动直接打可能因 USB 通道未热身
+     * 导致 doService 卡死（20s timeout）。同步 sample 的方案：在 startService 成功后启动
+     * ClockTask，打印流程开始前让 ClockTask 先跑几个周期。
+     */
+    private ScheduledExecutorService clockExecutor;
+    private ScheduledFuture<?> clockFuture;
+    private static final long CLOCK_INTERVAL_SECONDS = 3L;
+    private static final long CLOCK_INITIAL_DELAY_SECONDS = 3L;
 
     private ServiceConnector serviceConnector;
     private String tablesRoot = "";
@@ -249,12 +268,12 @@ public class HiTiPrinterManager {
             return;
         }
 
-        // 严格按 sample: 不复用 io executor；每次都 raw new Thread
+        // 同步 sample MainActivity：每次 new 一个 raw Thread（不复用 io / printExecutor）
         Thread sampleThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    // 1) 等 Tables assets 解压完成
+                    // 1) 等待 Tables 从 assets 解压完成（sample MainActivity onCreate 时同步解压）
                     boolean tablesLoaded = tablesReady.await(10, TimeUnit.SECONDS);
                     if (!tablesLoaded) {
                         logE("printPhoto: tablesReady timed out");
@@ -267,16 +286,16 @@ public class HiTiPrinterManager {
                         return;
                     }
 
-                    // 2) 拷贝字段到本地 final
+                    // 2) 拷贝参数到本地 final（sample MainActivity 的 local var）
                     final int PRINTCOUNT = opts.printCount;
                     final short MATTE     = opts.matte;
                     final short PRINTMODE = opts.printMode;
                     final int PaperType   = opts.paperType;
-                    logD("printPhoto: sample defaults PRINTCOUNT=" + PRINTCOUNT
+                    logD("printPhoto: PRINTCOUNT=" + PRINTCOUNT
                             + " MATTE=" + MATTE + " PRINTMODE=" + PRINTMODE
                             + " PaperType=" + PaperType);
 
-                    // 3) 创建 PrinterJob，并把 SDK 期望的 bitmap attr 装配进去
+                    // 3) 创建 PrinterJob，装配 bitmap attr
                     int jobId = nextJobId++;
                     final PrinterJob job = new PrinterJob(jobId, Action.USB_PRINT_PHOTOS);
                     logD("printPhoto: PrinterJob created id=" + jobId);
@@ -291,10 +310,9 @@ public class HiTiPrinterManager {
                     }
                     job.setJobPara(attr);
 
-                    // 4) 严格按 sample MainActivity 行 651-655 顺序：
-                    //    先 serviceConnector.m_strTablesRoot = tablesRoot；
-                    //    再 serviceConnector.doService(job)；
-                    //    doService 返回后立即把 m_strTablesRoot 置空。
+                    // 4) 同步 sample MainActivity 行 651-655 的 doService 路径：
+                    //    不设 serviceConnector.m_strTablesRoot（sample PRINT 路径不设）
+                    //    直接同步 doService，线程阻塞直到 SDK 返回
                     if (serviceConnector == null) {
                         logE("printPhoto: serviceConnector is null");
                         post(cb, "USB_PRINT_PHOTOS -ID" + jobId
@@ -302,31 +320,30 @@ public class HiTiPrinterManager {
                         return;
                     }
 
-                    logD("printPhoto: pre-set serviceConnector.m_strTablesRoot='" + tablesRoot + "'");
-                    serviceConnector.m_strTablesRoot = tablesRoot;
+                    // sample MainActivity 不设 serviceConnector.m_strTablesRoot（只设 operation.m_strTablesRoot，
+                    // 这里不适用），直接 doService
+                    logD("printPhoto: calling serviceConnector.doService synchronously");
+                    serviceConnector.doService(job);
+                    logD("printPhoto: doService returned, jobId=" + jobId + " errCode="
+                            + (job.errCode == null ? "null" : "0x" + Integer.toHexString(job.errCode.value)));
 
-                    // 临时回退诊断：恢复 a3fd715 的 doServiceWithTimeout 兜底路径，
-                    // 验证 8e19301 引入的 raw Thread 同步 doService 是不是真的
-                    // "接近 sampleAPK 行为"。如果是卡死源头，兜底超时就会触发，
-                    // 日志里能看到 [doServiceWithTimeout: ... timed out after 20s]。
-                    // 如果不触发，问题在别处（bitmap/SDK 参数/USB 状态）。
-                    doServiceWithTimeout(job, new Callback<String>() {
-                        @Override public void onSuccess(String errStr) {
-                            String before = serviceConnector.m_strTablesRoot;
-                            serviceConnector.m_strTablesRoot = "";
-                            logD("printPhoto: post-clear serviceConnector.m_strTablesRoot, was='" + before + "'");
-                            if (errStr == null) {
-                                post(cb, "printed", null);
-                            } else {
-                                post(cb, null, errStr);
-                            }
-                        }
-                        @Override public void onError(String error) {
-                            serviceConnector.m_strTablesRoot = "";
-                            post(cb, null, error);
-                        }
-                    });
-                    return;
+                    // sample 立即清空 operation.m_strTablesRoot，这里保持一致行为
+                    serviceConnector.m_strTablesRoot = "";
+
+                    // 5) 透传 errCode 给 TS 端
+                    String errStr = null;
+                    if (job.errCode == null) {
+                        errStr = "USB_PRINT_PHOTOS -ID" + jobId + " : err <0x? null>";
+                    } else if (job.errCode.value != 0) {
+                        errStr = "USB_PRINT_PHOTOS -ID" + jobId + " : err <0x"
+                                + Integer.toHexString(job.errCode.value) + " "
+                                + job.errCode.description + ">";
+                    }
+                    if (errStr == null) {
+                        post(cb, "printed", null);
+                    } else {
+                        post(cb, null, errStr);
+                    }
                 } catch (Throwable t) {
                     logE("printPhoto raw Thread failed", t);
                     post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
@@ -390,33 +407,9 @@ public class HiTiPrinterManager {
         }
         logD("buildPhotoAttrSample: PaperSize=" + size);
 
-        // 竖图旋转：HiTi 6×4 paper 是 landscape（宽 > 高）。竖图直接进 SDK 会 letterbox
-        // 左右留白，打印出来感觉"方向不对"。这里检测 portrait bitmap 并旋转 90° 顺时针，
-        // 让主体填满 landscape paper。rotation 只做一次，normalize 接着按 landscape 比例裁切。
-        android.graphics.Bitmap bitmap = rawBitmap;
-        if (rawBitmap.getWidth() < rawBitmap.getHeight()) {
-            logD("buildPhotoAttrSample: portrait bitmap detected ("
-                    + rawBitmap.getWidth() + "x" + rawBitmap.getHeight()
-                    + "), rotating 90° clockwise for landscape paper");
-            android.graphics.Matrix matrix = new android.graphics.Matrix();
-            matrix.postRotate(90f);
-            android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
-                    rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(),
-                    matrix, true);
-            bitmap = rotated;
-            logD("buildPhotoAttrSample: rotated bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
-        }
-
-        // 归一化到 PaperSize 比例：按 landscape 比例 center-crop。
-        // fitImageToPaper 已输出一致的 1536×1024 landscape，这里只处理偶发的
-        // PNG dataURL / image.decode() 回退 / Capacitor 内嵌图等异常路径。
-        bitmap = normalizeBitmapToPaperSize(bitmap, size);
-        if (bitmap != rawBitmap) {
-            logD("buildPhotoAttrSample: normalized to " + bitmap.getWidth() + "x" + bitmap.getHeight()
-                    + " (was " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight() + ")");
-        }
-
-        Object para = PrintPara.getPrintPhotoPara(bitmap,
+        // 同步 sample PrinterOperation.getPrinterPara：不旋转，不 normalize。
+        // SDK 内部按 PaperSize 比例处理 bitmap（可能 letterbox / crop）。
+        Object para = PrintPara.getPrintPhotoPara(rawBitmap,
                 (short) printCount, matte, printMode, size, tablesRootForPara);
         logD("buildPhotoAttrSample: PrintPara.getPrintPhotoPara returned "
                 + (para == null ? "null" : para.getClass().getSimpleName()));
@@ -525,6 +518,10 @@ public class HiTiPrinterManager {
             try {
                 ErrorCode code = serviceConnector.StartService();
                 logD("StartService() returned: " + (code == null ? "null" : "value=0x" + Integer.toHexString(code.value) + " desc=" + code.description));
+                // 同步 sampleAPK MainActivity.java:324-325：在 StartService 成功后
+                // schedule 一个固定 3s 周期的 ClockTask，持续调用 getPrinterStatus()。
+                // 这样 USB control transfer 通道被持续探测，打印时不会因为冷启动而 stall。
+                startClockTask();
                 post(cb, code, code == null ? "StartService returned null" : (code.value == 0 ? null : code.description));
             } catch (Throwable t) {
                 logE("StartService() threw", t);
@@ -544,12 +541,63 @@ public class HiTiPrinterManager {
             try {
                 ErrorCode code = serviceConnector.StopService();
                 logD("StopService() returned: " + (code == null ? "null" : "value=0x" + Integer.toHexString(code.value) + " desc=" + code.description));
+                // 停止 ClockTask
+                stopClockTask();
                 post(cb, code, code == null ? "StopService returned null" : (code.value == 0 ? null : code.description));
             } catch (Throwable t) {
                 logE("StopService() threw", t);
                 post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
             }
         });
+    }
+
+    /**
+     * 同步 sampleAPK MainActivity ClockTask。
+     * 在 StartService() 成功后调用，每 3 秒调用一次 getPrinterStatus()。
+     * 持续 keepalive USB control transfer 通道。
+     */
+    private void startClockTask() {
+        stopClockTask(); // 防止重复启动
+        clockExecutor = Executors.newSingleThreadScheduledExecutor();
+        clockFuture = clockExecutor.scheduleAtFixedRate(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            if (serviceConnector == null || tablesRoot == null || tablesRoot.isEmpty()) {
+                                logD("[ClockTask] skipped: serviceConnector=" + serviceConnector
+                                        + " tablesRoot='" + tablesRoot + "'");
+                                return;
+                            }
+                            PrinterJob job = new PrinterJob(nextJobId++, Action.USB_CHECK_PRINTER_STATUS);
+                            serviceConnector.m_strTablesRoot = tablesRoot;
+                            serviceConnector.doService(job);
+                            // sampleAPK retrieveData 只做日志，不影响后续
+                            logD("[ClockTask] getPrinterStatus done: errCode="
+                                    + (job.errCode == null ? "null" : "0x" + Integer.toHexString(job.errCode.value)));
+                            // sample 打印时 operation.m_strTablesRoot = ""，我们保持原样
+                            serviceConnector.m_strTablesRoot = "";
+                        } catch (Throwable t) {
+                            logE("[ClockTask] getPrinterStatus threw", t);
+                        }
+                    }
+                },
+                CLOCK_INITIAL_DELAY_SECONDS,
+                CLOCK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+        );
+        logD("startClockTask: scheduled, interval=" + CLOCK_INTERVAL_SECONDS + "s initialDelay=" + CLOCK_INITIAL_DELAY_SECONDS + "s");
+    }
+
+    private void stopClockTask() {
+        if (clockFuture != null) {
+            clockFuture.cancel(false);
+            clockFuture = null;
+        }
+        if (clockExecutor != null) {
+            clockExecutor.shutdownNow();
+            clockExecutor = null;
+        }
     }
 
     // ---- Internal helpers ----
