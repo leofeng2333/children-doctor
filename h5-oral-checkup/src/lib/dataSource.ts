@@ -4,7 +4,7 @@
  * 数据源优先级（先查 → 后查 → 兜底 mock）：
  *   1. URL query (?data=<base64-json>)               — 调试/分享
  *   2. sessionStorage.faceResult:analysisResult      — Vue analysisStore.result（startAnalysis 返回）
- *   3. sessionStorage.faceResult:verifyData          — SMS 验证 API 响应（input.html 写入）
+ *   3. sessionStorage.faceResult:verifyData          — SMS 验证 API 响应（index.html 写入）
  *   4. DEFAULT_MOCK                                  — 兜底 mock
  *
  * 输出统一的 ResultShape：

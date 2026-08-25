@@ -9,7 +9,7 @@ children-doctor/                  ← Vue + Capacitor 主项目（iOS/Android Ap
 ├── src/                          ← Vue 源码
 ├── android/ ios/                 ← Capacitor 原生工程
 └── h5-oral-checkup/              ← 本目录：独立的 H5 子项目（React + Vite）
-    ├── input.html                ← 唯一 SPA 入口
+    ├── index.html               ← 唯一 SPA 入口
     ├── src/
     │   ├── main.tsx              ← React 挂载
     │   ├── App.tsx               ← <BrowserRouter> 路由表
@@ -22,7 +22,7 @@ children-doctor/                  ← Vue + Capacitor 主项目（iOS/Android Ap
     ├── scripts/zip-dist.mjs      ← dist → zip，取 assets hash 作为版本号
     ├── package.json              ← 独立依赖（只装 vite，react 相关装在主项目）
     ├── tsconfig.json
-    ├── vite.config.ts            ← @vitejs/plugin-react + redirectIndexToInputPlugin（dev fallback 目标改 /input.html）
+    ├── vite.config.ts            ← @vitejs/plugin-react + base=/zt/input/
     └── dist/                     ← 构建产物（被主项目打包进 App）
 ```
 
@@ -45,7 +45,7 @@ H5 是**完全独立**的 Vite 项目：
 
 旧 QR URL 形如 `<base>/follow?id=<llmAnalysisId>&first=1`，**保持不变**。
 
-部署侧需配置 SPA fallback：把 `/follow`（以及 `/follow/*` 所有未命中静态文件的请求）rewrite 到 `/input.html`。
+部署侧需配置 SPA fallback：把 `/follow`（以及 `/follow/*` 所有未命中静态文件的请求）rewrite 到 `/index.html`。
 QR 始终带 `first=1`，按业务设计永远走 first 模式（`/name`）。
 
 > **重要**：部署在公众号服务器时，**必须**有 SPA fallback（nginx try_files / Node express sendFile / Tomcat RewriteValve 等）。
@@ -89,7 +89,7 @@ pnpm build          # 产出到 dist/
 
 ```
 dist/
-├── input.html                   ← 业务入口（强缓存）
+├── index.html                   ← 业务入口（强缓存）
 ├── assets/
 │   ├── input-[hash].css         ← content-hash 缓存（全部样式打包到一个文件）
 │   ├── input-[hash].js          ← content-hash 缓存（React + 全部业务代码）
@@ -104,7 +104,7 @@ vite 自动给 `assets/input-[hash].css|js` 加 content-hash：
 - 业务代码变了 → 文件名变 → 浏览器拉到新文件
 - 业务代码没变 → 文件名不变 → 浏览器 304 命中缓存
 
-部署侧需保证 `input.html` 不强缓存（或者走 SPA fallback 返同一份 input.html），
+部署侧需保证 `index.html` 不强缓存（或者走 SPA fallback 返同一份 index.html），
 否则 HTML 被缓存时新发版的 `assets/input-[hash].js` 用户拿不到。
 
 ## 与主项目的对接
@@ -116,9 +116,9 @@ vite 自动给 `assets/input-[hash].css|js` 加 content-hash：
 
 ```bash
 cd h5-oral-checkup
-pnpm build
-rm -rf ../public/h5-oral-checkup/*
-cp -r dist/* ../public/h5-oral-checkup/
+    pnpm build
+    rm -rf ../public/h5-oral-checkup/*
+    cp -r dist/. ../public/h5-oral-checkup/
 ```
 
 ## 打包发布产物
@@ -144,13 +144,13 @@ pnpm h5:zip
 **nginx**
 ```nginx
 location /follow {
-  try_files $uri /input.html;
+  try_files $uri /index.html;
 }
 ```
 
 **Express**
 ```js
-app.get('/follow{,/(*)?}', (req, res) => res.sendFile('dist/input.html', { root: '.' }))
+app.get('/follow{,/(*)?}', (req, res) => res.sendFile('dist/index.html', { root: '.' }))
 ```
 
 若服务器不支持 fallback，把 `src/App.tsx` 里的 `<BrowserRouter>` 改成 `<HashRouter>`，路径变成 `/#/phone` `/#/name` `/#/face-result`，无需 fallback，但 QR URL 也要同步改。
