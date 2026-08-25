@@ -305,50 +305,28 @@ public class HiTiPrinterManager {
                     logD("printPhoto: pre-set serviceConnector.m_strTablesRoot='" + tablesRoot + "'");
                     serviceConnector.m_strTablesRoot = tablesRoot;
 
-                    // 严格按 sample MainActivity#operatePrinter(USB_PRINT_PHOTOS) 行 651-655：
-                    //   raw Thread 里同步 set m_strTablesRoot → 同步 doService → 同步 reset。
-                    // a3fd715 引入 printExecutor.submit(() -> doService) 会把 doService 从 raw Thread
-                    // 移到独立线程，HiTi SDK 的 doService 在 rockchip/SDK 34 上偶发卡死 20s。
-                    // 实测在 raw Thread 里直接同步调用更接近 sample APK 行为，能正常返回。
-                    logD("printPhoto: calling serviceConnector.doService synchronously on " + Thread.currentThread().getName());
-                    long doServiceStartMs = System.currentTimeMillis();
-                    try {
-                        serviceConnector.doService(job);
-                    } finally {
-                        // 不管 doService 成功还是抛错，都把 m_strTablesRoot 立刻置空（sample 行为）。
-                        String before = serviceConnector.m_strTablesRoot;
-                        serviceConnector.m_strTablesRoot = "";
-                        long doServiceMs = System.currentTimeMillis() - doServiceStartMs;
-                        logD("printPhoto: doService returned on " + Thread.currentThread().getName()
-                                + " after " + doServiceMs + "ms; m_strTablesRoot was='" + before + "'");
-                    }
-
-                    String errCodeStr;
-                    if (job.errCode == null) {
-                        errCodeStr = "0x? null";
-                    } else {
-                        errCodeStr = "0x" + Integer.toHexString(job.errCode.value)
-                                + " " + String.valueOf(job.errCode.description);
-                    }
-                    logD("printPhoto: post-doService errCode=" + errCodeStr
-                            + " retData=" + job.retData);
-
-                    // 5) 走 sample retrieveData 字符串化输出
-                    String sampleOutput = retrieveSampleData(job);
-                    logD("printPhoto: retrieveSampleData -> " + sampleOutput.replace('\n', '\\'));
-
-                    // 喂一个 SDK-style 行到 native 日志文件以便后续检索
-                    if (printLogger != null) {
-                        printLogger.java(TAG, "[SAMPLE_OUTPUT] " + sampleOutput.replace('\n', ' '));
-                    }
-
-                    // 传给前端：把 errCode 归 0 当作"成功"，其它都算失败
-                    boolean errOk = job.errCode != null && job.errCode.value == 0;
-                    if (errOk) {
-                        post(cb, sampleOutput, null);
-                    } else {
-                        post(cb, sampleOutput, sampleOutput);
-                    }
+                    // 临时回退诊断：恢复 a3fd715 的 doServiceWithTimeout 兜底路径，
+                    // 验证 8e19301 引入的 raw Thread 同步 doService 是不是真的
+                    // "接近 sampleAPK 行为"。如果是卡死源头，兜底超时就会触发，
+                    // 日志里能看到 [doServiceWithTimeout: ... timed out after 20s]。
+                    // 如果不触发，问题在别处（bitmap/SDK 参数/USB 状态）。
+                    doServiceWithTimeout(job, new Callback<String>() {
+                        @Override public void onSuccess(String errStr) {
+                            String before = serviceConnector.m_strTablesRoot;
+                            serviceConnector.m_strTablesRoot = "";
+                            logD("printPhoto: post-clear serviceConnector.m_strTablesRoot, was='" + before + "'");
+                            if (errStr == null) {
+                                post(cb, "printed", null);
+                            } else {
+                                post(cb, null, errStr);
+                            }
+                        }
+                        @Override public void onError(String error) {
+                            serviceConnector.m_strTablesRoot = "";
+                            post(cb, null, error);
+                        }
+                    });
+                    return;
                 } catch (Throwable t) {
                     logE("printPhoto raw Thread failed", t);
                     post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
