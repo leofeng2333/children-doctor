@@ -188,26 +188,23 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
     </div>
 
     <!-- 打印模式选择（仅 PrintTestView 诊断使用，生产路径不暴露） -->
-    <fieldset class="mode-block" :disabled="isPrinting || hasPrinted">
-      <legend>打印模式（多模式对比诊断）</legend>
-      <label
-        v-for="opt in MODE_OPTIONS"
-        :key="opt.value"
-        class="mode-row"
-        :class="{ active: selectedMode === opt.value }"
-      >
-        <input
-          type="radio"
-          name="print-mode"
-          :value="opt.value"
-          v-model="selectedMode"
-        />
-        <div class="mode-text">
-          <div class="mode-label">{{ opt.label }}</div>
-          <div class="mode-hint">{{ opt.hint }}</div>
-        </div>
-      </label>
-    </fieldset>
+    <div class="mode-block" :class="{ disabled: isPrinting || hasPrinted }">
+      <div class="mode-title">打印模式（多模式对比诊断）</div>
+      <div class="mode-grid">
+        <button
+          v-for="opt in MODE_OPTIONS"
+          :key="opt.value"
+          type="button"
+          class="mode-btn"
+          :class="{ active: selectedMode === opt.value }"
+          :disabled="isPrinting || hasPrinted"
+          @click="selectedMode = opt.value"
+        >
+          <span class="mode-btn-label">{{ opt.label }}</span>
+          <span class="mode-btn-hint">{{ opt.hint }}</span>
+        </button>
+      </div>
+    </div>
 
     <button class="print-btn" :disabled="isPrinting || hasPrinted" @click="onPrint">
       {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
@@ -408,69 +405,76 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
 
 .mode-block {
   width: 425px;
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 16px 20px;
-  background: #fff;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #fff;
 
-  legend {
-    font-size: 20px;
-    font-weight: 600;
-    color: #111;
-    padding: 0 8px;
-  }
-
-  &:disabled {
+  &.disabled {
     opacity: 0.5;
+    pointer-events: none;
   }
 }
 
-.mode-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 8px 4px;
-  border-radius: 8px;
-  cursor: pointer;
+.mode-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111;
+}
 
-  &:hover:not([disabled]) {
-    background: #f5f5f7;
+.mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  background: #f5f5f7;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  min-height: 76px;
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
   }
 
   &.active {
     background: #fff5e6;
+    border-color: #ff9900;
   }
 
-  input[type='radio'] {
-    margin-top: 6px;
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    accent-color: #ff9900;
+  &:not(.active):not(:disabled):hover {
+    background: #ebebef;
   }
 }
 
-.mode-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mode-label {
-  font-size: 20px;
+.mode-btn-label {
+  font-size: 18px;
   font-weight: 600;
   color: #222;
+  white-space: nowrap;
 }
 
-.mode-hint {
-  font-size: 16px;
+.mode-btn-hint {
+  font-size: 13px;
   color: #666;
+  line-height: 1.3;
 }
 
 </style>
