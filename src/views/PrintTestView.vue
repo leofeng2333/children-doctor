@@ -37,12 +37,13 @@ const pickedImgName = ref<string>('') // 选中的文件名（用于显示）
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 /**
- * 打印模式（仅 PrintTestView 多模式对比诊断使用）：
+ * 打印模式（仅 PrintTestView 多模式对比诊断使用）—— 直接 4 个独立按钮，
+ * 点击即触发对应模式的打印。生产路径不在这里出现。
  *
  * - 'current'：与 v1.0.15-print-stable 一致（TS letterbox + Java 不旋转不 normalize，
  *   raw bitmap → SDK）。生产路径，验证根因是不是"TS letterbox 输出 portrait bitmap"。
  *
- * - 'cover-fit'：TS 强制 cover-fit 到 1536×1024 landscape + Java 不动。
+ * - 'cover-fit'：TS 强制 cover-fit 到 1844×1240 landscape + Java 不动。
  *   若直接打印恢复正常 ⇒ TS letterbox 是元凶。
  *
  * - 'portrait-rotate'：TS letterbox + Java 检测 portrait bitmap 后 90° 旋转。
@@ -52,13 +53,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
  *   510e621 时的混合方案。
  */
 type BitmapProcessMode = 'current' | 'cover-fit' | 'portrait-rotate' | 'portrait-rotate-normalize'
-const MODE_OPTIONS: ReadonlyArray<{ value: BitmapProcessMode; label: string; hint: string }> = [
-  { value: 'current', label: '1. current', hint: 'TS letterbox + Java 不动（生产路径）' },
-  { value: 'cover-fit', label: '2. cover-fit', hint: 'TS 强制 1536×1024 + Java 不动' },
-  { value: 'portrait-rotate', label: '3. portrait-rotate', hint: 'TS letterbox + Java 90° 旋转' },
-  { value: 'portrait-rotate-normalize', label: '4. portrait-rotate-normalize', hint: 'TS letterbox + Java 旋转 + normalize' },
-]
-const selectedMode = ref<BitmapProcessMode>('current')
 
 function onPickClick() {
   // 重置 value，确保同一张图也能再次触发 change
@@ -99,7 +93,8 @@ function onClearPicked() {
 }
 
 // 实际打印：优先用选中的本地图，没有就用内置的 analysis-success.png
-async function onPrint() {
+// 直接接收 mode 参数——4 个独立按钮各自调用 onPrint(opt.value)
+async function onPrint(mode: BitmapProcessMode) {
   if (isPrinting.value || hasPrinted.value) return
   // 没选本地图时，用内置图，并标记"已用过内置图"以便禁用
   const imgUrl = pickedImgUrl.value || analysisSuccess
@@ -111,17 +106,19 @@ async function onPrint() {
     imgName: pickedImgName.value || '(builtin analysis-success.png)',
     imgUrlType: imgUrl.slice(0, 40),
     len: imgUrl.length,
-    mode: selectedMode.value,
+    mode,
   })
   try {
     await printPhoto({
       goodImgUrl: imgUrl,
       qrcodeUrl: '',
-      jobName: pickedImgName.value ? `本地打印-${pickedImgName.value}` : '打印测试照片',
-      printMode: selectedMode.value,
+      jobName: pickedImgName.value
+        ? `本地打印-${pickedImgName.value}[${mode}]`
+        : `打印测试照片[${mode}]`,
+      printMode: mode,
     })
     hasPrinted.value = true
-    console.log('[PrintTest] printPhoto resolved (success)')
+    console.log('[PrintTest] printPhoto resolved (success) mode=' + mode)
   } catch (e) {
     const err = e as Error
     console.error('[PrintTest] printPhoto rejected:', err)
@@ -132,10 +129,9 @@ async function onPrint() {
   }
 }
 
-// 用户可手动从这里取出 native 日志路径（HiTi 打印成功后）
-// 在 vConsole 里查 printPhoto 内部的 "[print/HiTi] native log session started:"
-// 可找到具体路径（/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/print_*.log）。
-const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Android/data/com.children.doctor/files/print_logs/`
+// 用户可手动从 printPhoto 的 native 日志（"[print/HiTi] native log session started"）
+// 拿到具体路径；路径模板：
+// /storage/emulated/0/Android/data/com.children.doctor/files/print_logs/print_<ts>_<rand>.log
 </script>
 
 <template>
@@ -187,28 +183,48 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
       </div>
     </div>
 
-    <!-- 打印模式选择（仅 PrintTestView 诊断使用，生产路径不暴露） -->
-    <div class="mode-block" :class="{ disabled: isPrinting || hasPrinted }">
-      <div class="mode-title">打印模式（多模式对比诊断）</div>
+    <!-- 4 个独立打印按钮（仅 PrintTestView 诊断使用，生产路径不暴露） -->
+    <div class="mode-block">
+      <div class="mode-title">打印模式（点击即打印）</div>
       <div class="mode-grid">
         <button
-          v-for="opt in MODE_OPTIONS"
-          :key="opt.value"
           type="button"
           class="mode-btn"
-          :class="{ active: selectedMode === opt.value }"
           :disabled="isPrinting || hasPrinted"
-          @click="selectedMode = opt.value"
+          @click="onPrint('current')"
         >
-          <span class="mode-btn-label">{{ opt.label }}</span>
-          <span class="mode-btn-hint">{{ opt.hint }}</span>
+          <span class="mode-btn-label">1. current</span>
+          <span class="mode-btn-hint">TS letterbox + Java 不动（生产路径）</span>
+        </button>
+        <button
+          type="button"
+          class="mode-btn"
+          :disabled="isPrinting || hasPrinted"
+          @click="onPrint('cover-fit')"
+        >
+          <span class="mode-btn-label">2. cover-fit</span>
+          <span class="mode-btn-hint">TS 强制 1844×1240 + Java 不动</span>
+        </button>
+        <button
+          type="button"
+          class="mode-btn"
+          :disabled="isPrinting || hasPrinted"
+          @click="onPrint('portrait-rotate')"
+        >
+          <span class="mode-btn-label">3. portrait-rotate</span>
+          <span class="mode-btn-hint">TS letterbox + Java 90° 旋转</span>
+        </button>
+        <button
+          type="button"
+          class="mode-btn"
+          :disabled="isPrinting || hasPrinted"
+          @click="onPrint('portrait-rotate-normalize')"
+        >
+          <span class="mode-btn-label">4. portrait-rotate-normalize</span>
+          <span class="mode-btn-hint">TS letterbox + Java 旋转 + normalize</span>
         </button>
       </div>
     </div>
-
-    <button class="print-btn" :disabled="isPrinting || hasPrinted" @click="onPrint">
-      {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
-    </button>
 
     <p v-if="printError" class="print-error">{{ printError }}</p>
   </div>
@@ -265,31 +281,6 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
   color: #666;
   margin: 0;
   text-align: center;
-}
-
-.print-btn {
-  margin-top: 32px;
-  width: 425px;
-  height: 95px;
-  background: #ff9900;
-  color: #fff;
-  border: none;
-  border-radius: 16px;
-  font-size: 28px;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    opacity 0.2s ease;
-
-  &:active:not(:disabled) {
-    transform: scale(0.98);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 }
 
 .picker-block {
@@ -412,11 +403,6 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
   border: 1px solid #ddd;
   border-radius: 12px;
   background: #fff;
-
-  &.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
 }
 
 .mode-title {
@@ -436,31 +422,28 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 12px 14px;
-  background: #f5f5f7;
-  border: 2px solid transparent;
-  border-radius: 10px;
+  padding: 14px 16px;
+  background: #ff9900;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  transition: all 0.15s ease;
-  min-height: 76px;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    background 0.15s ease;
+  min-height: 84px;
 
   &:active:not(:disabled) {
     transform: scale(0.98);
+    background: #e68a00;
   }
 
   &:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  &.active {
-    background: #fff5e6;
-    border-color: #ff9900;
-  }
-
-  &:not(.active):not(:disabled):hover {
-    background: #ebebef;
   }
 }
 
