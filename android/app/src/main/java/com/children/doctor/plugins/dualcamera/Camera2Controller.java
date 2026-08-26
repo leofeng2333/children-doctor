@@ -385,7 +385,9 @@ public class Camera2Controller {
                             onAllCamerasOpened();
                         } else {
                             rejectPendingCall("Failed to open all cameras: " + slotErrors[0]);
-                        }              }
+                        }
+                    }
+                }
             }
         };
     }
