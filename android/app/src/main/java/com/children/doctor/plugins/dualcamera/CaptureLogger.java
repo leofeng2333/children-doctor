@@ -120,6 +120,7 @@ public class CaptureLogger {
 
     /**
      * 写一行日志。线程安全，内部 post 到 IO 线程。
+     * <b>任何异常都不允许抛出</b> —— 调用者在拍照/启动/关闭的关键路径上。
      * @param layer JS / JAVA / NATIVE
      * @param tag   模块名（Camera2Session、Camera2Controller、JS 等）
      * @param msg   日志内容（不允许包含换行；调用方需要时自行换行多次调用）
@@ -128,9 +129,17 @@ public class CaptureLogger {
         // 防御性：去掉 msg 里的换行避免破坏单行结构
         if (msg == null) msg = "<null>";
         msg = msg.replace('\n', ' ').replace('\r', ' ');
-        String line = isoTimestamp() + " [" + layer + "][" + tag + "] " + msg;
-        // 后台线程 post 写入；不要做同步 flush（避免阻塞调用方）
-        ioHandler.post(() -> writeLine(line));
+        final String line = isoTimestamp() + " [" + layer + "][" + tag + "] " + msg;
+        // 后台线程 post 写入；不要做同步 flush（避免阻塞调用方）。
+        // ioHandler.post 在 IO 线程死掉（OOM / 系统回收）后会抛 RejectedExecutionException，
+        // 这里必须吞掉 —— 拍照业务路径不能被日志系统拖崩。
+        Handler h = ioHandler;
+        if (h == null) return;
+        try {
+            h.post(() -> writeLine(line));
+        } catch (Throwable t) {
+            android.util.Log.w("CaptureLogger", "ioHandler.post failed: " + t.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -224,6 +233,10 @@ public class CaptureLogger {
             }
         } catch (IOException e) {
             Log.e(TAG, "writeLine failed: " + e.getMessage());
+        } catch (Throwable t) {
+            // 兜底：任何其他异常（罕见，比如文件描述符被另一线程关掉）都不能让 IO 线程死掉，
+            // 否则后续所有 post 到 ioHandler 的任务全部被丢弃。
+            Log.e(TAG, "writeLine unexpected: " + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
     }
 

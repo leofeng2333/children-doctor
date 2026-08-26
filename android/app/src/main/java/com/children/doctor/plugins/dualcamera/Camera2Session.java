@@ -15,9 +15,11 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.ExifInterface;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
@@ -51,15 +53,47 @@ public class Camera2Session {
         captureLogger = logger;
     }
 
+    /**
+     * 写一行日志。最重要的契约：<b>任何异常都不能往外抛</b>，调用者都在拍照 / 启动 / 关闭的关键路径上。
+     * 这里集中防御：
+     * <ul>
+     *   <li>captureLogger 未注入 → 直接返回（feature disabled）</li>
+     *   <li>captureLogger.java 抛任何异常 → 吞掉，写到 logcat 的 E 通道，便于诊断但不污染业务路径</li>
+     * </ul>
+     */
     private static void log(String msg) {
-        if (captureLogger != null) captureLogger.java(TAG, msg);
+        CaptureLogger logger = captureLogger;
+        if (logger == null || msg == null) return;
+        try {
+            logger.java(TAG, msg);
+        } catch (Throwable t) {
+            // 绝对不能让日志让拍照链路崩溃。
+            // 这种情况几乎只发生在 IO 线程死掉之后又 post（RejecetedExecutionException）。
+            Log.w(TAG, "captureLogger.java threw: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
     }
 
-    /** 便捷重载：格式化参数 */
+    /** 便捷重载：格式化参数。格式化或写日志任何一步抛异常都吞掉。 */
     private static void log(String fmt, Object... args) {
-        if (captureLogger != null) {
-            captureLogger.java(TAG, String.format(Locale.US, fmt, args));
+        CaptureLogger logger = captureLogger;
+        if (logger == null || fmt == null) return;
+        String formatted;
+        try {
+            formatted = String.format(Locale.US, fmt, args);
+        } catch (Throwable t) {
+            // args 类型与 fmt 不匹配（IllegalFormatConversionException）时，退回用 "+" 拼接
+            StringBuilder sb = new StringBuilder(fmt == null ? "<null fmt>" : fmt);
+            if (args != null) {
+                sb.append(" | args=[");
+                for (int i = 0; i < args.length; i++) {
+                    if (i > 0) sb.append(',');
+                    sb.append(args[i] == null ? "null" : String.valueOf(args[i]));
+                }
+                sb.append(']');
+            }
+            formatted = sb.toString();
         }
+        log(formatted);
     }
 
     private static final int MAX_CAPTURE_BUFFERS = 2;
@@ -217,6 +251,9 @@ public class Camera2Session {
                     Size[] jpegSizes = (map != null) ? map.getOutputSizes(ImageFormat.JPEG) : null;
                     Size[] previewSizes = (map != null) ? map.getOutputSizes(SurfaceTexture.class) : null;
 
+                    Integer sensorOrientObj = chars.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                    int sensorOrient = (sensorOrientObj != null) ? sensorOrientObj : -1;
+
                     Log.d(TAG, String.format(
                             "[CAMERA ENUM] index=%d id=%s facing=%s hwLevel=%s isLogicalMulti=%s jpegSizes=%d previewSizes=%d caps=[%s]",
                             i, id, facingStr, hwLevelStr, isLogicalMultiCamera,
@@ -224,6 +261,13 @@ public class Camera2Session {
                             previewSizes != null ? previewSizes.length : 0,
                             capsStr
                     ));
+                    log("[CAMERA ENUM] id=" + id
+                            + " facing=" + facingStr
+                            + " hwLevel=" + hwLevelStr
+                            + " sensorOrient=" + sensorOrient
+                            + " jpegSizes=" + (jpegSizes != null ? jpegSizes.length : 0)
+                            + " previewSizes=" + (previewSizes != null ? previewSizes.length : 0)
+                            + " caps=[" + capsStr + "]");
 
                     Size capture = chooseOptimalSize(context, id, true);
                     Size preview = chooseOptimalSize(context, id, false);
@@ -231,6 +275,9 @@ public class Camera2Session {
                     result.add(new Camera2Info(id, lensFacing, preview, capture));
                     Log.d(TAG, "Camera2Enum: id=" + id + ", facing=" + lensFacing
                             + ", preview=" + preview + ", capture=" + capture);
+                    log("[CAMERA ENUM] chosen for id=" + id
+                            + " preview=" + (preview != null ? preview.getWidth() + "x" + preview.getHeight() : "null")
+                            + " capture=" + (capture != null ? capture.getWidth() + "x" + capture.getHeight() : "null"));
                 } catch (Exception e) {
                     Log.w(TAG, "Skipping camera id=" + id + ": " + e.getMessage());
                 }
@@ -513,7 +560,8 @@ public class Camera2Session {
                 Log.d(TAG, "open: using YUV_420_888 ImageReader for " + cameraId
                         + " (UVC soft-encode workaround), size=" + yuvSize);
                 log("open: ImageReader=YUV_420_888 size=" + yuvSize
-                        + " (UVC workaround active, hwLevel=" + hwLevelName() + ")");
+                        + " (UVC workaround active, hwLevel=" + hwLevelName()
+                        + " preferYuv=" + preferYuv + ")");
                 this.imageReader = ImageReader.newInstance(
                         yuvSize.getWidth(),
                         yuvSize.getHeight(),
@@ -523,7 +571,8 @@ public class Camera2Session {
             } else {
                 this.captureImageFormat = ImageFormat.JPEG;
                 log("open: ImageReader=JPEG size=" + captureSize
-                        + " (HAL hardware encoder path, hwLevel=" + hwLevelName() + ")");
+                        + " (HAL hardware encoder path, hwLevel=" + hwLevelName()
+                        + " preferYuv=" + preferYuv + ")");
                 this.imageReader = ImageReader.newInstance(
                         captureSize.getWidth(),
                         captureSize.getHeight(),
@@ -721,6 +770,10 @@ public class Camera2Session {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
                     Log.d(TAG, "Session onConfigured: cameraDevice=" + cameraDevice);
+                    log("captureSession.onConfigured cameraId=" + cameraId
+                            + " surfaces=" + surfaces.size()
+                            + " (1=previewSurface, 2=+imageReader.ImageFormat="
+                            + (captureImageFormat == ImageFormat.JPEG ? "JPEG" : "YUV_420_888") + ")");
                     if (isShutdown) {
                         Log.w(TAG, "Session shutdown during onConfigured, dropping session");
                         try { session.close(); } catch (Exception ignored) {}
@@ -740,22 +793,30 @@ public class Camera2Session {
 
                 @Override
                 public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                    log("captureSession.onConfigureFailed cameraId=" + cameraId
+                            + " imageReaderFormat="
+                            + (captureImageFormat == ImageFormat.JPEG ? "JPEG" : "YUV_420_888")
+                            + " captureSize=" + captureSize
+                            + " previewSize=" + previewSize);
                     captureSession = null;
                     callback.onError("Session configuration failed");
                 }
             }, cameraHandler);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to create capture session", e);
+            log("captureSession.createCameraAccessException cameraId=" + cameraId + " err=" + e.getMessage());
             callback.onError("Failed to create session: " + e.getMessage());
         } catch (NullPointerException | IllegalStateException e) {
             // 兜底：cameraDevice / captureSession 在 callback 排队期间被另一线程 close，
             // 或者 ImageReader 处于已关闭状态。会拿到 NPE/ISE，必须转成业务错误。
             Log.e(TAG, "Capture session aborted due to concurrent close", e);
+            log("captureSession.concurrentClose cameraId=" + cameraId + " err=" + e.getMessage());
             callback.onError("Camera closed during session create: " + e.getMessage());
         } catch (RuntimeException e) {
             // 兜底：任何漏网的运行时异常（IPC 失败、状态机错乱等），
             // 都不能让 Camera2Thread 整个挂掉。
             Log.e(TAG, "Unexpected runtime error creating capture session", e);
+            log("captureSession.unexpectedRuntimeError cameraId=" + cameraId + " err=" + e.getMessage());
             callback.onError("Unexpected session error: " + e.getMessage());
         }
     }
@@ -838,6 +899,9 @@ public class Camera2Session {
                 this.captureSize = yuvSize;
                 Log.d(TAG, "restartPreviewWithExistingSurface: using YUV_420_888 ImageReader for "
                         + cameraId + ", size=" + yuvSize);
+                log("restartPreviewWithExistingSurface: ImageReader=YUV_420_888 size=" + yuvSize
+                        + " (UVC workaround active, hwLevel=" + hwLevelName()
+                        + " preferYuv=" + preferYuv + ")");
                 this.imageReader = ImageReader.newInstance(
                         yuvSize.getWidth(),
                         yuvSize.getHeight(),
@@ -846,6 +910,10 @@ public class Camera2Session {
                 );
             } else {
                 this.captureImageFormat = ImageFormat.JPEG;
+                this.captureSize = captureSize;
+                log("restartPreviewWithExistingSurface: ImageReader=JPEG size=" + captureSize
+                        + " (HAL hardware encoder path, hwLevel=" + hwLevelName()
+                        + " preferYuv=" + preferYuv + ")");
                 this.imageReader = ImageReader.newInstance(
                         captureSize.getWidth(),
                         captureSize.getHeight(),
@@ -937,70 +1005,125 @@ public class Camera2Session {
                 + " captureSize=" + captureSize
                 + " filePath=" + filePath);
 
-        imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
-            @Override
-            public void onImageAvailable(ImageReader reader) {
-                Image image = null;
-                try {
-                    image = reader.acquireNextImage();
-                    if (image == null) {
+imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    Image image = null;
+                    try {
+                        image = reader.acquireNextImage();
+                        if (image == null) {
+                            isCapturing.set(false);
+                            callback.onCaptureError("No image available");
+                            log("onImageAvailable cameraId=" + cameraId + " FAILED: image null");
+                            return;
+                        }
+
+                        long encodeStart = System.currentTimeMillis();
+                        int rawBytes = 0;
+                        byte[] bytes;
+                        if (captureImageFormat == ImageFormat.YUV_420_888) {
+                            bytes = yuvImageToJpegBytes(image);
+                            // YUV 路径无法在编码前直接拿"原始字节数"，用 JPEG 输出大小做对比基准
+                            rawBytes = bytes != null ? bytes.length : 0;
+                        } else {
+                            // JPEG 路径：直接拿 plane 0 的 buffer。
+                            ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+                            bytes = new byte[buffer.remaining()];
+                            buffer.get(bytes);
+                            rawBytes = bytes.length;
+                        }
+                        long encodeMs = System.currentTimeMillis() - encodeStart;
+
+                        byte[] finalBytes = applyFrontMirrorIfNeeded(bytes);
+                        int finalBytesLen = finalBytes != null ? finalBytes.length : 0;
+                        boolean changedByMirror = (finalBytesLen != rawBytes);
+
+                        try (FileOutputStream fos = new FileOutputStream(filePath)) {
+                            fos.write(finalBytes);
+                        }
+
+                        // 诊断：写盘后用 ExifInterface 读回 orientation+dimensions，
+                        // 用来核对"HAL 写入的 EXIF rotation"vs"我们后来 bitmap 旋转时是否覆盖了 EXIF"。
+                        // 注意：BitmapFactory.compress 不会自动写回 EXIF，所以 JPEG 路径下 EXIF 保留 HAL 的值。
+                        String exifInfo = "n/a";
+                        try {
+                            ExifInterface exif = new ExifInterface(filePath);
+                            int rotationTag = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+                            int exifW = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0);
+                            int exifH = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0);
+                            exifInfo = "rotation=" + rotationTag + " dims=" + exifW + "x" + exifH;
+                        } catch (Throwable exifErr) {
+                            exifInfo = "read-failed(" + exifErr.getClass().getSimpleName() + ")";
+                        }
+
+                        long fileSizeKb = new File(filePath).length() / 1024;
+                        long totalMs = System.currentTimeMillis() - captureStartMs;
+                        log("onImageAvailable cameraId=" + cameraId
+                                + " format=" + (captureImageFormat == ImageFormat.JPEG ? "JPEG" : "YUV_420_888")
+                                + " captureSize=" + captureSize.getWidth() + "x" + captureSize.getHeight()
+                                + " rawBytes=" + rawBytes
+                                + " finalBytes=" + finalBytesLen
+                                + " changedByMirror=" + changedByMirror
+                                + " encodeMs=" + encodeMs
+                                + " totalMs=" + totalMs
+                                + " fileSizeKb=" + fileSizeKb
+                                + " exif=" + exifInfo
+                                + " filePath=" + filePath);
                         isCapturing.set(false);
-                        callback.onCaptureError("No image available");
-                        return;
-                    }
-
-                    long encodeStart = System.currentTimeMillis();
-                    byte[] bytes;
-                    if (captureImageFormat == ImageFormat.YUV_420_888) {
-                        bytes = yuvImageToJpegBytes(image);
-                    } else {
-                        // JPEG 路径：直接拿 plane 0 的 buffer。
-                        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                        bytes = new byte[buffer.remaining()];
-                        buffer.get(bytes);
-                    }
-                    long encodeMs = System.currentTimeMillis() - encodeStart;
-
-                    byte[] finalBytes = applyFrontMirrorIfNeeded(bytes);
-
-                    try (FileOutputStream fos = new FileOutputStream(filePath)) {
-                        fos.write(finalBytes);
-                    }
-
-                    long fileSizeKb = new File(filePath).length() / 1024;
-                    long totalMs = System.currentTimeMillis() - captureStartMs;
-                    log("onImageAvailable cameraId=" + cameraId
-                            + " encodeMs=" + encodeMs
-                            + " totalMs=" + totalMs
-                            + " fileSizeKb=" + fileSizeKb);
-                    isCapturing.set(false);
-                    callback.onCaptureSuccess(filePath, fileSizeKb);
-                } catch (Exception e) {
-                    Log.e(TAG, "Capture processing failed", e);
-                    log("Capture processing failed cameraId=" + cameraId + " err=" + e.getMessage());
-                    isCapturing.set(false);
-                    callback.onCaptureError("Processing failed: " + e.getMessage());
-                } finally {
-                    if (image != null) {
-                        image.close();
+                        callback.onCaptureSuccess(filePath, fileSizeKb);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Capture processing failed", e);
+                        log("Capture processing failed cameraId=" + cameraId + " err=" + e.getMessage());
+                        isCapturing.set(false);
+                        callback.onCaptureError("Processing failed: " + e.getMessage());
+                    } finally {
+                        if (image != null) {
+                            image.close();
+                        }
                     }
                 }
-            }
-        }, cameraHandler);
+            }, cameraHandler);
 
         try {
             CaptureRequest.Builder builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             builder.addTarget(imageReader.getSurface());
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
-            builder.set(CaptureRequest.JPEG_ORIENTATION, getJpegOrientation(getDisplayRotation()));
+            int jpegOrientation = getJpegOrientation(getDisplayRotation());
+            builder.set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation);
+            log("capture REQ cameraId=" + cameraId
+                    + " format=" + (captureImageFormat == ImageFormat.JPEG ? "JPEG" : "YUV_420_888")
+                    + " captureSize=" + captureSize.getWidth() + "x" + captureSize.getHeight()
+                    + " sensorOrient=" + sensorOrientation
+                    + " displayRot=" + getDisplayRotation()
+                    + " jpegOrientation=" + jpegOrientation
+                    + " globalForceBackMirror=" + globalForceBackMirror);
 
             captureSession.capture(builder.build(), new CameraCaptureSession.CaptureCallback() {
+                @Override
+                public void onCaptureStarted(@NonNull CameraCaptureSession session,
+                                              @NonNull CaptureRequest request,
+                                              long timestamp, long frameNumber) {
+                    Log.d(TAG, "Capture started for " + cameraId + " frame=" + frameNumber);
+                    log("capture STARTED cameraId=" + cameraId
+                            + " frame=" + frameNumber
+                            + " ts=" + timestamp);
+                }
+
                 @Override
                 public void onCaptureCompleted(@NonNull CameraCaptureSession session,
                                                @NonNull CaptureRequest request,
                                                @NonNull TotalCaptureResult result) {
                     Log.d(TAG, "Capture completed for " + cameraId);
+                    Object orientObj = null;
+                    try {
+                        orientObj = result.get(CaptureResult.JPEG_ORIENTATION);
+                    } catch (Throwable ignored) {
+                        // JPEG_ORIENTATION 只对 JPEG output 有效；YUV 路径下 result 里可能没有这个 key。
+                    }
+                    log("capture COMPLETED cameraId=" + cameraId
+                            + " jpegOrientation=" + orientObj
+                            + " sensorOrientation=" + sensorOrientation);
                 }
             }, cameraHandler);
 
@@ -1104,7 +1227,21 @@ public class Camera2Session {
         YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, w, h, null);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         yuv.compressToJpeg(new Rect(0, 0, w, h), 92, baos);
-        return baos.toByteArray();
+        byte[] jpeg = baos.toByteArray();
+
+        // 诊断：YUV 输入尺寸 + plane 步进布局 + JPEG 输出大小。
+        // 关键：UVC HAL 给我们的是 sensor 原始朝向，1280x720 通常是横屏 layout；
+        // 如果看到 w<h 说明 HAL 已经在底层转过——是非常有价值的反推信息。
+        log("yuvImageToJpegBytes cameraId=" + cameraId
+                + " input=" + w + "x" + h
+                + " yRowStride=" + yRowStride
+                + " yPixStride=" + yPixStride
+                + " uRowStride=" + uRowStride
+                + " vRowStride=" + vRowStride
+                + " uPixelStride=" + uPixelStride
+                + " vPixelStride=" + vPixelStride
+                + " jpegBytes=" + (jpeg != null ? jpeg.length : 0));
+        return jpeg;
     }
 
     // 全局兜底：所有后置（UVC / 内置后置）拍照时是否强制水平镜像。
@@ -1119,44 +1256,115 @@ public class Camera2Session {
     /** 单 session 覆盖。 */
     public void setForceMirrorBack(boolean v) { this.forceMirrorBack = v; }
 
+    /**
+     * 对拍照得到的 JPEG bytes 做方向/镜像修正，让最终文件 = 预览方向。
+     *
+     * <p>两条路径：
+     * <ul>
+     *   <li>JPEG（HAL 编码）：HAL 已按 {@code CaptureRequest.JPEG_ORIENTATION} 写入 EXIF rotation，
+     *       BitmapFactory.decodeByteArray 会自动按 EXIF 旋转，所以这里只做水平镜像修正（前置默认镜像 / 后置 globalForceBackMirror）。</li>
+     *   <li>YUV（Java 层软编码）：HAL 不会写 EXIF rotation，必须手动旋转 + 镜像。
+     *       旋转角度 = 与预览 TextureView 的 setTransform 一致（{@code (sensorOrientation - displayRotDeg + 360) % 360}）。</li>
+     * </ul>
+     *
+     * <p>日志：所有路径都写入 CaptureLogger，便于诊断"照片 vs 预览"差异。
+     */
     private byte[] applyFrontMirrorIfNeeded(byte[] bytes) {
-        // JPEG 路径下，HAL 已通过 CaptureRequest.JPEG_ORIENTATION 写入 EXIF，
-        // BitmapFactory.decodeByteArray 会自动按 EXIF 旋转，所以这里只需要水平镜像前置摄像头。
-        // YUV 路径下，JPEG_ORIENTATION 不生效，需要我们手动旋转。
         boolean wasAlreadyRotatedByExif = (captureImageFormat == ImageFormat.JPEG);
-
         boolean isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT);
         boolean needMirror = isFront || forceMirrorBack || globalForceBackMirror;
 
+        int displayRotDeg;
+        switch (getDisplayRotation()) {
+            case Surface.ROTATION_90:  displayRotDeg = 90;  break;
+            case Surface.ROTATION_180: displayRotDeg = 180; break;
+            case Surface.ROTATION_270: displayRotDeg = 270; break;
+            default:                    displayRotDeg = 0;   break;
+        }
+
+        // YUV 路径下，照片方向必须 = 预览方向（与 configureTransform 完全一致）
+        // 后置：(sensor - displayRot + 360) % 360
+        // 前置：(sensor + displayRot + 360) % 360
+        int yuvDegrees;
+        if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+            yuvDegrees = (sensorOrientation + displayRotDeg + 360) % 360;
+        } else {
+            yuvDegrees = (sensorOrientation - displayRotDeg + 360) % 360;
+        }
+
+        String formatStr;
+        switch (captureImageFormat) {
+            case ImageFormat.JPEG: formatStr = "JPEG"; break;
+            case ImageFormat.YUV_420_888: formatStr = "YUV_420_888"; break;
+            default: formatStr = "ImageFormat(" + captureImageFormat + ")";
+        }
+        String facingStr;
+        switch (lensFacing) {
+            case CameraCharacteristics.LENS_FACING_FRONT:    facingStr = "FRONT"; break;
+            case CameraCharacteristics.LENS_FACING_BACK:     facingStr = "BACK"; break;
+            case CameraCharacteristics.LENS_FACING_EXTERNAL: facingStr = "EXTERNAL"; break;
+            default:                                          facingStr = "UNKNOWN(" + lensFacing + ")";
+        }
+
+        log("applyMirror cameraId=" + cameraId
+                + " format=" + formatStr
+                + " facing=" + facingStr
+                + " sensorOrient=" + sensorOrientation
+                + " displayRot=" + displayRotDeg
+                + " wasAlreadyRotatedByExif=" + wasAlreadyRotatedByExif
+                + " isFront=" + isFront
+                + " forceMirrorBack=" + forceMirrorBack
+                + " globalForceBackMirror=" + globalForceBackMirror
+                + " needMirror=" + needMirror
+                + " yuvDegrees=" + yuvDegrees
+                + " jpegOrientation=" + getJpegOrientation(getDisplayRotation()));
+
         if (!needMirror) {
-            if (wasAlreadyRotatedByExif) return bytes;
-            return rotateJpeg(bytes, getJpegOrientation(getDisplayRotation()));
+            if (wasAlreadyRotatedByExif) {
+                log("applyMirror branch=JPEG-noMirror (EXIF rotation already applied by HAL, no extra transform)");
+                return bytes;
+            }
+            log("applyMirror branch=YUV-rotateOnly degrees=" + yuvDegrees);
+            return rotateJpeg(bytes, yuvDegrees);
         }
 
         if (wasAlreadyRotatedByExif) {
-            // 前置 JPEG / 强制镜像的后置 JPEG：EXIF 已经旋转，只做水平镜像
-            Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            if (original == null) return bytes;
-            int w = original.getWidth();
-            int h = original.getHeight();
-            Bitmap mirrored = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(mirrored);
-            Matrix m = new Matrix();
-            m.setScale(-1f, 1f);
-            m.postTranslate(w, 0);
-            canvas.drawBitmap(original, m, null);
-            original.recycle();
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
-            mirrored.recycle();
-            return baos.toByteArray();
+            // JPEG 路径：HAL 已按 JPEG_ORIENTATION 写入 EXIF rotation。
+            // EXIF 不区分前置/后置镜像——HAL 默认前置水平镜像预览，拍照时通常也镜像（取决于 HAL）。
+            // 我们不能假设 HAL 在拍照时也镜像了前置（不同设备行为不同），所以强制水平镜像一次保证一致。
+            // 后置走 globalForceBackMirror=true 时也需要镜像。
+            log("applyMirror branch=JPEG-mirrorOnly (EXIF rotation already applied by HAL, applying horizontal mirror)");
+            return mirrorJpegOnly(bytes);
         }
 
-        // 前置 YUV / 强制镜像的后置 YUV：手动旋转 + 水平镜像
-        return rotateAndMirrorJpeg(bytes, getJpegOrientation(getDisplayRotation()));
+        // YUV 路径：照片方向 = 预览方向 + 水平镜像
+        log("applyMirror branch=YUV-rotateAndMirror degrees=" + yuvDegrees);
+        return rotateAndMirrorJpeg(bytes, yuvDegrees);
     }
 
-    /** 仅旋转（后置摄像头 UVC）。 */
+    /** 仅水平镜像（用于 JPEG 路径：EXIF 已旋转，只需水平镜像修正）。 */
+    private byte[] mirrorJpegOnly(byte[] bytes) {
+        Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        if (original == null) {
+            log("mirrorJpegOnly: BitmapFactory.decodeByteArray returned null, returning original bytes");
+            return bytes;
+        }
+        int w = original.getWidth();
+        int h = original.getHeight();
+        Bitmap mirrored = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(mirrored);
+        Matrix m = new Matrix();
+        m.setScale(-1f, 1f);
+        m.postTranslate(w, 0);
+        canvas.drawBitmap(original, m, null);
+        original.recycle();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        mirrored.compress(Bitmap.CompressFormat.JPEG, 95, baos);
+        mirrored.recycle();
+        return baos.toByteArray();
+    }
+
+    /** 仅旋转（后置摄像头 UVC / 不需要镜像时）。 */
     private byte[] rotateJpeg(byte[] bytes, int degrees) {
         if (degrees == 0) return bytes;
         Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
@@ -1173,23 +1381,24 @@ public class Camera2Session {
         return baos.toByteArray();
     }
 
-    /** 旋转 + 水平镜像（前置 UVC）。 */
+    /**
+     * 旋转 + 水平镜像（前置 UVC / 强制镜像的后置 UVC）。
+     *
+     * <p>统一为：先按 degrees 旋转，再绕中心水平镜像。比之前 if/else 90 vs others 更稳。
+     * UVC 后置常见 sensor=0, displayRot=0 → degrees=0 → 仅水平镜像。
+     */
     private byte[] rotateAndMirrorJpeg(byte[] bytes, int degrees) {
         Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-        if (original == null) return bytes;
+        if (original == null) {
+            log("rotateAndMirrorJpeg: BitmapFactory.decodeByteArray returned null, returning original bytes");
+            return bytes;
+        }
         int w = original.getWidth();
         int h = original.getHeight();
         Matrix m = new Matrix();
-        if (degrees == 90) {
-            // 90/270: 先旋转再水平镜像，镜像系数 +1 改成 -1 + postTranslate
-            m.postRotate(degrees);
-            m.postScale(-1f, 1f);
-            m.postTranslate(w, 0);
-        } else {
-            // 0/180: 直接水平镜像
-            m.postScale(-1f, 1f);
-            m.postTranslate(w, 0);
-        }
+        m.postRotate(degrees);
+        // 绕中心水平镜像：避免越界、避免依赖旋转后的尺寸
+        m.postScale(-1f, 1f, w / 2f, h / 2f);
         Bitmap transformed = Bitmap.createBitmap(original, 0, 0, w, h, m, true);
         original.recycle();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

@@ -3,6 +3,8 @@ package com.children.doctor.plugins.dualcamera;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraCharacteristics;
 import android.os.Handler;
@@ -53,6 +55,12 @@ public class Camera2Controller {
     private android.widget.FrameLayout containerView;
     /** 每列的对焦辅助椭圆虚线框（索引对齐 slot）。仅在 native 预览开启时显示。 */
     private android.view.View[] focusOverlays;
+    /** 是否已为该 slot 应用过 preview transform（首帧触发后置 true）。 */
+    private boolean[] transformAppliedForSlot;
+    /** 设备旋转监听，displayRotation 变化时重算 preview transform。 */
+    private android.view.OrientationEventListener orientationListener;
+    /** 上一次报告的旋转角度（去重，只在跨越 0/90/180/270 边界时触发）。 */
+    private int lastReportedRotation = -1;
     /** 贴在预览下沿的跨列引导文案 TextView，仅有一个（slotCount>=1 时都显示）。 */
     private android.widget.TextView focusCaption;
     /** 单/双列预览画面纹理高（4:3 高度），caption 位置计算用。 */
@@ -125,6 +133,7 @@ public class Camera2Controller {
         // 修订 D：防止上次 preview 残留字段穿到新一次预览（虽然 stopPreview 会清理，双保险）
         focusOverlays = new android.view.View[slotCount];
         focusCaption = null;
+        transformAppliedForSlot = new boolean[slotCount];
 
         android.widget.FrameLayout container = new android.widget.FrameLayout(context);
         container.setLayoutParams(new ViewGroup.LayoutParams(
@@ -154,18 +163,26 @@ public class Camera2Controller {
                 @Override
                 public void onSurfaceTextureAvailable(@NonNull SurfaceTexture st, int width, int height) {
                     Log.d(TAG, "SurfaceTexture available: " + width + "x" + height + ", slot=" + slot);
+                    log("SurfaceTexture available slot=" + slot + " viewSize=" + width + "x" + height);
                     if (sessions == null || sessions[slot] == null) return;
 
                     Size preview = sessions[slot].getPreviewSize();
                     st.setDefaultBufferSize(preview.getWidth(), preview.getHeight());
                     Log.d(TAG, "setDefaultBufferSize: " + preview.getWidth() + "x" + preview.getHeight());
+                    log("setDefaultBufferSize slot=" + slot + " preview=" + preview.getWidth() + "x" + preview.getHeight());
                     surfaceTexture = st;
                     surface = new Surface(surfaceTexture);
                     mainHandler.post(this::openCameraIfReady);
+                    // 首次 layout 后立即计算并应用一次预览 transform
+                    mainHandler.post(() -> configureTransform(slot, "onSurfaceTextureAvailable"));
                 }
 
                 @Override
-                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture st, int width, int height) {}
+                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture st, int width, int height) {
+                    Log.d(TAG, "SurfaceTexture sizeChanged: " + width + "x" + height + ", slot=" + slot);
+                    log("SurfaceTexture sizeChanged slot=" + slot + " viewSize=" + width + "x" + height);
+                    configureTransform(slot, "onSurfaceTextureSizeChanged");
+                }
 
                 @Override
                 public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture st) {
@@ -185,12 +202,20 @@ public class Camera2Controller {
 
                 @Override
                 public void onSurfaceTextureUpdated(@NonNull SurfaceTexture st) {
+                    // 首帧到位后再补一次 transform（onSurfaceTextureAvailable 时 view 可能还没 layout 完成）
+                    if (!transformAppliedForSlot[slot]) {
+                        transformAppliedForSlot[slot] = true;
+                        configureTransform(slot, "onSurfaceTextureUpdated(首帧)");
+                    }
                 }
             });
 
             ViewGroup root = buildCameraSlotView(slot, textureView, colMargin);
             container.addView(root);
         }
+
+        // 设备旋转时 displayRotation 会变，重新计算每个 slot 的 preview transform
+        enableOrientationListener();
 
         // 计算单列宽（与 buildCameraSlotView 内部 0.85/0.415 严格一致），在 caption 创建前
         // 算出来供后续 OnLayout 阶段做精确底部偏移。
@@ -335,6 +360,9 @@ public class Camera2Controller {
                 Log.d(TAG, "onOpened: slot=" + slot + " tv=" + (tv != null ? tv.getWidth() + "x" + tv.getHeight() : "null"));
                 if (tv != null) {
                     Log.d(TAG, "Camera slot " + slot + " preview started");
+                    // 摄像头打开后，session 内的 sensorOrientation / previewSize 已就绪，
+                    // 此时 viewbox 也已 layout 完成，再补一次 transform 兜底
+                    configureTransform(slot, "session.onOpened");
                 }
 
                 synchronized (Camera2Controller.this) {
@@ -787,6 +815,8 @@ public class Camera2Controller {
             // 内存卫生：release 引用（container 已 removeView，但字段仍持有，可能泄漏）
             focusOverlays = null;
             focusCaption = null;
+            transformAppliedForSlot = null;
+            disableOrientationListener();
             Log.d(TAG, "Preview stopped, camera resources and views released");
         });
     }
@@ -912,5 +942,152 @@ public class Camera2Controller {
             }
         }
         return inSampleSize;
+    }
+
+    /**
+     * 计算并应用 TextureView 的 preview transform，让 UVC 摄像头预览方向正确。
+     *
+     * <p>公式来源：Android 官方 Camera2BasicFragment.configureTransform。
+     * 关键变量（全部从 HAL 真实读取）：
+     * <ul>
+     *   <li>{@code previewSize}：{@link Camera2Session#getPreviewSize()}，UVC 通常是 1280x720 / 1920x1080（landscape）</li>
+     *   <li>{@code sensorOrientation}：{@link Camera2Session#getSensorOrientation()}，UVC 常见 0/180；手机内置前置 270、后置 90</li>
+     *   <li>{@code displayRotation}：{@link Camera2Session#getDisplayRotation()}，0/90/180/270 → 0/1/2/3</li>
+     *   <li>{@code lensFacing}：影响 front camera 的额外水平镜像（HAL 层默认行为）</li>
+     * </ul>
+     *
+     * <p>计算出的 rotation 直接写入 CaptureLogger，便于核对"自动识别"是否正确。
+     * 该方法幂等：每次调用都用最新 view 尺寸重算并覆盖 setTransform。
+     */
+    private void configureTransform(int slot, String trigger) {
+        if (textureViews == null || slot < 0 || slot >= textureViews.length) return;
+        TextureView tv = textureViews[slot];
+        if (tv == null) return;
+        if (sessions == null || slot >= sessions.length || sessions[slot] == null) {
+            log("configureTransform slot=" + slot + " trigger=" + trigger + " SKIP sessions null");
+            return;
+        }
+
+        int vw = tv.getWidth();
+        int vh = tv.getHeight();
+        if (vw <= 0 || vh <= 0) {
+            log("configureTransform slot=" + slot + " trigger=" + trigger
+                    + " SKIP view not laid out view=" + vw + "x" + vh);
+            return;
+        }
+
+        Camera2Session s = sessions[slot];
+        Size preview = s.getPreviewSize();
+        if (preview == null) {
+            log("configureTransform slot=" + slot + " trigger=" + trigger + " SKIP previewSize null");
+            return;
+        }
+        int sensor = s.getSensorOrientation();
+        int displayRot = s.getDisplayRotation(); // Surface.ROTATION_0/90/180/270
+        int lensFacing = s.getLensFacing();
+        String facingStr;
+        switch (lensFacing) {
+            case CameraCharacteristics.LENS_FACING_FRONT:    facingStr = "FRONT"; break;
+            case CameraCharacteristics.LENS_FACING_BACK:     facingStr = "BACK"; break;
+            case CameraCharacteristics.LENS_FACING_EXTERNAL: facingStr = "EXTERNAL"; break;
+            default:                                          facingStr = "UNKNOWN(" + lensFacing + ")";
+        }
+
+        // Camera2BasicFragment 公式：
+        //   swappedDimensions = (sensor is 90/270) != (displayRot is 90/270)
+        //   整体旋转 = (sensor - displayRotDeg + 360) % 360
+        int displayRotDeg;
+        switch (displayRot) {
+            case Surface.ROTATION_90:  displayRotDeg = 90;  break;
+            case Surface.ROTATION_180: displayRotDeg = 180; break;
+            case Surface.ROTATION_270: displayRotDeg = 270; break;
+            default:                    displayRotDeg = 0;   break;
+        }
+        boolean sensorIsRotated = (sensor == 90 || sensor == 270);
+        boolean displayIsRotated = (displayRotDeg == 90 || displayRotDeg == 270);
+        boolean swappedDimensions = sensorIsRotated != displayIsRotated;
+
+        int rotation = (sensor - displayRotDeg + 360) % 360;
+
+        // 目标 viewbox 尺寸：竖屏预览时取 view 的 w/h，landscape 时互换
+        RectF viewRect = new RectF(0, 0, vw, vh);
+        // 源预览尺寸：sensor 是横屏 0/180 时保持原样，是 90/270 时互换以得到"自然方向"
+        RectF srcRect = new RectF(0, 0,
+                swappedDimensions ? preview.getHeight() : preview.getWidth(),
+                swappedDimensions ? preview.getWidth()  : preview.getHeight());
+
+        Matrix matrix = new Matrix();
+        // 把 srcRect 缩放到填满 viewRect（FILL = 等比放大填满，可能裁剪）
+        matrix.setRectToRect(srcRect, viewRect, Matrix.ScaleToFit.FILL);
+
+        // 前置摄像头 HAL 还会自动水平镜像预览，Matrix 需再补一个 -1 X scale 才能"看上去正常"
+        if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+            matrix.postScale(-1f, 1f, vw / 2f, vh / 2f);
+        }
+
+        // 整体旋转（绕中心）
+        matrix.postRotate(rotation, vw / 2f, vh / 2f);
+
+        tv.setTransform(matrix);
+
+        log("configureTransform slot=" + slot + " trigger=" + trigger
+                + " | facing=" + facingStr
+                + " sensorOrient=" + sensor
+                + " displayRot=" + displayRotDeg + "(0)"
+                + " rotation=" + rotation
+                + " swapped=" + swappedDimensions
+                + " | preview=" + preview.getWidth() + "x" + preview.getHeight()
+                + " view=" + vw + "x" + vh
+                + " → srcRect=" + (int) srcRect.width() + "x" + (int) srcRect.height()
+                + " applied");
+
+        Log.d(TAG, "configureTransform slot=" + slot + " facing=" + facingStr
+                + " sensor=" + sensor + " displayRot=" + displayRotDeg
+                + " rotation=" + rotation + " swapped=" + swappedDimensions
+                + " preview=" + preview.getWidth() + "x" + preview.getHeight()
+                + " view=" + vw + "x" + vh + " trigger=" + trigger);
+    }
+
+    /**
+     * 启动设备旋转监听。displayRot 跨越 0/90/180/270 边界时，对所有 slot 重算 transform。
+     * 该方法幂等，重复调用只启动一次。
+     */
+    private void enableOrientationListener() {
+        if (orientationListener != null) return;
+        orientationListener = new android.view.OrientationEventListener(context) {
+            @Override
+            public void onOrientationChanged(int orientationDeg) {
+                if (orientationDeg == android.view.OrientationEventListener.ORIENTATION_UNKNOWN) return;
+                // 转成 0/90/180/270
+                int snapped = ((orientationDeg + 45) / 90) * 90 % 360;
+                if (snapped == lastReportedRotation) return;
+                lastReportedRotation = snapped;
+                log("OrientationEventListener rotation=" + snapped);
+                // onOrientationChanged 跑在 sensor 线程，转到主线程再 setTransform
+                mainHandler.post(() -> {
+                    if (sessions == null || textureViews == null) return;
+                    for (int i = 0; i < textureViews.length; i++) {
+                        configureTransform(i, "OrientationEvent(" + snapped + ")");
+                    }
+                });
+            }
+        };
+        if (orientationListener.canDetectOrientation()) {
+            orientationListener.enable();
+            log("OrientationEventListener enabled");
+        } else {
+            log("OrientationEventListener canDetectOrientation=false (device likely doesn't support), skipped");
+            orientationListener = null;
+        }
+    }
+
+    /** 关闭旋转监听。stopPreview 中调用。 */
+    private void disableOrientationListener() {
+        if (orientationListener != null) {
+            orientationListener.disable();
+            orientationListener = null;
+            lastReportedRotation = -1;
+            log("OrientationEventListener disabled");
+        }
     }
 }
