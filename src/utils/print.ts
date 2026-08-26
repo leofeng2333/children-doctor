@@ -84,19 +84,25 @@ export interface PrintOptions {
  * 比例不一致的图，要么被裁掉主体（portrait 输进 landscape 纸）要么周围留白
  *（landscape 输进 portrait 纸）。
  *
- * 这里在 TS 端先做一次 normalization：把任意比例/分辨率的输入图，统一处理成
- * 1536×1024 (3:2 = 6:4 landscape) JPEG 喂给 native。这样不管调用方塞进来
+* 这里在 TS 端先做一次 normalization：把任意比例/分辨率的输入图，统一处理成
+ * 1844×1240 (6:4 landscape) JPEG 喂给 native。这样不管调用方塞进来
  * 的是手机拍的竖版 1080×1920、相机横版 4032×3024、还是带圆形 logo 的合成图，
  * 最终打出来的方向都是 6×4 landscape 顶满（中心 crop），与 paperType=2
  * (PAPER_SIZE_6X4_PHOTO) 完全吻合。
  *
- * 为什么不直接选 SDK 最大像素（1844×1240）？
- * - 1536×1024 已经够 6×4 @ 256 dpi，肉眼清晰足够
- * - HiTi SDK 对超大 bitmap 解码会慢一截（带颜色表查表），1536×1024 居中
- * - 同一张照片传到 SD 卡/相册的体积更小，Wi-Fi 链路更短
+ * <p>输出物理像素：1844×1240（SDK 注释里 "Paper size / photo pixels match table"
+ * 标注 PAPER_SIZE_6X4_PHOTO 期望 1844×1240），命中 SDK 内部的 fast path。
+ *
+ * <p>实测在 rockchip / SDK 34 上 1536×1024 输入会触发 doService 偶发卡死
+ * （见 print_logs/print_20260825_082743_517.log + print_20260825_083054_406.log：
+ * log 停在 "calling serviceConnector.doService synchronously"，同时 ClockTask
+ * 持续 errCode=0x0——USB 通道健康但 USB_PRINT_PHOTOS 内部分支出问题）。
+ *
+ * <p>bitmap 翻大后 base64 长度增加（≈ 320KB vs ≈ 130KB），但一次打印 5~15秒，
+ * 相比"卡 25 秒然后失败"用户体验反而更好。
  */
-const PAPER_W = 1536
-const PAPER_H = 1024 // 3:2 = 6:4 landscape
+const PAPER_W = 1844
+const PAPER_H = 1240 // 6:4 landscape (SDK PAPER_SIZE_6X4_PHOTO expected pixels)
 const PAPER_JPEG_QUALITY = 0.92
 
 /**
