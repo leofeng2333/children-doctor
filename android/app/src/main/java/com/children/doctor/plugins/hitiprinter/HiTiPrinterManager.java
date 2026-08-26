@@ -286,7 +286,53 @@ public class HiTiPrinterManager {
                         return;
                     }
 
-                    // 2) 拷贝参数到本地 final（sample MainActivity 的 local var）
+                    // 2) USB pipe 热身：serviceConnector.StartService() 返回后立刻发
+                    //    USB_PRINT_PHOTOS 在 cold-start 路径下偶尔会卡死（20s timeout），
+                    //    根因是 USB control transfer 通道没有前置 USB transfer 激活。
+                    //    这里在 USB_PRINT_PHOTOS 之前同步发一次 USB_CHECK_PRINTER_STATUS
+                    //    doService（5s 超时），保证 SDK 的 USB state machine 至少经历一次
+                    //    完整的 USB request → response 循环，再进入真正的 print 流程。
+                    //
+                    //    与 ClockTask 的 keep-alive 不同：ClockTask 是 fire-and-forget，
+                    //    第一个周期 initialDelay=3s，赶不上 cold-start USB_PRINT_PHOTOS；
+                    //    这里同步等返回，把"热身 USB pipe"和"开始 print"严格串行。
+                    //
+                    //    warm-up 自身失败（打印机掉线/USB 断开）不阻止 print 继续——把"USB 探测"和
+                    //    "打印 task"解耦，避免 warm-up 故障掩盖真正的 print 失败原因。
+                    logD("printPhoto: warm-up USB pipe via USB_CHECK_PRINTER_STATUS doService (5s timeout)");
+                    int warmupJobId = nextJobId++;
+                    PrinterJob warmupJob = new PrinterJob(warmupJobId, Action.USB_CHECK_PRINTER_STATUS);
+                    final CountDownLatch warmupDone = new CountDownLatch(1);
+                    final boolean[] warmupSuccess = { false };
+                    final String[] warmupErrStr = { null };
+                    doServiceWithTimeout(warmupJob, PRINT_STATUS_TIMEOUT_SECONDS, new Callback<String>() {
+                        @Override public void onSuccess(String errStr) {
+                            logD("printPhoto: warm-up doService(USB_CHECK_PRINTER_STATUS) returned, jobId="
+                                    + warmupJobId + " errStr=" + errStr);
+                            warmupSuccess[0] = (errStr == null);
+                            warmupErrStr[0] = errStr;
+                            warmupDone.countDown();
+                        }
+                        @Override public void onError(String error) {
+                            logE("printPhoto: warm-up doService timed out / failed, jobId="
+                                    + warmupJobId + " err=" + error + " — continuing print anyway");
+                            warmupSuccess[0] = false;
+                            warmupErrStr[0] = error;
+                            warmupDone.countDown();
+                        }
+                    });
+                    try {
+                        warmupDone.await(PRINT_STATUS_TIMEOUT_SECONDS + 2L, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        logE("printPhoto: warm-up latch await interrupted, continuing print anyway");
+                    }
+                    if (!warmupSuccess[0]) {
+                        logE("printPhoto: warm-up failed (" + warmupErrStr[0]
+                            + ") — proceeding to print; SDK may still stall, print timeout will catch it");
+                    }
+
+                    // 3) 拷贝参数到本地 final（sample MainActivity 的 local var）
                     final int PRINTCOUNT = opts.printCount;
                     final short MATTE     = opts.matte;
                     final short PRINTMODE = opts.printMode;
@@ -295,7 +341,7 @@ public class HiTiPrinterManager {
                             + " MATTE=" + MATTE + " PRINTMODE=" + PRINTMODE
                             + " PaperType=" + PaperType);
 
-                    // 3) 创建 PrinterJob，装配 bitmap attr
+                    // 4) 创建 PrinterJob，装配 bitmap attr
                     int jobId = nextJobId++;
                     final PrinterJob job = new PrinterJob(jobId, Action.USB_PRINT_PHOTOS);
                     logD("printPhoto: PrinterJob created id=" + jobId);
@@ -310,7 +356,7 @@ public class HiTiPrinterManager {
                     }
                     job.setJobPara(attr);
 
-                    // 4) 同步 sample MainActivity 行 651-655 的 doService 路径：
+                    // 5) 同步 sample MainActivity 行 651-655 的 doService 路径：
                     //    不设 serviceConnector.m_strTablesRoot（sample PRINT 路径不设）
                     //    直接同步 doService，线程阻塞直到 SDK 返回
                     if (serviceConnector == null) {
