@@ -36,6 +36,30 @@ const pickedImgUrl = ref<string>('') // 当前选中的图片（dataURL）
 const pickedImgName = ref<string>('') // 选中的文件名（用于显示）
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
+/**
+ * 打印模式（仅 PrintTestView 多模式对比诊断使用）：
+ *
+ * - 'current'：与 v1.0.15-print-stable 一致（TS letterbox + Java 不旋转不 normalize，
+ *   raw bitmap → SDK）。生产路径，验证根因是不是"TS letterbox 输出 portrait bitmap"。
+ *
+ * - 'cover-fit'：TS 强制 cover-fit 到 1536×1024 landscape + Java 不动。
+ *   若直接打印恢复正常 ⇒ TS letterbox 是元凶。
+ *
+ * - 'portrait-rotate'：TS letterbox + Java 检测 portrait bitmap 后 90° 旋转。
+ *   验证 Java 端补 portrait 旋转能否修复直接打印卡 25s。
+ *
+ * - 'portrait-rotate-normalize'：TS letterbox + Java portrait 旋转 + normalize crop。
+ *   510e621 时的混合方案。
+ */
+type BitmapProcessMode = 'current' | 'cover-fit' | 'portrait-rotate' | 'portrait-rotate-normalize'
+const MODE_OPTIONS: ReadonlyArray<{ value: BitmapProcessMode; label: string; hint: string }> = [
+  { value: 'current', label: '1. current', hint: 'TS letterbox + Java 不动（生产路径）' },
+  { value: 'cover-fit', label: '2. cover-fit', hint: 'TS 强制 1536×1024 + Java 不动' },
+  { value: 'portrait-rotate', label: '3. portrait-rotate', hint: 'TS letterbox + Java 90° 旋转' },
+  { value: 'portrait-rotate-normalize', label: '4. portrait-rotate-normalize', hint: 'TS letterbox + Java 旋转 + normalize' },
+]
+const selectedMode = ref<BitmapProcessMode>('current')
+
 function onPickClick() {
   // 重置 value，确保同一张图也能再次触发 change
   if (fileInputRef.value) fileInputRef.value.value = ''
@@ -87,12 +111,14 @@ async function onPrint() {
     imgName: pickedImgName.value || '(builtin analysis-success.png)',
     imgUrlType: imgUrl.slice(0, 40),
     len: imgUrl.length,
+    mode: selectedMode.value,
   })
   try {
     await printPhoto({
       goodImgUrl: imgUrl,
       qrcodeUrl: '',
       jobName: pickedImgName.value ? `本地打印-${pickedImgName.value}` : '打印测试照片',
+      printMode: selectedMode.value,
     })
     hasPrinted.value = true
     console.log('[PrintTest] printPhoto resolved (success)')
@@ -160,6 +186,28 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
         未选图时将使用内置测试图 analysis-success.png
       </div>
     </div>
+
+    <!-- 打印模式选择（仅 PrintTestView 诊断使用，生产路径不暴露） -->
+    <fieldset class="mode-block" :disabled="isPrinting || hasPrinted">
+      <legend>打印模式（多模式对比诊断）</legend>
+      <label
+        v-for="opt in MODE_OPTIONS"
+        :key="opt.value"
+        class="mode-row"
+        :class="{ active: selectedMode === opt.value }"
+      >
+        <input
+          type="radio"
+          name="print-mode"
+          :value="opt.value"
+          v-model="selectedMode"
+        />
+        <div class="mode-text">
+          <div class="mode-label">{{ opt.label }}</div>
+          <div class="mode-hint">{{ opt.hint }}</div>
+        </div>
+      </label>
+    </fieldset>
 
     <button class="print-btn" :disabled="isPrinting || hasPrinted" @click="onPrint">
       {{ hasPrinted ? '已打印完成' : isPrinting ? '正在准备打印…' : '打印测试照片' }}
@@ -356,6 +404,73 @@ const logHint = `日志路径（HiTi 打印后）：\n/storage/emulated/0/Androi
   font-size: 18px;
   color: #ff4d4f;
   text-align: center;
+}
+
+.mode-block {
+  width: 425px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 16px 20px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+
+  legend {
+    font-size: 20px;
+    font-weight: 600;
+    color: #111;
+    padding: 0 8px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.mode-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not([disabled]) {
+    background: #f5f5f7;
+  }
+
+  &.active {
+    background: #fff5e6;
+  }
+
+  input[type='radio'] {
+    margin-top: 6px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    accent-color: #ff9900;
+  }
+}
+
+.mode-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-label {
+  font-size: 20px;
+  font-weight: 600;
+  color: #222;
+}
+
+.mode-hint {
+  font-size: 16px;
+  color: #666;
 }
 
 </style>

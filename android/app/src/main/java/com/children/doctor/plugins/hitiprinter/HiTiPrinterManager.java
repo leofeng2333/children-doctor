@@ -301,7 +301,7 @@ public class HiTiPrinterManager {
                     logD("printPhoto: PrinterJob created id=" + jobId);
 
                     Object attr = buildPhotoAttrSample(opts.bitmapPath, PaperType,
-                            PRINTCOUNT, MATTE, PRINTMODE, tablesRoot);
+                            PRINTCOUNT, MATTE, PRINTMODE, tablesRoot, opts.bitmapProcessMode);
                     if (attr == null) {
                         logE("printPhoto: buildPhotoAttrSample returned null");
                         post(cb, "USB_PRINT_PHOTOS -ID" + jobId
@@ -383,12 +383,23 @@ public class HiTiPrinterManager {
      * 解码 bitmap → 按 sample 的 PaperSize switch 选 Size → 装配 PRINTCOUNT/MATTE/PRINTMODE。
      * 全部参数开放（PRINTCOUNT/MATTE/PRINTMODE），与 sample MainActivity
      * {@code operatePrinter(... USB_PRINT_PHOTOS)} 设置实例字段后再调用的同款语义。
+     *
+     * <p>{@code bitmapProcessMode} 控制 Java 端的 bitmap 预处理（仅 PrintTestView
+     * 多模式对比诊断使用）：
+     * <ul>
+     *   <li>{@code "current"}：raw bitmap 直传 SDK（与 v1.0.15-print-stable 一致）</li>
+     *   <li>{@code "cover-fit"}：raw bitmap 直传 SDK（TS 已 cover-fit 到 landscape）</li>
+     *   <li>{@code "portrait-rotate"}：portrait bitmap 检测 → 90° 旋转</li>
+     *   <li>{@code "portrait-rotate-normalize"}：portrait 旋转 + normalize crop</li>
+     * </ul>
      */
     private Object buildPhotoAttrSample(String bitmapPath, int paperType,
                                         int printCount, short matte, short printMode,
-                                        String tablesRootForPara) {
+                                        String tablesRootForPara,
+                                        String bitmapProcessMode) {
         logD("buildPhotoAttrSample: bitmapPath=" + bitmapPath + " paperType=" + paperType
-                + " printCount=" + printCount + " matte=" + matte + " printMode=" + printMode);
+                + " printCount=" + printCount + " matte=" + matte + " printMode=" + printMode
+                + " bitmapProcessMode=" + bitmapProcessMode);
         android.graphics.Bitmap rawBitmap = android.graphics.BitmapFactory.decodeFile(bitmapPath);
         if (rawBitmap == null) {
             logE("buildPhotoAttrSample: BitmapFactory.decodeFile returned null");
@@ -407,12 +418,35 @@ public class HiTiPrinterManager {
         }
         logD("buildPhotoAttrSample: PaperSize=" + size);
 
-        // 同步 sample PrinterOperation.getPrinterPara：不旋转，不 normalize。
-        // SDK 内部按 PaperSize 比例处理 bitmap（可能 letterbox / crop）。
-        Object para = PrintPara.getPrintPhotoPara(rawBitmap,
+        android.graphics.Bitmap bitmap = rawBitmap;
+        if ("portrait-rotate".equals(bitmapProcessMode) || "portrait-rotate-normalize".equals(bitmapProcessMode)) {
+            if (rawBitmap.getWidth() < rawBitmap.getHeight()) {
+                logD("buildPhotoAttrSample: [" + bitmapProcessMode + "] portrait bitmap detected ("
+                        + rawBitmap.getWidth() + "x" + rawBitmap.getHeight()
+                        + "), rotating 90° clockwise for landscape paper");
+                android.graphics.Matrix matrix = new android.graphics.Matrix();
+                matrix.postRotate(90f);
+                android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
+                        rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(),
+                        matrix, true);
+                bitmap = rotated;
+                logD("buildPhotoAttrSample: rotated bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
+            } else {
+                logD("buildPhotoAttrSample: [" + bitmapProcessMode + "] bitmap is already landscape, no rotation needed");
+            }
+        }
+        if ("portrait-rotate-normalize".equals(bitmapProcessMode)) {
+            logD("buildPhotoAttrSample: [portrait-rotate-normalize] applying normalizeBitmapToPaperSize");
+            bitmap = normalizeBitmapToPaperSize(bitmap, size);
+        }
+
+        // 同步 sample PrinterOperation.getPrinterPara 的总体策略：bitmap 经 mode
+        // 决定的可选预处理后直传 SDK，由 SDK 内部按 PaperSize 比例处理（letterbox / crop）。
+        Object para = PrintPara.getPrintPhotoPara(bitmap,
                 (short) printCount, matte, printMode, size, tablesRootForPara);
         logD("buildPhotoAttrSample: PrintPara.getPrintPhotoPara returned "
-                + (para == null ? "null" : para.getClass().getSimpleName()));
+                + (para == null ? "null" : para.getClass().getSimpleName())
+                + " (input bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight() + ")");
         return para;
     }
 
@@ -489,21 +523,37 @@ public class HiTiPrinterManager {
         public final short matte;
         /** PRINTMODE: 仅 P232W 有效，0=standard, 1=fine(HOD)。sample 默认 0。 */
         public final short printMode;
+        /**
+         * bitmap 处理模式（仅 PrintTestView 多模式对比诊断）：
+         * - "current"（默认）：与 v1.0.15-print-stable 一致，raw bitmap → SDK
+         * - "cover-fit"：TS 已 cover-fit 到 landscape，Java 不动
+         * - "portrait-rotate"：Java 检测 portrait bitmap 后 90° 旋转
+         * - "portrait-rotate-normalize"：Java portrait 旋转 + normalize crop
+         */
+        public final String bitmapProcessMode;
 
         public SamplePrintOptions(String bitmapPath, int paperType,
-                                  int printCount, short matte, short printMode) {
+                                  int printCount, short matte, short printMode,
+                                  String bitmapProcessMode) {
             this.bitmapPath = bitmapPath;
             this.paperType = paperType;
             this.printCount = printCount;
             this.matte = matte;
             this.printMode = printMode;
+            this.bitmapProcessMode = bitmapProcessMode == null ? "current" : bitmapProcessMode;
+        }
+
+        // 兼容旧调用（没有 bitmapProcessMode 时落到 "current"）
+        public SamplePrintOptions(String bitmapPath, int paperType,
+                                  int printCount, short matte, short printMode) {
+            this(bitmapPath, paperType, printCount, matte, printMode, "current");
         }
 
         @Override
         public String toString() {
             return "SamplePrintOptions{bitmapPath='" + bitmapPath + "' paperType=" + paperType
                     + " printCount=" + printCount + " matte=" + matte + " printMode=" + printMode
-                    + "}";
+                    + " bitmapProcessMode='" + bitmapProcessMode + "'}";
         }
     }
 

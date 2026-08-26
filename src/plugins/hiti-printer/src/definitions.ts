@@ -122,6 +122,17 @@ export interface HiTiPrintPhotoOptions {
   printCount?: number
   matte?: number
   printMode?: number
+  /**
+   * bitmap 处理模式（仅 PrintTestView 多模式对比诊断使用）。
+   *
+   * - 'current'（默认）：Java 不旋转不 normalize，raw bitmap 直传 SDK —— 与 v1.0.15-print-stable 一致
+   * - 'cover-fit'：TS 已强制 cover-fit 到 1536×1024 landscape，Java 不动
+   * - 'portrait-rotate'：Java 检测 portrait bitmap 后 90° 旋转
+   * - 'portrait-rotate-normalize'：Java portrait 旋转 + normalize crop
+   *
+   * 生产调用方（如 ScanSubscription）不要传本字段，落到 'current' 默认。
+   */
+  bitmapProcessMode?: 'current' | 'cover-fit' | 'portrait-rotate' | 'portrait-rotate-normalize'
 }
 
 /**

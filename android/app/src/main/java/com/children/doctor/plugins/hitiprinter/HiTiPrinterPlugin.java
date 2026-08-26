@@ -270,10 +270,17 @@ public class HiTiPrinterPlugin extends Plugin {
         // 这里先 intValue() 拆箱再 cast 到 short，与 SamplePrintOptions.short 字段对齐。
         short matte = (short) call.getInt("matte", 1).intValue();
         short printMode = (short) call.getInt("printMode", 0).intValue();
+        // bitmapProcessMode（PrintTestView 多模式对比诊断）：
+        //   'current'（默认）：与 v1.0.15-print-stable 一致，raw bitmap → SDK
+        //   'cover-fit'：TS 已 cover-fit 到 landscape，Java 不动
+        //   'portrait-rotate'：Java 检测 portrait bitmap 后 90° 旋转
+        //   'portrait-rotate-normalize'：Java portrait 旋转 + normalize crop
+        String bitmapProcessMode = call.getString("bitmapProcessMode", "current");
         logD("[sample] printPhoto: paperType=" + paperType
                 + " printCount=" + printCount
                 + " matte=" + matte
                 + " printMode=" + printMode
+                + " bitmapProcessMode=" + bitmapProcessMode
                 + " base64Len=" + (base64 == null ? "null" : base64.length()));
         if (base64 == null || base64.isEmpty()) {
             logE("[sample] printPhoto: base64 is null/empty");
@@ -302,7 +309,7 @@ public class HiTiPrinterPlugin extends Plugin {
             }
             logD("[sample] printPhoto: file written, " + out.length() + " bytes; calling manager.printPhoto");
             HiTiPrinterManager.SamplePrintOptions opts = new HiTiPrinterManager.SamplePrintOptions(
-                    out.getAbsolutePath(), paperType, printCount, matte, printMode);
+                    out.getAbsolutePath(), paperType, printCount, matte, printMode, bitmapProcessMode);
             manager.printPhoto(opts, new HiTiPrinterManager.Callback<java.lang.Object>() {
                 @Override public void onSuccess(Object payload) {
                     logD("[sample] printPhoto: onSuccess: " + (payload == null ? "null" : payload.toString()));

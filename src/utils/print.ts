@@ -57,6 +57,23 @@ export interface PrintOptions {
   qrcodeUrl?: string
   /** 打印任务名（显示在 HiTi native log / 调用方业务日志） */
   jobName?: string
+  /**
+   * 打印模式（仅用于 PrintTestView 多模式对比诊断）：
+   *
+   * - 'current'（默认）：TS letterbox + Java 不旋转（与 v1.0.15-print-stable 一致，
+   *   生产路径）；portrait 输入会输出 portrait bitmap 给 SDK —— 实测可能 25s 卡死
+   *
+   * - 'cover-fit'：TS 强制 cover-fit 到 1536×1024 landscape；Java 不旋转
+   *   —— 验证 "TS letterbox 输出 portrait bitmap 是不是 25s 卡死元凶"
+   *   若 cover-fit 模式下 direct-print 恢复正常 ⇒ TS letterbox 是根因
+   *
+   * - 'portrait-rotate'：TS letterbox + Java 检测 portrait bitmap 后 90° 旋转
+   *   —— 验证 "Java 端加 portrait 旋转能否修复"
+   *
+   * - 'portrait-rotate-normalize'：TS letterbox + Java portrait 旋转 + normalize crop
+   *   —— 510e621 时的混合方案，最完整的归一化
+   */
+  printMode?: 'current' | 'cover-fit' | 'portrait-rotate' | 'portrait-rotate-normalize'
 }
 
 /**
@@ -179,10 +196,13 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
  *   <li>返回带 data:image/jpeg;base64, 前缀的 dataURL</li>
  * </ol>
  *
+ * @param mode 处理模式（仅诊断对比）：
+ *   - 'cover-fit'：强制 cover-fit 到 1536×1024 landscape（裁切 portrait 上下或 landscape 左右）
+ *   - 其它值：letterbox（portrait 输入保持竖向，宽度方向两边留白）
  * @returns {Promise<string>} JPEG dataURL，always data: scheme, never raw base64
  * @throws {Error} 图像 decode 失败 / canvas 不可用 / 导出空数据
  */
-export async function fitImageToPaper(input: string): Promise<string> {
+export async function fitImageToPaper(input: string, mode: 'cover-fit' | 'letterbox' = 'letterbox'): Promise<string> {
   if (!input) throw new Error('fitImageToPaper: input is empty')
   console.log('[print/fit] start, PAPER=' + PAPER_W + 'x' + PAPER_H + ' input prefix=' + input.slice(0, 40))
 
@@ -205,7 +225,23 @@ export async function fitImageToPaper(input: string): Promise<string> {
   let sx: number, sy: number, sw: number, sh: number
   let destW = PAPER_W
   let destH = PAPER_H
-  if (srcRatio > targetRatio) {
+  if (mode === 'cover-fit') {
+    // 强制 cover-fit：长边对齐 paper 长边，多余部分裁掉。
+    // portrait 输入 → 上下裁切（保留中间横带）；landscape 输入 → 左右裁切。
+    // 输出 canvas 永远是 1536×1024 landscape bitmap，喂给 SDK 后走 landscape
+    // 处理路径。诊断目的：验证"SDK 收到 portrait bitmap 是否卡死"。
+    if (srcRatio > targetRatio) {
+      sh = srcH
+      sw = srcH * targetRatio
+      sx = (srcW - sw) / 2
+      sy = 0
+    } else {
+      sw = srcW
+      sh = srcW / targetRatio
+      sx = 0
+      sy = (srcH - sh) / 2
+    }
+  } else if (srcRatio > targetRatio) {
     // landscape 输入（宽 > 高）—— 按高度对齐，左右各裁一点（cover-fit）
     sh = srcH
     sw = srcH * targetRatio
@@ -221,7 +257,7 @@ export async function fitImageToPaper(input: string): Promise<string> {
     destH = Math.round(srcH * (PAPER_W / srcW))
     destW = PAPER_W
   }
-  console.log('[print/fit] src=' + srcW + 'x' + srcH + ' ratio=' + srcRatio.toFixed(3)
+  console.log('[print/fit] mode=' + mode + ' src=' + srcW + 'x' + srcH + ' ratio=' + srcRatio.toFixed(3)
     + ' targetRatio=' + targetRatio.toFixed(3)
     + ' srcRect=(' + Math.round(sx) + ',' + Math.round(sy) + ',' + Math.round(sw) + ',' + Math.round(sh) + ')'
     + ' destCanvas=' + destW + 'x' + destH)
@@ -279,11 +315,16 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
   if (!opts.goodImgUrl) throw new Error('goodImgUrl is required')
 
   const paperType = opts.paperType ?? 2
+  // printMode 是 PrintTestView 多模式对比用的诊断字段。生产路径（业务调用方
+  // 如 ScanSubscription）不传，落到 'current' 默认值，与 v1.0.15-print-stable
+  // 行为完全一致。
+  const printMode = opts.printMode ?? 'current'
   console.log('[print/HiTi] ====== HiTi 打印开始 ======')
   console.log('[print/HiTi] opts:', {
     goodImgUrlLen: opts.goodImgUrl.length,
     jobName: opts.jobName,
     paperType,
+    printMode,
   })
 
   // 启动 native 端日志会话：本次 HiTi 打印期间所有 native 日志（logcat + 文件）
@@ -303,7 +344,7 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
 
   // Mirror 这一行 JS 端日志到 native 文件（即使后面抛错也会被 close 写入）
   try {
-    await HiTiPrinter.captureLog({ tag: 'TS', msg: `printPhoto start, paperType=${paperType} nativeLog=${nativeLogPath}` })
+    await HiTiPrinter.captureLog({ tag: 'TS', msg: `printPhoto start, paperType=${paperType} printMode=${printMode} nativeLog=${nativeLogPath}` })
   } catch {}
 
   try {
@@ -312,11 +353,13 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
     // 25s 比 native 的 20s 多 5s，确保正常情况下是 native 先回报错或成功。
     await Promise.race([
       (async () => {
-        // 把原图 cover-fit 到 HiTi 4×6 landscape paper (1536×1024, 3:2)。
-        // 不做 normalize，SDK 会自己 center-crop，留白/裁切不可控。
-        // fitImageToPaper 内部已经处理 URL → dataURL → image decode → cover-fit → JPEG；
+        // 把原图按 printMode 处理：
+        // - 'cover-fit'：强制 cover-fit 到 1536×1024 landscape
+        // - 其它（'current' / 'portrait-rotate' / 'portrait-rotate-normalize'）：letterbox
+        // fitImageToPaper 内部已经处理 URL → dataURL → image decode → drawImage → JPEG；
         // 这里是源头，不需要再单独 resolve。
-        const resolved = await fitImageToPaper(opts.goodImgUrl)
+        const fitMode = printMode === 'cover-fit' ? 'cover-fit' : 'letterbox'
+        const resolved = await fitImageToPaper(opts.goodImgUrl, fitMode)
         console.log('[print/HiTi] fitted goodImgUrl:', {
           isDataUrl: resolved.startsWith('data:'),
           length: resolved.length,
@@ -326,7 +369,7 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
         try {
           await HiTiPrinter.captureLog({
             tag: 'TS',
-            msg: `fitImageToPaper done, dataUrlLen=${resolved.length} prefix=${resolved.slice(0, 40)}`,
+            msg: `fitImageToPaper(${fitMode}) done, dataUrlLen=${resolved.length} prefix=${resolved.slice(0, 40)}`,
           })
         } catch {}
         const comma = resolved.indexOf(',')
@@ -346,10 +389,12 @@ export async function printPhoto(opts: PrintOptions & { paperType?: number }): P
         console.log('[print/HiTi] skipping getPrinterStatus pre-check, going straight to print')
 
         // 发打印任务（让 Java 侧自己把 base64 写盘，避免引入 Filesystem 插件）
-        console.log('[print/HiTi] step 2/2: printPhoto...', { paperType })
+        console.log('[print/HiTi] step 2/2: printPhoto...', { paperType, bitmapProcessMode: printMode })
         const printRes = await HiTiPrinter.printPhoto({
           base64,
           paperType,
+          // 把 printMode 也传给 native，让 Java 端按 mode 决定 portrait 旋转 + normalize。
+          bitmapProcessMode: printMode,
         })
         console.log('[print/HiTi] printPhoto result:', printRes)
         if (!printRes.ok) throw new Error(`HiTi 打印失败：${printRes.error}`)
