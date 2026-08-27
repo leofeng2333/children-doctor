@@ -1260,6 +1260,15 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     private volatile int extraRotate = 0;
     private volatile boolean extraMirror = false;
 
+    /**
+     * 拍照方向的独立旋转偏移（不参与预览 transform，仅作用于拍照 YUV / JPEG 输出）。
+     *
+     * <p>背景：目标机器 UVC 摄像头预览方向和拍照方向不一致。
+     * 原来的 {@link #extraRotate} 同时影响预览 transform 和拍照 YUV rotation，会导致"预览正了但照片偏"。
+     * 拆出这个字段后，预览用 {@code extraRotate}，拍照用 {@code captureRotationOffset}，两条链路独立调参。
+     */
+    private volatile int captureRotationOffset = 0;
+
     /** 全局开关：true 时所有后置摄像头的拍照输出都会水平镜像。 */
     public static void setGlobalForceBackMirror(boolean v) { globalForceBackMirror = v; }
     /** 单 session 覆盖。 */
@@ -1279,6 +1288,19 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     }
     public int getExtraRotate() { return extraRotate; }
     public boolean getExtraMirror() { return extraMirror; }
+
+    /**
+     * 设置拍照方向的额外旋转（与预览的 {@link #setCalibration} 完全独立）。
+     * @param degrees 0/90/180/270；非 90 倍数会被规范化
+     */
+    public void setCaptureRotationOffset(int degrees) {
+        this.captureRotationOffset = ((degrees % 360) + 360) % 360;
+        Log.d(TAG, "setCaptureRotationOffset cameraId=" + cameraId
+                + " captureRotationOffset=" + this.captureRotationOffset);
+        log("setCaptureRotationOffset cameraId=" + cameraId
+                + " captureRotationOffset=" + this.captureRotationOffset);
+    }
+    public int getCaptureRotationOffset() { return captureRotationOffset; }
 
     /**
      * 对拍照得到的 JPEG bytes 做方向/镜像修正，让最终文件 = 预览方向。
@@ -1329,8 +1351,10 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
         } else {
             yuvDegrees = (sensorOrientation - displayRotDeg + 360) % 360;
         }
-        // 叠加校准偏移量（extraRotate 累加，extraMirror 翻转 needMirror）
-        int finalDegrees = (yuvDegrees + extraRotate) % 360;
+        // 叠加校准偏移量：
+        //   - extraRotate 仍叠加（兼容旧校准链）
+        //   - captureRotationOffset 是独立的拍照方向偏移，与预览解耦
+        int finalDegrees = (yuvDegrees + extraRotate + captureRotationOffset) % 360;
         boolean finalNeedMirror = extraMirror ? !needMirror : needMirror;
 
         String formatStr;
@@ -1358,6 +1382,7 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
                 + " globalForceBackMirror=" + globalForceBackMirror
                 + " needMirror=" + needMirror
                 + " extraRotate=" + extraRotate + " extraMirror=" + extraMirror
+                + " captureRotationOffset=" + captureRotationOffset
                 + " finalDegrees=" + finalDegrees + " finalNeedMirror=" + finalNeedMirror
                 + " jpegOrientation=" + getJpegOrientation(getDisplayRotation()));
 

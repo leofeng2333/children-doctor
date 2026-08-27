@@ -120,14 +120,20 @@ public class Camera2Controller {
                     cameras.get(i).captureSize
             );
             // 硬编码方向校准（目标机器实测）：
-            //   slot=0（左）：预览顺时针偏90° → 需补逆时针90° → extraRotate=270
-            //   slot=1（右）：预览逆时针偏180° → 需补顺时针180° → extraRotate=180
+            //   预览层（preview transform）用 setCalibration → extraRotate：
+            //     slot=0（左）：预览顺时针偏90° → 需补逆时针90° → extraRotate=270
+            //     slot=1（右）：预览逆时针偏180° → 需补顺时针180° → extraRotate=180
+            //   拍照层（YUV / JPEG 输出）用 setCaptureRotationOffset → captureRotationOffset（独立调参）：
+            //     slot=0（左）：照片顺时针偏90° → 需补逆时针90° → captureRotationOffset=270
+            //     slot=1（右）：照片逆时针偏90° → 需补顺时针90° → captureRotationOffset=90
             if (i == 0) {
                 sessions[i].setCalibration(270, false);
-                log("CALIBRATION slot=0 extraRotate=270 extraMirror=false");
+                sessions[i].setCaptureRotationOffset(270);
+                log("CALIBRATION slot=0 preview extraRotate=270 / capture captureRotationOffset=270 extraMirror=false");
             } else if (i == 1) {
                 sessions[i].setCalibration(90, false);
-                log("CALIBRATION slot=1 extraRotate=180 extraMirror=false");
+                sessions[i].setCaptureRotationOffset(90);
+                log("CALIBRATION slot=1 preview extraRotate=180 / capture captureRotationOffset=90 extraMirror=false");
             }
         }
 
