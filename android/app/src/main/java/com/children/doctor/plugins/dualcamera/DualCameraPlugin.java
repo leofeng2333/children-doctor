@@ -504,6 +504,53 @@ public class DualCameraPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /**
+     * 设置指定 slot 摄像头的方向校准量。
+     * 调用后在运行时生效（预览立即重算 transform，拍照在下一次 capture 时生效）。
+     *
+     * 参数：
+     *   slot           — 槽位索引，0 或 1
+     *   extraRotate    — 额外旋转角，枚举值：0 | 90 | 180 | 270
+     *   extraMirror    — 是否再补一次水平镜像，true | false
+     *
+     * 示例（Vue / JS）：
+     *   await Plugins.DualCamera.setSlotCalibration({
+     *     slot: 1,
+     *     extraRotate: 180,
+     *     extraMirror: false
+     *   });
+     */
+    @PluginMethod()
+    public void setSlotCalibration(PluginCall call) {
+        Integer slot = call.getInt("slot");
+        if (slot == null || (slot != 0 && slot != 1)) {
+            call.reject("slot must be 0 or 1");
+            return;
+        }
+        Integer rotateOpt = call.getInt("extraRotate");
+        int extraRotate = 0;
+        if (rotateOpt != null) {
+            int r = rotateOpt % 360;
+            extraRotate = (r + 360) % 360; // normalize negative
+        }
+        Boolean extraMirror = call.getBoolean("extraMirror", false);
+
+        DualCameraManager mgr = cameraManager;
+        if (mgr == null) {
+            // 还没 startPreview，存到静态默认值（下次 startPreview 时生效）
+            // 暂无持久化需求，直接 reject
+            call.reject("Preview not running. Call startPreview first.");
+            return;
+        }
+        mgr.setSlotCalibration(slot, extraRotate, extraMirror != null && extraMirror);
+
+        JSObject ret = new JSObject();
+        ret.put("slot", slot);
+        ret.put("extraRotate", extraRotate);
+        ret.put("extraMirror", extraMirror != null && extraMirror);
+        call.resolve(ret);
+    }
+
     @PluginMethod()
     public void uploadPhotos(PluginCall call) {
         String uploadUrl = call.getString("uploadUrl");

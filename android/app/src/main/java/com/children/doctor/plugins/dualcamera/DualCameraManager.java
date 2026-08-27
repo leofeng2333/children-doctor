@@ -157,6 +157,20 @@ public class DualCameraManager {
         });
     }
 
+    /**
+     * 设置指定 slot 摄像头的方向校准量。
+     * @param slot 槽位索引（0 或 1）
+     * @param extraRotateDegrees 额外旋转角（0/90/180/270）
+     * @param extraMirrorNeeded true=再补一次水平镜像
+     */
+    public void setSlotCalibration(int slot, int extraRotateDegrees, boolean extraMirrorNeeded) {
+        mainHandler.post(() -> {
+            if (controller != null) {
+                controller.setSlotCalibration(slot, extraRotateDegrees, extraMirrorNeeded);
+            }
+        });
+    }
+
     public void getAvailableCameras(AvailableCamerasCallback callback) {
         mainHandler.post(() -> {
             try {

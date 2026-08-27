@@ -1251,10 +1251,34 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     // 单 session 覆盖：高于全局开关。用于对某些特殊机型精细控制。
     private boolean forceMirrorBack = false;
 
+    /**
+     * 每个摄像头的方向校准量（实验调参用）。
+     * extraRotate：额外旋转角度（0/90/180/270），叠加在公式算出的旋转角上。
+     * extraMirror：额外水平镜像，true = 再补一次 postScale(-1,1)。
+     * 这两个值在校准后固定写入，运行时通过 {@link #setCalibration} 设置。
+     */
+    private volatile int extraRotate = 0;
+    private volatile boolean extraMirror = false;
+
     /** 全局开关：true 时所有后置摄像头的拍照输出都会水平镜像。 */
     public static void setGlobalForceBackMirror(boolean v) { globalForceBackMirror = v; }
     /** 单 session 覆盖。 */
     public void setForceMirrorBack(boolean v) { this.forceMirrorBack = v; }
+    /**
+     * 设置摄像头方向校准量。
+     * @param extraRotateDegrees 额外旋转角（0/90/180/270）
+     * @param extraMirrorNeeded true=再补一次水平镜像
+     */
+    public void setCalibration(int extraRotateDegrees, boolean extraMirrorNeeded) {
+        this.extraRotate = ((extraRotateDegrees % 360) + 360) % 360;
+        this.extraMirror = extraMirrorNeeded;
+        Log.d(TAG, "setCalibration cameraId=" + cameraId
+                + " extraRotate=" + this.extraRotate + " extraMirror=" + this.extraMirror);
+        log("setCalibration cameraId=" + cameraId
+                + " extraRotate=" + this.extraRotate + " extraMirror=" + this.extraMirror);
+    }
+    public int getExtraRotate() { return extraRotate; }
+    public boolean getExtraMirror() { return extraMirror; }
 
     /**
      * 对拍照得到的 JPEG bytes 做方向/镜像修正，让最终文件 = 预览方向。
@@ -1271,8 +1295,17 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
      */
     private byte[] applyFrontMirrorIfNeeded(byte[] bytes) {
         boolean wasAlreadyRotatedByExif = (captureImageFormat == ImageFormat.JPEG);
-        boolean isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT);
-        boolean needMirror = isFront || forceMirrorBack || globalForceBackMirror;
+        // UVC 外接摄像头被 HAL 错误报告为 LENS_FACING_FRONT 时，按 BACK（外接）处理：
+        //   1) 不自动水平镜像；
+        //   2) 旋转公式与后置一致。
+        // 这样可让拍照输出方向与预览 TextureView 的 setTransform 公式严格一致。
+        boolean isExternal = (lensFacing == CameraCharacteristics.LENS_FACING_EXTERNAL);
+        boolean isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) && !isExternal;
+        // EXTERNAL（外接 UVC）一律不做水平镜像：
+        //   - 系统相机对外接摄像头也不会自动镜像；
+        //   - UVC HAL 给的是 sensor 原始数据，预览和拍照通常方向一致，不需要再"补一次镜像"。
+        // BACK 类摄像头仍可受 globalForceBackMirror 控制，用于解决某些老 HAL 拍照/预览不一致。
+        boolean needMirror = isFront || (forceMirrorBack && !isExternal);
 
         int displayRotDeg;
         switch (getDisplayRotation()) {
@@ -1283,14 +1316,22 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
         }
 
         // YUV 路径下，照片方向必须 = 预览方向（与 configureTransform 完全一致）
-        // 后置：(sensor - displayRot + 360) % 360
+        // 后置 / 外接（UVC 被 HAL 错报为 FRONT 时也走这里）：(sensor - displayRot + 360) % 360
         // 前置：(sensor + displayRot + 360) % 360
+        // 注意：预览在 configureTransform 里对所有 FRONT 都 postScale(-1,1) + postRotate(rotation)。
+        //       当镜头实际是 EXTERNAL（外接 UVC）时，为保持预览与拍照一致，这里跳过镜像、
+        //       并把"先镜像再旋转"等价为"先旋转 90 再加额外旋转/翻转到与预览一致"——
+        //       但更稳的做法是让预览侧也对 EXTERNAL 不做 postScale，下面 Camera2Controller
+        //       已同步修改。这里用 BACK 公式即可保证两者公式一致。
         int yuvDegrees;
-        if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+        if (isFront) {
             yuvDegrees = (sensorOrientation + displayRotDeg + 360) % 360;
         } else {
             yuvDegrees = (sensorOrientation - displayRotDeg + 360) % 360;
         }
+        // 叠加校准偏移量（extraRotate 累加，extraMirror 翻转 needMirror）
+        int finalDegrees = (yuvDegrees + extraRotate) % 360;
+        boolean finalNeedMirror = extraMirror ? !needMirror : needMirror;
 
         String formatStr;
         switch (captureImageFormat) {
@@ -1316,16 +1357,17 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
                 + " forceMirrorBack=" + forceMirrorBack
                 + " globalForceBackMirror=" + globalForceBackMirror
                 + " needMirror=" + needMirror
-                + " yuvDegrees=" + yuvDegrees
+                + " extraRotate=" + extraRotate + " extraMirror=" + extraMirror
+                + " finalDegrees=" + finalDegrees + " finalNeedMirror=" + finalNeedMirror
                 + " jpegOrientation=" + getJpegOrientation(getDisplayRotation()));
 
-        if (!needMirror) {
+        if (!finalNeedMirror) {
             if (wasAlreadyRotatedByExif) {
                 log("applyMirror branch=JPEG-noMirror (EXIF rotation already applied by HAL, no extra transform)");
                 return bytes;
             }
-            log("applyMirror branch=YUV-rotateOnly degrees=" + yuvDegrees);
-            return rotateJpeg(bytes, yuvDegrees);
+            log("applyMirror branch=YUV-rotateOnly degrees=" + finalDegrees);
+            return rotateJpeg(bytes, finalDegrees);
         }
 
         if (wasAlreadyRotatedByExif) {
@@ -1338,8 +1380,8 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
         }
 
         // YUV 路径：照片方向 = 预览方向 + 水平镜像
-        log("applyMirror branch=YUV-rotateAndMirror degrees=" + yuvDegrees);
-        return rotateAndMirrorJpeg(bytes, yuvDegrees);
+        log("applyMirror branch=YUV-rotateAndMirror degrees=" + finalDegrees);
+        return rotateAndMirrorJpeg(bytes, finalDegrees);
     }
 
     /** 仅水平镜像（用于 JPEG 路径：EXIF 已旋转，只需水平镜像修正）。 */
@@ -1537,11 +1579,14 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
             default:                    rotation = 0;   break;
         }
 
-        if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
-            return (sensorOrientation + rotation) % 360;
-        } else {
-            return (sensorOrientation - rotation + 360) % 360;
-        }
+        // UVC 外接摄像头被 HAL 错报为 LENS_FACING_FRONT 时，与 EXTERNAL/BACK 同等处理：
+// 用 (sensor - displayRot + 360) % 360。这样 CaptureRequest.JPEG_ORIENTATION 与
+// 预览 setTransform 旋转角度公式保持一致（JPEG 路径下 EXIF rotation 与预览方向对齐）。
+if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT
+        && lensFacing != CameraCharacteristics.LENS_FACING_EXTERNAL) {
+    return (sensorOrientation + rotation) % 360;
+}
+return (sensorOrientation - rotation + 360) % 360;
     }
 
     private static class CompareSizesByArea implements Comparator<Size> {

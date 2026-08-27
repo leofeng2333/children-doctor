@@ -119,6 +119,16 @@ public class Camera2Controller {
                     cameras.get(i).previewSize,
                     cameras.get(i).captureSize
             );
+            // 硬编码方向校准（目标机器实测）：
+            //   slot=0（左）：预览顺时针偏90° → 需补逆时针90° → extraRotate=270
+            //   slot=1（右）：预览逆时针偏180° → 需补顺时针180° → extraRotate=180
+            if (i == 0) {
+                sessions[i].setCalibration(270, false);
+                log("CALIBRATION slot=0 extraRotate=270 extraMirror=false");
+            } else if (i == 1) {
+                sessions[i].setCalibration(90, false);
+                log("CALIBRATION slot=1 extraRotate=180 extraMirror=false");
+            }
         }
 
         isStopped.set(false);
@@ -821,6 +831,29 @@ public class Camera2Controller {
         });
     }
 
+    /**
+     * 设置指定 slot 摄像头的方向校准量。
+     * 必须在 startPreview 之后、stopPreview 之前调用。
+     * 已在运行的 configureTransform 会立即重算并应用，拍照路径在下一次 capture 时生效。
+     * @param slot 槽位索引（0 或 1）
+     * @param extraRotateDegrees 额外旋转角（0/90/180/270）
+     * @param extraMirrorNeeded true=再补一次水平镜像
+     */
+    public void setSlotCalibration(int slot, int extraRotateDegrees, boolean extraMirrorNeeded) {
+        mainHandler.post(() -> {
+            if (sessions == null || slot < 0 || slot >= sessions.length) {
+                Log.w(TAG, "setSlotCalibration: invalid slot " + slot);
+                return;
+            }
+            Camera2Session s = sessions[slot];
+            s.setCalibration(extraRotateDegrees, extraMirrorNeeded);
+            // 立即重新触发 transform，重算会用上新的校准量
+            configureTransform(slot, "calibrationChanged(slot=" + slot + ")");
+            Log.d(TAG, "setSlotCalibration applied for slot=" + slot
+                    + " extraRotate=" + s.getExtraRotate() + " extraMirror=" + s.getExtraMirror());
+        });
+    }
+
     public void pausePreview() {
         mainHandler.post(() -> {
             if (sessions == null || isStopped.get()) return;
@@ -1020,13 +1053,30 @@ public class Camera2Controller {
         // 把 srcRect 缩放到填满 viewRect（FILL = 等比放大填满，可能裁剪）
         matrix.setRectToRect(srcRect, viewRect, Matrix.ScaleToFit.FILL);
 
+        // UVC 外接摄像头被 HAL 错报为 LENS_FACING_FRONT 时，与 EXTERNAL/BACK 同等处理：
+        //   - 不做额外的水平镜像（系统相机不会自动镜像外接摄像头）；
+        //   - 旋转公式与后置一致。
+        // 这样预览 setTransform 与拍照 applyFrontMirrorIfNeeded 走完全相同的角度公式。
+        boolean isExternal = (lensFacing == CameraCharacteristics.LENS_FACING_EXTERNAL);
+        boolean isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) && !isExternal;
+
         // 前置摄像头 HAL 还会自动水平镜像预览，Matrix 需再补一个 -1 X scale 才能"看上去正常"
-        if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+        if (isFront) {
             matrix.postScale(-1f, 1f, vw / 2f, vh / 2f);
         }
 
         // 整体旋转（绕中心）
         matrix.postRotate(rotation, vw / 2f, vh / 2f);
+
+        // 摄像头校准偏移量（extraRotate / extraMirror）叠加在公式之上
+        if (s.getExtraRotate() != 0) {
+            matrix.postRotate(s.getExtraRotate(), vw / 2f, vh / 2f);
+            log("configureTransform slot=" + slot + " extraRotate applied: " + s.getExtraRotate());
+        }
+        if (s.getExtraMirror()) {
+            matrix.postScale(-1f, 1f, vw / 2f, vh / 2f);
+            log("configureTransform slot=" + slot + " extraMirror applied");
+        }
 
         tv.setTransform(matrix);
 
@@ -1034,18 +1084,21 @@ public class Camera2Controller {
                 + " | facing=" + facingStr
                 + " sensorOrient=" + sensor
                 + " displayRot=" + displayRotDeg + "(0)"
-                + " rotation=" + rotation
+                + " rotation=" + rotation + "+extraRotate=" + s.getExtraRotate()
                 + " swapped=" + swappedDimensions
                 + " | preview=" + preview.getWidth() + "x" + preview.getHeight()
                 + " view=" + vw + "x" + vh
                 + " → srcRect=" + (int) srcRect.width() + "x" + (int) srcRect.height()
+                + " extraMirror=" + s.getExtraMirror()
                 + " applied");
 
         Log.d(TAG, "configureTransform slot=" + slot + " facing=" + facingStr
                 + " sensor=" + sensor + " displayRot=" + displayRotDeg
-                + " rotation=" + rotation + " swapped=" + swappedDimensions
+                + " rotation=" + rotation + "+extraRotate=" + s.getExtraRotate()
+                + " swapped=" + swappedDimensions
                 + " preview=" + preview.getWidth() + "x" + preview.getHeight()
-                + " view=" + vw + "x" + vh + " trigger=" + trigger);
+                + " view=" + vw + "x" + vh + " extraMirror=" + s.getExtraMirror()
+                + " trigger=" + trigger);
     }
 
     /**
