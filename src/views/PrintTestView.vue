@@ -1,61 +1,36 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { printPhoto, printPageMounted, printPageUnmounted } from '@/utils/print'
+// path-current: 单一路径打印入口。不再使用 fitImageToPaper letterbox，
+// 直接走 JS canvas → base64 → native fast path (1844×1240 缩放)。
+import { printPhoto } from '@/utils/print-current'
+import { printPageMounted, printPageUnmounted } from '@/utils/print-current'
 // Vite 的 `?url` 拿 URL；`?inline` 直接拿 base64 dataURL（编译期内联）。
-// 用 inline 让原生侧跳过 readImageAsBase64, 避免 Vite 的 /assets/*.png
-// 在 Android Capacitor 里没有对应 ContentResolver 条目而读不到的问题。
 import analysisSuccess from '@/assets/images/analysis-success.png?inline'
 
 const router = useRouter()
 const goBack = () => router.push('/')
 
-// 与 ScanSubscription.vue 完全一致：单次打印入口, 失败自动降级
+// 单次打印入口（与 ScanSubscription 一致）
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
 const printError = ref('')
 
-// 页面级 HiTi USB 占用：进入页面 init（bind service + claim USB），离开页面 release。
-// 不在 app 启动时 init HiTi，是为了避免与 UVC camera 抢占同一 USB bus。
 onMounted(async () => {
   await printPageMounted()
 })
 onBeforeUnmount(async () => {
-  // router.push 之后 beforeUnmount 触发；这时先 release USB，让其它页面（特别是
-  // CameraCaptureView 之类需要 USB 的）能继续使用 USB bus。
   await printPageUnmounted()
 })
 onUnmounted(async () => {
-  // 兜底：万一 onBeforeUnmount 漏了，再 release 一次（HiTi release 是 idempotent，
-  // serviceConnector 已经是 null 时第二次 release 是 no-op）。
   await printPageUnmounted()
 })
 
-// 本地选择图片打印
-const pickedImgUrl = ref<string>('') // 当前选中的图片（dataURL）
-const pickedImgName = ref<string>('') // 选中的文件名（用于显示）
+const pickedImgUrl = ref<string>('')
+const pickedImgName = ref<string>('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-/**
- * 打印模式（仅 PrintTestView 多模式对比诊断使用）—— 直接 4 个独立按钮，
- * 点击即触发对应模式的打印。生产路径不在这里出现。
- *
- * - 'current'：与 v1.0.15-print-stable 一致（TS letterbox + Java 不旋转不 normalize，
- *   raw bitmap → SDK）。生产路径，验证根因是不是"TS letterbox 输出 portrait bitmap"。
- *
- * - 'cover-fit'：TS 强制 cover-fit 到 1844×1240 landscape + Java 不动。
- *   若直接打印恢复正常 ⇒ TS letterbox 是元凶。
- *
- * - 'portrait-rotate'：TS letterbox + Java 检测 portrait bitmap 后 90° 旋转。
- *   验证 Java 端补 portrait 旋转能否修复直接打印卡 25s。
- *
- * - 'portrait-rotate-normalize'：TS letterbox + Java portrait 旋转 + normalize crop。
- *   510e621 时的混合方案。
- */
-type BitmapProcessMode = 'current' | 'cover-fit' | 'portrait-rotate' | 'portrait-rotate-normalize'
-
 function onPickClick() {
-  // 重置 value，确保同一张图也能再次触发 change
   if (fileInputRef.value) fileInputRef.value.value = ''
   fileInputRef.value?.click()
 }
@@ -70,7 +45,7 @@ function onPickChange(e: Event) {
   reader.onload = () => {
     const result = typeof reader.result === 'string' ? reader.result : ''
     pickedImgUrl.value = result
-    console.log('[PrintTest] picked image', {
+    console.log('[PrintTest/current] picked image', {
       name: file.name,
       type: file.type,
       size: file.size,
@@ -80,7 +55,7 @@ function onPickChange(e: Event) {
   }
   reader.onerror = () => {
     printError.value = '读取本地图片失败'
-    console.error('[PrintTest] FileReader error:', reader.error)
+    console.error('[PrintTest/current] FileReader error:', reader.error)
   }
   reader.readAsDataURL(file)
 }
@@ -92,46 +67,36 @@ function onClearPicked() {
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
-// 实际打印：优先用选中的本地图，没有就用内置的 analysis-success.png
-// 直接接收 mode 参数——4 个独立按钮各自调用 onPrint(opt.value)
-async function onPrint(mode: BitmapProcessMode) {
+// path-current: 单一路径，单一按钮
+async function onPrint() {
   if (isPrinting.value || hasPrinted.value) return
-  // 没选本地图时，用内置图，并标记"已用过内置图"以便禁用
   const imgUrl = pickedImgUrl.value || analysisSuccess
-  const isBuiltin = !pickedImgUrl.value
   isPrinting.value = true
   printError.value = ''
-  console.log('[PrintTest] onPrint click', {
-    source: isBuiltin ? 'builtin' : 'picked',
+  console.log('[PrintTest/current] onPrint click', {
+    source: pickedImgUrl.value ? 'picked' : 'builtin',
     imgName: pickedImgName.value || '(builtin analysis-success.png)',
     imgUrlType: imgUrl.slice(0, 40),
     len: imgUrl.length,
-    mode,
   })
   try {
     await printPhoto({
       goodImgUrl: imgUrl,
-      qrcodeUrl: '',
       jobName: pickedImgName.value
-        ? `本地打印-${pickedImgName.value}[${mode}]`
-        : `打印测试照片[${mode}]`,
-      printMode: mode,
+        ? `本地打印-${pickedImgName.value}`
+        : `打印测试照片[current]`,
     })
     hasPrinted.value = true
-    console.log('[PrintTest] printPhoto resolved (success) mode=' + mode)
+    console.log('[PrintTest/current] printPhoto resolved (success)')
   } catch (e) {
     const err = e as Error
-    console.error('[PrintTest] printPhoto rejected:', err)
-    console.error('[PrintTest] stack:', err?.stack)
+    console.error('[PrintTest/current] printPhoto rejected:', err)
+    console.error('[PrintTest/current] stack:', err?.stack)
     printError.value = err?.message ?? '打印失败'
   } finally {
     isPrinting.value = false
   }
 }
-
-// 用户可手动从 printPhoto 的 native 日志（"[print/HiTi] native log session started"）
-// 拿到具体路径；路径模板：
-// /storage/emulated/0/Android/data/com.children.doctor/files/print_logs/print_<ts>_<rand>.log
 </script>
 
 <template>
@@ -183,45 +148,18 @@ async function onPrint(mode: BitmapProcessMode) {
       </div>
     </div>
 
-    <!-- 4 个独立打印按钮（仅 PrintTestView 诊断使用，生产路径不暴露） -->
+    <!-- path-current: 单一打印按钮 -->
     <div class="mode-block">
-      <div class="mode-title">打印模式（点击即打印）</div>
+      <div class="mode-title">path-current 单路径打印</div>
       <div class="mode-grid">
         <button
           type="button"
-          class="mode-btn"
+          class="mode-btn mode-btn-single"
           :disabled="isPrinting || hasPrinted"
-          @click="onPrint('current')"
+          @click="onPrint()"
         >
-          <span class="mode-btn-label">1. current</span>
-          <span class="mode-btn-hint">TS letterbox + Java 不动（生产路径）</span>
-        </button>
-        <button
-          type="button"
-          class="mode-btn"
-          :disabled="isPrinting || hasPrinted"
-          @click="onPrint('cover-fit')"
-        >
-          <span class="mode-btn-label">2. cover-fit</span>
-          <span class="mode-btn-hint">TS 强制 1844×1240 + Java 不动</span>
-        </button>
-        <button
-          type="button"
-          class="mode-btn"
-          :disabled="isPrinting || hasPrinted"
-          @click="onPrint('portrait-rotate')"
-        >
-          <span class="mode-btn-label">3. portrait-rotate</span>
-          <span class="mode-btn-hint">TS letterbox + Java 90° 旋转</span>
-        </button>
-        <button
-          type="button"
-          class="mode-btn"
-          :disabled="isPrinting || hasPrinted"
-          @click="onPrint('portrait-rotate-normalize')"
-        >
-          <span class="mode-btn-label">4. portrait-rotate-normalize</span>
-          <span class="mode-btn-hint">TS letterbox + Java 旋转 + normalize</span>
+          <span class="mode-btn-label">打印</span>
+          <span class="mode-btn-hint">fast path 1844×1240 + warmup + retry</span>
         </button>
       </div>
     </div>
