@@ -33,13 +33,16 @@ import java.util.concurrent.TimeoutException;
  * path-current：基于现有打印逻辑（HEAD c6096b8）的单路径强化版本。
  *
  * <p>本类与 {@link HiTiPrinterManager}（4 个 printMode 多模式版本）功能等价，
- * 但去掉了多模式诊断（bitmapProcessMode / portrait-rotate / normalizeBitmapToPaperSize），
+ * 但去掉了多模式诊断（bitmapProcessMode / normalizeBitmapToPaperSize），
  * 改用单一确定性策略：
  *
  * <ul>
  *   <li>letterbox fit-within + SAFE_MARGIN_PX：把任意输入 bitmap 等比缩放到 PaperSize
  *       物理像素框的安全区内（四周扣 24 像素 ≈ 1.9mm），居中放在白色画布上 →
  *       按图片本身比例打印 + 四周至少留一点白边做缓冲处理</li>
+ *   <li>orientation adapt：图片朝向与相纸朝向不一致（portrait vs landscape）→ 旋转 90°
+ *       让两者方向一致后再 letterbox。不裁切图片内容，只在方向对齐后按比例适配，
+ *       保证图片在打印区内居中且无白边浪费。square（6×6 纸或正方形图）不需要旋转。</li>
  *   <li>warmupGate（count>=1 + ClockTask initialDelay=0L）：把 sampleAPK"用户停顿 + 弹对话框 +
  *       选图 + 确认"约 3~5s 的隐式 timing 窗口显式化为代码同步门，~50~200ms 内放行</li>
  *   <li>pauseClockTask during print：warmupGate 通过后挂起 ClockTask，避免与 print doService
@@ -326,14 +329,41 @@ public class HiTiPrinterManager_Current {
 
                     PaperSize size = paperTypeToSize(PaperType);
                     int[] target = paperTypeToTargetPixels(PaperType);
-                    logD("printPhoto: target paper pixels " + target[0] + "x" + target[1]
+                    int paperW = target[0];
+                    int paperH = target[1];
+                    logD("printPhoto: target paper pixels " + paperW + "x" + paperH
                             + " (PaperSize=" + size + ", safeMargin=" + SAFE_MARGIN_PX + "px)");
                     android.graphics.Bitmap bitmap = rawBitmap;
-                    if (bitmap.getWidth() != target[0] || bitmap.getHeight() != target[1]) {
+                    final int imgW = bitmap.getWidth();
+                    final int imgH = bitmap.getHeight();
+                    final boolean imagePortrait = imgH > imgW;
+                    final boolean paperPortrait = paperH > paperW;
+                    // 朝向适配：图片朝向与相纸朝向不一致 → 旋转 90° 让两者方向一致。
+                    // 之后再 letterbox 到 PaperSize 物理像素（安全区内白底居中），
+                    // 不裁切图片内容，只在缩放后四周保留 SAFE_MARGIN_PX 白边。
+                    // square（paper 6×6 或图片本身正方形）不需要旋转。
+                    if (imagePortrait != paperPortrait) {
+                        logD("printPhoto: [orientation] image " + imgW + "x" + imgH
+                                + " (portrait=" + imagePortrait + ") vs paper "
+                                + paperW + "x" + paperH + " (portrait=" + paperPortrait
+                                + ") → rotating 90° to align");
+                        android.graphics.Matrix m = new android.graphics.Matrix();
+                        m.postRotate(90f);
+                        android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
+                                bitmap, 0, 0, imgW, imgH, m, true);
+                        bitmap = rotated;
+                        logD("printPhoto: after rotation bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
+                    } else {
+                        logD("printPhoto: [orientation] image " + imgW + "x" + imgH
+                                + " (portrait=" + imagePortrait + ") matches paper "
+                                + paperW + "x" + paperH + " (portrait=" + paperPortrait
+                                + "), no rotation needed");
+                    }
+                    if (bitmap.getWidth() != paperW || bitmap.getHeight() != paperH) {
                         logD("printPhoto: [letterbox] fitting " + bitmap.getWidth() + "x" + bitmap.getHeight()
-                                + " into " + target[0] + "x" + target[1]
+                                + " into " + paperW + "x" + paperH
                                 + " (keep aspect ratio + white border, safeMargin=" + SAFE_MARGIN_PX + "px)");
-                        bitmap = letterboxBitmapToPaper(bitmap, target[0], target[1]);
+                        bitmap = letterboxBitmapToPaper(bitmap, paperW, paperH);
                     }
 
                     // 5) PrintPara 装配
