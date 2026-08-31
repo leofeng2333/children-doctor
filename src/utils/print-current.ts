@@ -37,19 +37,19 @@ export interface PrintOptions {
 /**
  * path-current：单路径打印入口。
  *
- * <p>策略：直接 base64 → Java 解码 → paperType=2 fast path 缩放到 1844×1240 →
+ * <p>策略：原图 base64 → Java 解码 → letterbox fit-within + SAFE_MARGIN_PX（任意 paperType）→
  * PrintPara → sync doService + 20s timeout + retry 1 次。
  *
  * <p>关键设计：
  * <ul>
- *   <li>不再做 TS 端 cover-fit / letterbox，bitmap 直接送 native</li>
- *   <li>Java 端 paperType=2 fast path 缩放：等比放大 + center-crop 到 1844×1240</li>
+ *   <li>TS 端不做任何尺寸适配（不缩放 / 不裁切 / 不 letterbox / 不限制最大像素），原图直接送 native</li>
+ *   <li>所有图片尺寸适配集中在 Java {@link HiTiPrinterManager_Current#letterboxBitmapToPaper}：
+ *       等比缩放到 PaperSize 物理像素的安全区内（四周扣 SAFE_MARGIN_PX=24px ≈ 1.9mm），
+ *       居中放在白色画布上 → 按图片本身比例打印 + 至少留一点白边做缓冲处理</li>
  *   <li>Java 端 warmupGate：等 ClockTask 跑 2 个周期 = 6s（仅冷启动第一次 print）</li>
  *   <li>Java 端 retry：doService timeout 后 2s 重试 1 次（区分冷启动 vs SDK 真挂）</li>
  * </ul>
  */
-const PAPER_W = 1844
-const PAPER_H = 1240
 const PAPER_JPEG_QUALITY = 0.92
 
 async function loadImage(input: string): Promise<HTMLImageElement> {
@@ -94,14 +94,20 @@ async function resolveImageAsDataUrl(input: string): Promise<string> {
 }
 
 /**
- * path-current: 简化的 image preparation。
+ * path-current: image preparation。
  *
- * <p>不做 cover-fit / letterbox（之前两个都有问题）。直接把原图作为 PNG/JPEG 解码，
- * 再编码为 JPEG 输出。Java 端 fast path 会缩放到 1844×1240，所以这里不需要做
- * 任何 cover-fit —— 等比放大由 Java 完成。
+ * <p>所有图片尺寸适配都在原生端（{@link HiTiPrinterManager_Current#letterboxBitmapToPaper}）：
+ * 任意输入 bitmap → 等比缩放到 PaperSize 物理像素的安全区内（四周扣 SAFE_MARGIN_PX=24px ≈ 1.9mm）→
+ * 居中放在白色画布上 → 送 SDK。
  *
- * <p>唯一做的预处理：转成 JPEG dataURL（确保 native BitmapFactory.decodeFile 能解码）。
- * 如果 input 已经是 JPEG dataURL，直接返回。
+ * <p>本函数 TS 端不做任何尺寸缩放 / 裁切 / letterbox / 最大像素限制，原图 1:1 绘制到 canvas。
+ * 唯一预处理：把任意 image format（PNG / WebP / HEIC 等）转成 JPEG dataURL，
+ * 确保原生端 BitmapFactory.decodeFile 能稳定解码。
+ *
+ * <p>大小权衡：原图 base64 字符串可能较大（4K JPEG ≈ 1.4MB base64），IPC 传输成本 < 100ms，
+ * BitmapFactory 解码 + letterbox 全部在原生端完成。如果未来出现大图 IPC 性能问题，
+ * 应在原生端用 BitmapFactory.Options.inSampleSize / inJustDecodeBounds 控制解码内存，
+ * 而不是回到 TS 端做尺寸适配（违反"所有尺寸适配在原生端"的契约）。
  */
 export async function prepImageForNative(input: string): Promise<string> {
   if (!input) throw new Error('prepImageForNative: input is empty')
@@ -112,24 +118,15 @@ export async function prepImageForNative(input: string): Promise<string> {
   const srcH = img.naturalHeight || img.height
   if (!srcW || !srcH) throw new Error(`image has zero dimensions (${srcW}x${srcH})`)
 
-  // 输出尺寸限制：避免 base64 过大传输（实测 raw 1844×1240 JPEG ≈ 320KB）。
-  // 如果输入超过 2K 像素，先等比缩小。
-  let targetW = srcW
-  let targetH = srcH
-  if (srcW > 2000 || srcH > 2000) {
-    const ratio = Math.min(2000 / srcW, 2000 / srcH)
-    targetW = Math.round(srcW * ratio)
-    targetH = Math.round(srcH * ratio)
-  }
-
+  // 原图 1:1 绘制到 canvas，所有尺寸适配交给原生端 letterboxBitmapToPaper
   const canvas = document.createElement('canvas')
-  canvas.width = targetW
-  canvas.height = targetH
+  canvas.width = srcW
+  canvas.height = srcH
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('2d context unavailable')
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(img, 0, 0, targetW, targetH)
+  ctx.drawImage(img, 0, 0, srcW, srcH)
 
   const dataUrl: string = await new Promise((resolve, reject) => {
     try {

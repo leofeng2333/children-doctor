@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import QRCode from 'qrcode'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import VueQrcode from 'vue-qrcode'
 import { useQrcodeIdid } from '@/composables/useQrcode'
 import { useAnalysisStore } from '@/stores'
 import { DualCamera } from '@/plugins/dual-camera'
-import { printPhoto } from '@/utils/print'
+import { printPhoto } from '@/utils/print-current'
 
 interface Props {
   /** 主图 URL（不健康面型路径下：右半图矫正后面容；健康面型路径下：analysis-success.png） */
@@ -71,32 +70,14 @@ async function onPrint(goodImgUrl: string) {
   printError.value = ''
   isPrinting.value = true
   try {
-    // 把二维码 URL 渲染成 PNG dataURL 传给打印模板。
-    // System PrintManager 模板只接受 dataURL/file/http(s)，直接传 http(s) 链接
-    // 在 Android WebView 空 origin 下会加载失败。
-    let qrcodeDataUrl = ''
-    if (qrcodeUrl.value) {
-      try {
-        qrcodeDataUrl = await QRCode.toDataURL(qrcodeUrl.value, {
-          width: 360,
-          margin: 1,
-          errorCorrectionLevel: 'M',
-        })
-      } catch (e) {
-        console.warn('[ScanSubscription] QRCode.toDataURL failed, print without qrcode:', e)
-      }
-    }
-    console.log(
-      '[ScanSubscription] onPrint: goodImg=',
-      goodImgUrl,
-      'qrcodeDataUrlLen=',
-      qrcodeDataUrl.length,
-    )
-    // 默认走 HiTi 专用 USB 照片打印机；HiTi 不可用时由 printPhoto 内部
-    // 自动降级到 @capgo/capacitor-printer 系统打印对话框（含二维码排版）。
+    console.log('[ScanSubscription] onPrint: goodImg=', goodImgUrl)
+    // 走 HiTi 专用 USB 照片打印机（HiTiPrinterCurrent 单 plugin 方案）；
+    // HiTi 直接打图，不支持 QR 排版 —— HiTi 不可用时不再降级到 system printer
+    // （v2 改造前用过旧 @/utils/print，会自动 fallback 到 @capgo/capacitor-printer
+    //  系统对话框把 goodImg + QR 拼成 HTML 打印 —— 该路径已弃用，QR 不再打印）。
+    // qrcodeUrl.vue 的 <vue-qrcode> 仍然展示给用户扫码关注，与打印流程无关。
     await printPhoto({
       goodImgUrl,
-      qrcodeUrl: qrcodeDataUrl,
       jobName: '宝贝照片',
     })
     // 仅打印走通后锁定按钮：原生平台 printHtml 弹系统对话框，用户取消不会

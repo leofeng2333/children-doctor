@@ -37,9 +37,13 @@ import java.util.concurrent.TimeoutException;
  * 改用单一确定性策略：
  *
  * <ul>
- *   <li>paperType=2 → fast path：bitmap 缩放到 1844×1240 物理像素，命中 SDK fast path</li>
- *   <li>其它 paperType → 直接送 SDK，由 SDK 内部按 PaperSize 处理</li>
- *   <li>warmupGate：等 ClockTask 跑够 2 个周期再 doService（防冷启动 stall）</li>
+ *   <li>letterbox fit-within + SAFE_MARGIN_PX：把任意输入 bitmap 等比缩放到 PaperSize
+ *       物理像素框的安全区内（四周扣 24 像素 ≈ 1.9mm），居中放在白色画布上 →
+ *       按图片本身比例打印 + 四周至少留一点白边做缓冲处理</li>
+ *   <li>warmupGate（count>=1 + ClockTask initialDelay=0L）：把 sampleAPK"用户停顿 + 弹对话框 +
+ *       选图 + 确认"约 3~5s 的隐式 timing 窗口显式化为代码同步门，~50~200ms 内放行</li>
+ *   <li>pauseClockTask during print：warmupGate 通过后挂起 ClockTask，避免与 print doService
+ *       并发向同一个 serviceConnector 发 USB control transfer（27c3fb0 已实测并发会卡 25s）</li>
  *   <li>retry 1 次：doService timeout 后等 2s 重试（区分冷启动 vs SDK 真挂）</li>
  * </ul>
  *
@@ -48,7 +52,8 @@ import java.util.concurrent.TimeoutException;
  *   <li>消除多模式分支带来的不确定性（"哪个 mode 才正确？"）</li>
  *   <li>让生产路径（ScanSubscription.vue 调 printPhoto）只走一条已验证的路径</li>
  *   <li>保留 ClockTask + sync doService 基础结构（与 v1.0.15-print-stable 一致）</li>
- *   <li>补三个防御性增强：fast path 命中 SDK fast path / warmupGate 防冷启动 / retry 防单次抖动</li>
+ *   <li>补四个防御性增强：letterbox + 安全边距 / warmupGate 显式化 sampleAPK timing /
+ *       pauseClockTask 防 27c3fb0 竞态 / retry 防单次抖动</li>
  * </ol>
  *
  * <p>Capacitor 入口：{@link HiTiPrinterPlugin_Current} 用 "HiTiPrinterCurrent" 注册。
@@ -75,20 +80,31 @@ public class HiTiPrinterManager_Current {
         return t;
     });
 
-    /** ClockTask keepalive USB control transfer 通道（与 sampleAPK 一致）。 */
+    /** ClockTask keepalive USB control transfer 通道（与 sampleAPK 一致）。
+     *  sampleAPK 走的是"用户停顿 + 弹对话框 + 选图 + 确认"自然 timing 窗口约 3~5s，期间 ClockTask 至少跑 1 次。
+     *  path-current 自动化该 timing：initialDelay=0L，让 ClockTask 在 StartService 成功后立刻跑第 1 次，
+     *  warmupGate 等 count>=1（~50~200ms）后即放行，把 sampleAPK 的隐式 timing 窗口显式化为代码同步门。 */
     private ScheduledExecutorService clockExecutor;
     private ScheduledFuture<?> clockFuture;
     private static final long CLOCK_INTERVAL_SECONDS = 3L;
-    private static final long CLOCK_INITIAL_DELAY_SECONDS = 3L;
+    private static final long CLOCK_INITIAL_DELAY_SECONDS = 0L;
 
     /** warmupGate 状态：ClockTask 完成次数（每次 run 完成时 +1）。 */
     private final Object warmupLock = new Object();
     private int warmupCycleCount = 0;
-    /** 冷启动 readiness gate：要求 ClockTask 至少跑 2 个周期 = 6s 才让 printPhoto 进入 doService。 */
-    private static final int WARMUP_REQUIRED_CYCLES = 2;
-    private static final long WARMUP_POLL_MS = 200L;
-    /** warmupGate fail-safe：等 10s 强制放行（避免永久阻塞 UI）。 */
-    private static final long WARMUP_MAX_WAIT_MS = 10_000L;
+    /** ClockTask 暂停标志：printPhoto 期间挂起 ClockTask，避免与 print doService 并发向 serviceConnector
+     *  发 USB control transfer（27c3fb0 已实测：ClockTask 与 print doService 并发会让 doService 卡 25s）。
+     *  暂停用 wait/notify 在 Runnable 内挂起 run()，不破坏 ClockTask 的 fixedRate 调度时序。 */
+    private final Object clockPauseLock = new Object();
+    private volatile boolean clockTaskPaused = false;
+    /** 冷启动 readiness gate：要求 ClockTask 至少跑 1 次（与 sampleAPK 一致：ClockTask 跑 1 次再点 print）。
+     *  配 ClockTask initialDelay=0L，Gate 实际通过时间 ~50~200ms（一次 getPrinterStatus USB transfer 耗时）。 */
+    private static final int WARMUP_REQUIRED_CYCLES = 1;
+    private static final long WARMUP_POLL_MS = 100L;
+    /** warmupGate fail-safe：等 3s 强制放行（ClockTask initialDelay=0 后正常应 ~200ms 内跑完 1 次，
+     *  3s 留给 ClockTask 自身卡死的 worst case；比 10s 更短，因为我们已经把 initialDelay 从 3s 改到 0L，
+     *  不需要再为初始延迟留 6s 余量）。 */
+    private static final long WARMUP_MAX_WAIT_MS = 3_000L;
     /** doService timeout（与现有 printPhoto 一致）：20s。 */
     private static final long PRINT_PHOTO_TIMEOUT_SECONDS = 20L;
     /** 状态探测 timeout：5s。 */
@@ -97,9 +113,28 @@ public class HiTiPrinterManager_Current {
     private static final long PRINT_RETRY_DELAY_MS = 2000L;
     /** retry 最大次数：1（首次失败后再试 1 次，2 次都失败就报错）。 */
     private static final int PRINT_MAX_RETRIES = 1;
-    /** paperType=2 (4×6) fast path 目标物理像素：1844×1240。SDK 注释里 PAPER_SIZE_6X4_PHOTO 期望。 */
-    private static final int FAST_PATH_W = 1844;
-    private static final int FAST_PATH_H = 1240;
+    /**
+     * 各 paperType 对应的 PaperSize 物理像素（SDK 注释里 PAPER_SIZE_*_PHOTO 的"pixels"列）。
+     * letterboxBitmapToPaper 把任意输入 bitmap 缩放到该尺寸 + 居中放白底，保证：
+     * (1) bitmap 严格等于 PaperSize 物理像素 → SDK 行为可预期，避免冷启动卡死的可能诱因；
+     * (2) 等比缩放 + 不裁剪 → 按图片本身比例打印；
+     * (3) 四周白边（少量）→ 用户接受。
+     */
+    private static final int[] PAPER_TYPE_2_PIXELS = {1844, 1240}; // PAPER_SIZE_6X4_PHOTO
+    private static final int[] PAPER_TYPE_3_PIXELS = {1548, 2140}; // PAPER_SIZE_5X7_PHOTO
+    private static final int[] PAPER_TYPE_4_PIXELS = {1844, 2434}; // PAPER_SIZE_6X8_PHOTO
+    private static final int[] PAPER_TYPE_5_PIXELS = {1240, 1844}; // PAPER_SIZE_6X4_SPLIT_2UP
+    private static final int[] PAPER_TYPE_6_PIXELS = {1844, 1844}; // PAPER_SIZE_6X6_PHOTO
+    /**
+     * 安全边距（单边，物理像素）：24 像素 ≈ 1.9mm @ 307dpi。
+     *
+     * <p>letterboxBitmapToPaper 把图片缩放到 {@code (targetW - 2*SAFE_MARGIN_PX, targetH - 2*SAFE_MARGIN_PX)}
+     * 安全区，居中放在 PaperSize 物理像素白底画布上。这样即使 bitmap 宽高比与 PaperSize 完全匹配，
+     * 四周也至少有 24 像素（约 1.9mm）白边——防止打印到纸张不可印区 / 缓冲 / 用户视觉缓冲。
+     *
+     * <p>24 像素 ≈ 1.3%~1.9% 短边比例，肉眼几乎不可见，但确实留出了纸张打印工业实践建议的 1.5~2mm 缓冲。
+     */
+    private static final int SAFE_MARGIN_PX = 24;
 
     private ServiceConnector serviceConnector;
     private String tablesRoot = "";
@@ -164,6 +199,11 @@ public class HiTiPrinterManager_Current {
         synchronized (warmupLock) {
             warmupCycleCount = 0;
         }
+        // pause 状态跟随 ClockTask 一起重置，避免下次 startService 后 ClockTask 立即恢复却仍处于暂停态
+        synchronized (clockPauseLock) {
+            clockTaskPaused = false;
+            clockPauseLock.notifyAll();
+        }
     }
 
     public void shutdown() {
@@ -215,15 +255,20 @@ public class HiTiPrinterManager_Current {
      * <p>策略：
      * <ol>
      *   <li>await tablesReady（表根解压完）</li>
-     *   <li>warmupGate（等 ClockTask 跑够 2 个周期，让 USB control transfer 通道热身）</li>
-     *   <li>bitmap 解码 → paperType=2 fast path 缩放到 1844×1240</li>
+     *   <li>warmupGate：等 ClockTask 至少跑 1 次（initialDelay=0L 后通常 ~50~200ms 完成），
+     *       fail-safe 3s 强制放行</li>
+     *   <li>pauseClockTask：暂停 ClockTask，避免与 print doService 并发向同一个
+     *       serviceConnector 发 USB control transfer（27c3fb0 实测并发会卡 25s）</li>
+     *   <li>bitmap 解码 → letterbox fit-within：等比缩放到 PaperSize 物理像素 + 居中白底
+     *       （保持宽高比 + 接受少量白边）</li>
      *   <li>PrintPara.getPrintPhotoPara 装配参数</li>
      *   <li>同步 doService（带 20s timeout 兜底）</li>
-     *   <li>失败 → 2s 后重试 1 次</li>
-     *   <li>两次都失败 → UI 立即报错</li>
+     *   <li>失败 → 2s 后重试 1 次（ClockTask 仍暂停）</li>
+     *   <li>两次都失败 → finally 中 resumeClockTask，UI 立即报错</li>
      * </ol>
      *
      * <p>每一步失败都有详细日志记录到 PrintLogger + logcat，方便回溯问题。
+     * ClockTask 暂停/恢复成对出现：即使任何路径抛异常，finally 也会 resumeClockTask。
      */
     public void printPhoto(final CurrentPrintOptions opts, final Callback<Object> cb) {
         logD("printPhoto() called: " + opts);
@@ -237,6 +282,7 @@ public class HiTiPrinterManager_Current {
         Thread sampleThread = new Thread(new Runnable() {
             @Override
             public void run() {
+                boolean clockPausedByUs = false;
                 try {
                     // 1) tablesReady
                     boolean tablesLoaded = tablesReady.await(10, TimeUnit.SECONDS);
@@ -251,8 +297,14 @@ public class HiTiPrinterManager_Current {
                         return;
                     }
 
-                    // 2) warmupGate：等 ClockTask 跑够 2 个周期
+                    // 2) warmupGate：等 ClockTask 至少跑 1 次（fail-safe 3s）
                     warmupGate();
+
+                    // 2.5) pauseClockTask：ClockTask 持续运行会与 print doService 并发向
+                    // serviceConnector 发 USB control transfer，27c3fb0 实测会卡 25s。
+                    // 这里显式暂停 ClockTask，让 print doService 独占 serviceConnector。
+                    pauseClockTask();
+                    clockPausedByUs = true;
 
                     // 3) 参数 + bitmap
                     final int PRINTCOUNT = opts.printCount;
@@ -273,12 +325,15 @@ public class HiTiPrinterManager_Current {
                     logD("printPhoto: decoded bitmap " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight());
 
                     PaperSize size = paperTypeToSize(PaperType);
+                    int[] target = paperTypeToTargetPixels(PaperType);
+                    logD("printPhoto: target paper pixels " + target[0] + "x" + target[1]
+                            + " (PaperSize=" + size + ", safeMargin=" + SAFE_MARGIN_PX + "px)");
                     android.graphics.Bitmap bitmap = rawBitmap;
-                    if (PaperType == 2
-                            && (bitmap.getWidth() != FAST_PATH_W || bitmap.getHeight() != FAST_PATH_H)) {
-                        logD("printPhoto: [fast path] scaling " + bitmap.getWidth() + "x" + bitmap.getHeight()
-                                + " -> " + FAST_PATH_W + "x" + FAST_PATH_H);
-                        bitmap = scaleBitmapToFastPath(bitmap);
+                    if (bitmap.getWidth() != target[0] || bitmap.getHeight() != target[1]) {
+                        logD("printPhoto: [letterbox] fitting " + bitmap.getWidth() + "x" + bitmap.getHeight()
+                                + " into " + target[0] + "x" + target[1]
+                                + " (keep aspect ratio + white border, safeMargin=" + SAFE_MARGIN_PX + "px)");
+                        bitmap = letterboxBitmapToPaper(bitmap, target[0], target[1]);
                     }
 
                     // 5) PrintPara 装配
@@ -298,13 +353,13 @@ public class HiTiPrinterManager_Current {
                     logD("printPhoto: PrintPara assembled, bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight()
                             + " size=" + size);
 
-                    // 6) sync doService (带 20s timeout 兜底 + retry 1 次)
+                    // 6) sync doService (带 20s timeout 兜底 + retry 1 次，ClockTask 整段保持暂停)
                     int attempt = 0;
                     String lastError = null;
                     while (attempt <= PRINT_MAX_RETRIES) {
                         if (attempt > 0) {
                             logD("printPhoto: retry " + attempt + "/" + PRINT_MAX_RETRIES
-                                    + " after " + PRINT_RETRY_DELAY_MS + "ms");
+                                    + " after " + PRINT_RETRY_DELAY_MS + "ms (ClockTask still paused)");
                             try {
                                 Thread.sleep(PRINT_RETRY_DELAY_MS);
                             } catch (InterruptedException ie) {
@@ -325,7 +380,7 @@ public class HiTiPrinterManager_Current {
                             continue;
                         }
 
-                        logD("printPhoto: [attempt 0] calling doService synchronously");
+                        logD("printPhoto: [attempt 0] calling doService synchronously (ClockTask paused)");
                         Object[] r = doSyncWithTimeout(job);
                         if (r == null) return;
                         if ((Boolean) r[0]) {
@@ -342,6 +397,13 @@ public class HiTiPrinterManager_Current {
                 } catch (Throwable t) {
                     logE("printPhoto raw Thread failed", t);
                     post(cb, null, t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
+                } finally {
+                    // 成对出现：无论成功 / 失败 / 异常，都确保 ClockTask 恢复 keepalive，
+                    // 否则 ClockTask 会一直挂起，下一次 print 进来时 warmupGate 检测到
+                    // count>=1 会立即通过但 ClockTask 已暂停（空跑），失去 keepalive 意义。
+                    if (clockPausedByUs) {
+                        resumeClockTask();
+                    }
                 }
             }
         }, "HiTi-Current-Print-" + System.currentTimeMillis());
@@ -394,42 +456,101 @@ public class HiTiPrinterManager_Current {
     }
 
     /**
-     * paperType=2 fast path 缩放：等比放大 + center-crop 到 1844×1240。
-     * 比例一致 → 等比缩放；不一致 → 长边对齐 + 中心裁切。
+     * paperType → PaperSize 物理像素查表。返回的 {@code {w, h}} 是
+     * {@link #letterboxBitmapToPaper} 的目标尺寸，与 {@link #paperTypeToSize} 的 PaperSize 一一对应。
+     * 未知 paperType 走 paperType=2 默认（4×6 物理像素）。
      */
-    private android.graphics.Bitmap scaleBitmapToFastPath(android.graphics.Bitmap src) {
+    private static int[] paperTypeToTargetPixels(int paperType) {
+        switch (paperType) {
+            case 3: return PAPER_TYPE_3_PIXELS;
+            case 4: return PAPER_TYPE_4_PIXELS;
+            case 5: return PAPER_TYPE_5_PIXELS;
+            case 6: return PAPER_TYPE_6_PIXELS;
+            case 2:
+            default: return PAPER_TYPE_2_PIXELS;
+        }
+    }
+
+    /**
+     * Letterbox fit-within + 安全边距：等比缩放 {@code src} 到完全在
+     * {@code (targetW - 2*SAFE_MARGIN_PX, targetH - 2*SAFE_MARGIN_PX)} 安全区内，
+     * 居中放在 {@code targetW × targetH}（PaperSize 物理像素）的白色画布上。
+     *
+     * <p>行为：
+     * <ul>
+     *   <li>安全区 = PaperSize 物理像素四周各扣 {@link #SAFE_MARGIN_PX}（默认 24 像素 ≈ 1.9mm）</li>
+     *   <li>等比缩放 src 到完全在安全区内（min 缩放保证短边不超框，图片完整）</li>
+     *   <li>居中放在白色画布上，四周至少有 SAFE_MARGIN_PX 白边（即使宽高比完全匹配）</li>
+     *   <li>缩放后尺寸与 src 相同时复用 src（避免 createScaledBitmap 的内存分配）</li>
+     * </ul>
+     *
+     * <p>为什么 letterbox 而不是 center-crop：
+     * <ul>
+     *   <li>用户要求"按图片本身的比例打印 + 接受白边"——letterbox 同时满足两个条件</li>
+     *   <li>center-crop 会裁掉图片的两侧/上下，破坏完整图片，不满足"按比例打印"语义</li>
+     * </ul>
+     *
+     * <p>为什么不在 SDK 内部做 letterbox：
+     * <ul>
+     *   <li>SDK 闭源，无法验证内部 letterbox 行为</li>
+     *   <li>bitmap 严格等于 PaperSize 物理像素时 SDK 行为可预期，可能也是 27c3fb0
+     *       冷启动卡死问题的避雷点</li>
+     * </ul>
+     *
+     * <p>为什么需要 SAFE_MARGIN_PX：
+     * <ul>
+     *   <li>用户要求"打印纸至少留一点白边做缓冲处理"——防止内容打印到纸张物理边缘</li>
+     *   <li>HiTi 物理像素 = 理论可印区，实际可印区略小（纸张裁切误差 + 打印机进纸偏移）</li>
+     *   <li>24 像素 ≈ 1.9mm @ 307dpi，照片纸工业实践建议值，肉眼几乎不可见</li>
+     * </ul>
+     *
+     * <p>返回的 bitmap 由 SDK 自行 recycle（sampleAPK 也是直接传给 SDK 不显式 recycle）。
+     */
+    private android.graphics.Bitmap letterboxBitmapToPaper(android.graphics.Bitmap src, int targetW, int targetH) {
         int srcW = src.getWidth();
         int srcH = src.getHeight();
-        if (srcW <= 0 || srcH <= 0) return src;
-
-        float srcRatio = (float) srcW / (float) srcH;
-        float targetRatio = (float) FAST_PATH_W / (float) FAST_PATH_H; // ≈ 1.487
-
-        if (Math.abs(srcRatio - targetRatio) < 0.01f) {
-            android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(
-                    src, FAST_PATH_W, FAST_PATH_H, true);
-            logD("scaleBitmapToFastPath: ratio match, scaled " + srcW + "x" + srcH
-                    + " -> " + FAST_PATH_W + "x" + FAST_PATH_H);
-            return scaled;
+        if (srcW <= 0 || srcH <= 0 || targetW <= 0 || targetH <= 0) {
+            logE("letterboxBitmapToPaper: invalid size src=" + srcW + "x" + srcH
+                    + " target=" + targetW + "x" + targetH);
+            return src;
         }
 
-        int scaleW, scaleH;
-        if (srcRatio > targetRatio) {
-            scaleH = FAST_PATH_H;
-            scaleW = Math.round(srcW * ((float) FAST_PATH_H / srcH));
-        } else {
-            scaleW = FAST_PATH_W;
-            scaleH = Math.round(srcH * ((float) FAST_PATH_W / srcW));
-        }
-        android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(src, scaleW, scaleH, true);
-        int sx = (scaleW - FAST_PATH_W) / 2;
-        int sy = (scaleH - FAST_PATH_H) / 2;
-        android.graphics.Bitmap cropped = android.graphics.Bitmap.createBitmap(scaled, sx, sy, FAST_PATH_W, FAST_PATH_H);
-        logD("scaleBitmapToFastPath: center-cropped " + srcW + "x" + srcH
-                + " -> scaled " + scaleW + "x" + scaleH
-                + " -> cropped " + FAST_PATH_W + "x" + FAST_PATH_H);
-        if (cropped != scaled) scaled.recycle();
-        return cropped;
+        // 有效打印区（安全区）：PaperSize 物理像素四周各扣 SAFE_MARGIN_PX
+        int safeW = Math.max(1, targetW - 2 * SAFE_MARGIN_PX);
+        int safeH = Math.max(1, targetH - 2 * SAFE_MARGIN_PX);
+
+        // 等比缩放到安全区内：min 保证短边不超框，图片完整 + 四周至少 SAFE_MARGIN_PX 白边
+        float scale = Math.min((float) safeW / (float) srcW, (float) safeH / (float) srcH);
+        int scaledW = Math.max(1, Math.round((float) srcW * scale));
+        int scaledH = Math.max(1, Math.round((float) srcH * scale));
+        // 缩放前后尺寸相同 → 复用 src，避免 createScaledBitmap 的内存分配
+        android.graphics.Bitmap scaled = (scaledW == srcW && scaledH == srcH)
+                ? src
+                : android.graphics.Bitmap.createScaledBitmap(src, scaledW, scaledH, true);
+
+        // 白色画布（ARGB_8888 质量，与 sampleAPK 默认 BitmapFactory.decodeStream 一致）。
+        // 即使 src == targetW × targetH（已匹配物理像素），也要走白底以保留 SAFE_MARGIN_PX 安全边距。
+        android.graphics.Bitmap canvas = android.graphics.Bitmap.createBitmap(
+                targetW, targetH, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(canvas);
+        c.drawColor(android.graphics.Color.WHITE);
+
+        // 居中绘制：dx/dy 至少 SAFE_MARGIN_PX
+        int dx = (targetW - scaledW) / 2;
+        int dy = (targetH - scaledH) / 2;
+        c.drawBitmap(scaled, dx, dy, null);
+
+        if (scaled != src) scaled.recycle();
+
+        logD("letterboxBitmapToPaper: src=" + srcW + "x" + srcH
+                + " ratio=" + String.format(java.util.Locale.ROOT, "%.3f", (float) srcW / srcH)
+                + " -> scaled=" + scaledW + "x" + scaledH
+                + " on " + targetW + "x" + targetH + " white canvas"
+                + " (margin=" + SAFE_MARGIN_PX + "px safeArea=" + safeW + "x" + safeH
+                + " dx=" + dx + " dy=" + dy
+                + " border=(" + dx + "," + dy
+                + "," + (targetW - scaledW - dx) + "," + (targetH - scaledH - dy) + "))");
+        return canvas;
     }
 
     public void startService(Callback<ErrorCode> cb) {
@@ -478,6 +599,19 @@ public class HiTiPrinterManager_Current {
         clockFuture = clockExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
+                // pauseClockTask() 期间的 fixedRate tick 在这里挂起，避免 ClockTask 与 print doService 并发
+                // 向同一个 serviceConnector 发 USB control transfer（27c3fb0 同类竞态：会卡 25s）。
+                synchronized (clockPauseLock) {
+                    while (clockTaskPaused) {
+                        try {
+                            clockPauseLock.wait();
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            logD("[ClockTask] interrupted while paused, exiting run()");
+                            return;
+                        }
+                    }
+                }
                 try {
                     if (serviceConnector == null || tablesRoot == null || tablesRoot.isEmpty()) {
                         logD("[ClockTask] skipped: serviceConnector=" + serviceConnector
@@ -500,7 +634,8 @@ public class HiTiPrinterManager_Current {
                 }
             }
         }, CLOCK_INITIAL_DELAY_SECONDS, CLOCK_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        logD("startClockTask: scheduled, interval=" + CLOCK_INTERVAL_SECONDS + "s");
+        logD("startClockTask: scheduled, initialDelay=" + CLOCK_INITIAL_DELAY_SECONDS
+                + "s interval=" + CLOCK_INTERVAL_SECONDS + "s");
     }
 
     private void stopClockTask() {
@@ -512,11 +647,38 @@ public class HiTiPrinterManager_Current {
             clockExecutor.shutdownNow();
             clockExecutor = null;
         }
+        // stopClockTask 之后 ClockTask 调度已停，pause/resume 状态不再有意义，重置避免遗留
+        synchronized (clockPauseLock) {
+            clockTaskPaused = false;
+        }
+    }
+
+    /**
+     * 暂停 ClockTask：让后续 fixedRate tick 进入 Runnable 后立即挂起，不向 serviceConnector 发 USB 命令。
+     * 仅挂起 {@code run()}，不取消调度，{@link #resumeClockTask()} 后下一个 tick 立即生效。
+     */
+    private void pauseClockTask() {
+        synchronized (clockPauseLock) {
+            clockTaskPaused = true;
+        }
+        logD("pauseClockTask: ClockTask paused (next tick will hang at wait())");
+    }
+
+    /**
+     * 恢复 ClockTask：唤醒所有挂起在 {@code clockPauseLock.wait()} 上的 tick，让 ClockTask 继续每 3s 探测。
+     */
+    private void resumeClockTask() {
+        synchronized (clockPauseLock) {
+            clockTaskPaused = false;
+            clockPauseLock.notifyAll();
+        }
+        logD("resumeClockTask: ClockTask resumed");
     }
 
     /**
      * 冷启动 readiness gate：等 ClockTask 至少跑 {@link #WARMUP_REQUIRED_CYCLES} 次。
-     * fail-safe：10s 后强制放行，避免永久阻塞 UI。
+     * 配 ClockTask initialDelay=0L，正常情况下 ~50~200ms 内通过（一次 getPrinterStatus USB transfer 耗时）。
+     * fail-safe：3s 后强制放行（避免 ClockTask 自身卡死时永久阻塞 UI）。
      */
     private void warmupGate() {
         if (tablesRoot == null || tablesRoot.isEmpty()) {

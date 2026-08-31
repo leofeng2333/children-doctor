@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
@@ -10,30 +10,19 @@ import {
   getDiagnosisCopy,
   type DiagnosisCopy,
 } from '@/utils/diagnosisCopy'
-import { printPageMounted, printPageUnmounted } from '@/utils/print'
+// path-current: HiTi init/release 现在由 router.beforeEach 守卫统一管理
+// （见 src/router/index.ts），进入 /detail-analysis 自动 initForPage，
+// 离开到任意其它路由（含 capture-intro / capture）自动 releaseForPage。
+// 不再在 page-level 手动调用 printPageMounted / printPageUnmounted。
 
 const router = useRouter()
 
 const analysisStore = useAnalysisStore()
 const { result: analysisResult, isLoading } = storeToRefs(analysisStore)
 
-/**
- * 页面级 HiTi USB 占用：此页面内嵌 ScanSubscription 组件有"打印"按钮。
- * 进入页面 init HiTi（bind service + claim USB interface），离开时 release。
- *
- * <p>不再在 app 启动时 init HiTi，避免 Camera2 预览与 HiTi 抢 USB bus。
- */
-onMounted(async () => {
-  await printPageMounted()
-})
-onBeforeUnmount(async () => {
-  await printPageUnmounted()
-})
-onUnmounted(async () => {
-  // 兜底：再 release 一次（HiTi release 是 idempotent，serviceConnector null 时
-  // 第二次 release 是 no-op）。
-  await printPageUnmounted()
-})
+// （已移除 onMounted / onBeforeUnmount / onUnmounted 的 printPageMounted 调用 ——
+//  改由 router.beforeEach 统一管理 HiTi USB 占用周期，避免在 capture 重拍时
+//  HiTi 仍占着 USB bus 与 UVC camera 竞争。）
 
 const analysisCompleted = computed(() => {
   return !!analysisResult.value

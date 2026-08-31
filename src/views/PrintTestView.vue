@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 // path-current: 单一路径打印入口。不再使用 fitImageToPaper letterbox，
 // 直接走 JS canvas → base64 → native fast path (1844×1240 缩放)。
+// path-current: HiTi init/release 由 router.beforeEach 守卫统一管理
+// （见 src/router/index.ts），进入 /print-test 自动 initForPage (path-current)，
+// 离开到任意其它路由自动 releaseForPage。不再在 page-level 手动调 printPageMounted。
 import { printPhoto } from '@/utils/print-current'
-import { printPageMounted, printPageUnmounted } from '@/utils/print-current'
 // Vite 的 `?url` 拿 URL；`?inline` 直接拿 base64 dataURL（编译期内联）。
 import analysisSuccess from '@/assets/images/analysis-success.png?inline'
 
@@ -16,15 +18,8 @@ const isPrinting = ref(false)
 const hasPrinted = ref(false)
 const printError = ref('')
 
-onMounted(async () => {
-  await printPageMounted()
-})
-onBeforeUnmount(async () => {
-  await printPageUnmounted()
-})
-onUnmounted(async () => {
-  await printPageUnmounted()
-})
+// （已移除 onMounted / onBeforeUnmount / onUnmounted 的 printPageMounted 调用 ——
+//  改由 router.beforeEach 统一管理 HiTi USB 占用周期。）
 
 const pickedImgUrl = ref<string>('')
 const pickedImgName = ref<string>('')
@@ -159,7 +154,6 @@ async function onPrint() {
           @click="onPrint()"
         >
           <span class="mode-btn-label">打印</span>
-          <span class="mode-btn-hint">fast path 1844×1240 + warmup + retry</span>
         </button>
       </div>
     </div>
@@ -359,6 +353,7 @@ async function onPrint() {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   gap: 4px;
   padding: 14px 16px;
   background: #ff9900;
@@ -372,7 +367,7 @@ async function onPrint() {
     transform 0.2s ease,
     opacity 0.2s ease,
     background 0.15s ease;
-  min-height: 84px;
+  min-height: 64px;
 
   &:active:not(:disabled) {
     transform: scale(0.98);
@@ -386,16 +381,10 @@ async function onPrint() {
 }
 
 .mode-btn-label {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   color: #222;
   white-space: nowrap;
-}
-
-.mode-btn-hint {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.3;
 }
 
 </style>
