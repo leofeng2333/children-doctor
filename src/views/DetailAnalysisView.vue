@@ -118,29 +118,42 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
     <!-- 页面内容 -->
     <div class="page-content">
       <template v-if="isHealthyFace">
-        <h1 class="page-title">{{ healthyCopy.opening }}</h1>
-        <!-- 说明文字 -->
-        <p class="description">16年后，你的长相是这样的</p>
+        <div class="text-section">
+          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
+          <div class="text-section-content">
+            <h1 class="page-title">{{ healthyCopy.opening }}</h1>
+            <!-- 说明文字 -->
+            <p class="description">16年后，你的长相是这样的</p>
+          </div>
+        </div>
       </template>
       <template v-else-if="swiperIndex === 0">
-        <h1 class="page-title">
-          啊哦，<br />
-          颌面发育似乎不太妙！
-        </h1>
-        <!-- 说明文字 -->
-        <p class="description">
-          根据预判结果，你可能会有
-          <span class="diagnosis-name">{{ diagnosisName }}</span>
-          的问题，请爸爸妈妈尽早带你去医院详细检查哦！
-        </p>
+        <div class="text-section">
+          <div class="text-section-content">
+            <h1 class="page-title">
+              啊哦，<br />
+              颌面发育似乎不太妙！
+            </h1>
+            <!-- 说明文字 -->
+            <p class="description">
+              根据预判结果，你可能会有
+              <span class="diagnosis-name">{{ diagnosisName }}</span>
+              的问题，请爸爸妈妈尽早带你去医院详细检查哦！
+            </p>
+          </div>
+        </div>
       </template>
       <template v-else-if="swiperIndex === 1">
-        <h1 class="page-title">
-          但是不用担心，<br />
-          矫正后面容会变成这样！
-        </h1>
-        <!-- 说明文字 -->
-        <p class="description">通过科学手段干预，颌面会被修复为：</p>
+        <div class="text-section">
+          <div class="text-section-content">
+            <h1 class="page-title">
+              但是不用担心，<br />
+              矫正后面容会变成这样！
+            </h1>
+            <!-- 说明文字 -->
+            <p class="description">通过科学手段干预，颌面会被修复为：</p>
+          </div>
+        </div>
       </template>
 
       <div class="analysis-result">
@@ -153,7 +166,13 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
           <div class="analysis-success-img">
             <img :src="healthyWholeImgUrl" alt="analysis-success" />
           </div>
-            <ScanSubscription v-show="swiperIndex === 1" :good-img-url="healthyWholeImgUrl" />
+          <div class="analysis-success-body">
+            <p v-for="(paragraph, idx) in diagnosisCopy.body" :key="idx" class="tips-content"
+              style="margin-bottom: 12px">
+              {{ paragraph }}
+            </p>
+          </div>
+          <ScanSubscription :good-img-url="healthyWholeImgUrl" />
         </div>
         <div class="analysis-failed" v-else>
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
@@ -196,9 +215,6 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  padding: 0 90px;
-  padding-top: max(100px, env(safe-area-inset-top));
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
 
   .loading-content {
@@ -208,6 +224,10 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    /* 原 .detail-analysis-page 的顶/底 padding 迁移到这里（水平方向不需要，
+       因为 loading-content 本身 100% 宽）。 */
+    padding-top: max(100px, env(safe-area-inset-top));
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
 
     .loading-icon {
       margin-bottom: 16px;
@@ -234,11 +254,11 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
-  font-size: 64px;
+  font-size: 55px;
   font-weight: 700;
   line-height: 80px;
   color: #000;
-  margin-top: 24px;
+  // margin-top: 24px;
 }
 
 .description {
@@ -251,10 +271,32 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   font-weight: 400;
   line-height: 52px;
   color: #000;
-  margin: 16px 0 32px 0;
+  // margin: 16px 0 32px 0;
 
   .diagnosis-name {
     font-weight: 700;
+  }
+}
+
+/* 健康 / 不健康分支统一的"文案区"布局容器：
+   - 顶部安全区（max(100px, env(safe-area-inset-top))）+ 左右 90px padding
+   - 健康分支左侧带 .text-section-decor 装饰图，不健康分支无图 */
+.text-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 32px;
+  padding: max(100px, env(safe-area-inset-top)) 0 0 90px;
+
+  .text-section-decor {
+    width: 140px;
+    height: auto;
+    flex-shrink: 0;
+    display: block;
+  }
+
+  .text-section-content {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
@@ -263,11 +305,15 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   flex-shrink: 1;
   flex-basis: 0%;
   overflow-y: auto;
+  /* padding 已全部下放到 .text-section / .analysis-result / .logo */
 
   .analysis-result {
     display: flex;
     flex-direction: column;
     align-items: center;
+    margin-top: 60px;
+    /* 水平 padding 下放到这里，顶部 padding 由 .text-section 提供 */
+    padding: 0 90px;
 
     .analysis-success {
       width: 100%;
@@ -295,6 +341,18 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         }
       }
 
+      .analysis-success-body {
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        font-size: 24px;
+        line-height: 30px;
+        font-weight: 400;
+        margin-bottom: 30px;
+      }
+
       .analysis-success-tips {
         font-family:
           'Inter',
@@ -305,8 +363,8 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         font-weight: 400;
         color: #000;
         position: absolute;
-        top: 610px;
-        right: 0;
+        top: 520px;
+        right: 40px;
         text-align: center;
         width: 270px;
         background-color: #FFE361;
@@ -385,9 +443,12 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* padding 已下放到 .logo */
 }
 
 .logo {
   margin-top: 16px;
+  /* 原 .detail-analysis-page / .bottom-section 的左/右/底 padding 迁移到这里 */
+  padding: 0 90px calc(40px + env(safe-area-inset-bottom));
 }
 </style>

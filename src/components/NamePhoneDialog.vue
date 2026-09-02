@@ -16,7 +16,7 @@
  *   <li>保留 H5 视觉：橙色卡背景 + 黄按钮 + 白色圆角输入 + 顶部装饰图 + 底部白色提示文案</li>
  * </ul>
  */
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { Toast } from '@capacitor/toast'
 import { isValidPhone, normalizePhone } from '@/utils/phoneValidation'
 
@@ -24,6 +24,16 @@ const props = defineProps<{
   visible: boolean
   /** LLM 任务 id（来自路由 / 父组件注入），提交时一并抛给父组件 */
   llmAnalysisId?: string
+  /**
+   * 公众号二维码图片 URL。父组件在 `bindNamePhone` + `getWxQrcode`
+   * 调用成功后将此 prop 置为非空字符串，弹窗切换到二维码视图。
+   */
+  qrcodeUrl?: string
+  /**
+   * 父组件正在调"绑定 + 取二维码"接口。弹窗切换到 loading 视图并禁用
+   * 关闭 / 提交按钮。
+   */
+  loading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +45,22 @@ const emit = defineEmits<{
 const name = ref('')
 const phone = ref('')
 const submitting = ref(false)
+
+/**
+ * 弹窗当前所处的视图阶段：
+ *   - 'input'   默认表单视图（姓名 + 手机号）
+ *   - 'loading' 接口调用中（绑定 / 取二维码），不可关闭
+ *   - 'qrcode'  绑定完成，展示公众号二维码，可关闭
+ */
+type DialogPhase = 'input' | 'loading' | 'qrcode'
+const phase = computed<DialogPhase>(() => {
+  if (props.loading) return 'loading'
+  if (props.qrcodeUrl && props.qrcodeUrl.length > 0) return 'qrcode'
+  return 'input'
+})
+
+/** loading 阶段关闭按钮禁用；input / qrcode 都允许用户主动关闭 */
+const canClose = computed(() => phase.value !== 'loading')
 
 const nameInputRef = ref<HTMLInputElement | null>(null)
 const phoneInputRef = ref<HTMLInputElement | null>(null)
@@ -84,7 +110,7 @@ async function handleSubmit() {
 }
 
 function handleClose() {
-  if (submitting.value) return
+  if (!canClose.value) return
   reset()
   emit('close')
 }
@@ -114,20 +140,16 @@ defineExpose({
       <div v-if="visible" class="npd-overlay" role="dialog" aria-modal="true">
         <div class="npd-card">
           <!-- 3 个背景装饰圆（H5 page 风格） -->
-          <span class="npd-bg-deco npd-bg-deco-d1" aria-hidden="true" />
+          <!-- <span class="npd-bg-deco npd-bg-deco-d1" aria-hidden="true" />
           <span class="npd-bg-deco npd-bg-deco-d2" aria-hidden="true" />
-          <span class="npd-bg-deco npd-bg-deco-d3" aria-hidden="true" />
+          <span class="npd-bg-deco npd-bg-deco-d3" aria-hidden="true" /> -->
 
-          <!-- 关闭按钮 -->
-          <button class="npd-close" type="button" aria-label="关闭" @click="handleClose">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M18 6L6 18M6 6l12 12"
-                stroke="#ffffff"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
+          <!-- 关闭按钮：loading 阶段禁用，input / qrcode 阶段可用 -->
+          <button class="npd-close" type="button" aria-label="关闭" :disabled="!canClose"
+            @click="handleClose">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="#000000" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
             </svg>
           </button>
 
@@ -137,50 +159,63 @@ defineExpose({
               <span class="npd-header-illu-icon" />
             </div>
 
-            <h1 class="npd-title">
-              填写手机号
-              <br />
-              可在公众号中永久查看报告
-            </h1>
+            <!-- 阶段 1：输入表单 -->
+            <template v-if="phase === 'input'">
+              <h1 class="npd-title">
+                填写手机号
+                <br />
+                可在公众号中永久查看报告
+              </h1>
 
-            <form class="npd-form" @submit.prevent="handleSubmit">
-              <div class="npd-field-group">
-                <label class="npd-field-label" for="npd-name">我该怎么称呼你呢？</label>
-                <div class="npd-field">
-                  <input
-                    id="npd-name"
-                    ref="nameInputRef"
-                    v-model="name"
-                    type="text"
-                    maxlength="40"
-                    placeholder="输入姓名"
-                    autocomplete="name"
-                  />
+              <form class="npd-form" @submit.prevent="handleSubmit">
+                <div class="npd-field-group">
+                  <label class="npd-field-label" for="npd-name">我该怎么称呼你呢？</label>
+                  <div class="npd-field">
+                    <input id="npd-name" ref="nameInputRef" v-model="name" type="text" maxlength="40"
+                      placeholder="输入姓名" autocomplete="name" />
+                  </div>
                 </div>
-              </div>
 
-              <div class="npd-field-group">
-                <label class="npd-field-label" for="npd-phone">你的联系方式？</label>
-                <div class="npd-field">
-                  <input
-                    id="npd-phone"
-                    ref="phoneInputRef"
-                    v-model="phone"
-                    type="tel"
-                    inputmode="numeric"
-                    maxlength="11"
-                    placeholder="输入手机号"
-                    autocomplete="tel"
-                  />
+                <div class="npd-field-group">
+                  <label class="npd-field-label" for="npd-phone">你的联系方式？</label>
+                  <div class="npd-field">
+                    <input id="npd-phone" ref="phoneInputRef" v-model="phone" type="tel" inputmode="numeric"
+                      maxlength="11" placeholder="输入手机号" autocomplete="tel" />
+                  </div>
                 </div>
+
+                <button type="submit" class="npd-view-photos" :disabled="submitting">
+                  {{ submitting ? '查看中 …' : '查看报告' }}
+                </button>
+
+                <p class="npd-tips">* 请记住所填写的手机号，方便下次查看电子诊断结果时使用哦！</p>
+              </form>
+            </template>
+
+            <!-- 阶段 2：绑定 / 取二维码中 -->
+            <template v-else-if="phase === 'loading'">
+              <div class="npd-loading">
+                <div class="npd-spinner" aria-hidden="true" />
+                <p class="npd-loading-text">正在为您绑定公众号…</p>
               </div>
+            </template>
 
-              <button type="submit" class="npd-view-photos" :disabled="submitting">
-                {{ submitting ? '查看中 …' : '查看报告' }}
-              </button>
-
-              <p class="npd-tips">* 请记住所填写的手机号，方便下次查看电子诊断结果时使用哦！</p>
-            </form>
+            <!-- 阶段 3：展示公众号二维码 -->
+            <template v-else>
+              <div class="npd-qrcode">
+                <h1 class="npd-title">
+                  绑定成功
+                  <br />
+                  长按识别关注公众号
+                </h1>
+                <div class="npd-qrcode-frame">
+                  <img class="npd-qrcode-img" :src="qrcodeUrl" alt="公众号二维码" />
+                </div>
+                <p class="npd-tips">
+                  关注后即可在公众号中永久查看本次面型分析报告
+                </p>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -211,10 +246,10 @@ defineExpose({
 .npd-card {
   position: relative;
   width: 100%;
-  max-width: 807px; // 还原 H5 设计稿宽
+  max-width: 790px; // 还原 H5 设计稿宽
   background: #f2684e; // H5 --page-bg
   border-radius: 56px;
-  padding: 324px 69px 60px; // H5: 40.16vw 8.55vw 0 → 324/69/0
+  padding: 280px 60px 60px; // H5: 40.16vw 8.55vw 0 → 324/69/0
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
   box-sizing: border-box;
   overflow: hidden;
@@ -259,7 +294,7 @@ defineExpose({
   right: 32px;
   width: 56px;
   height: 56px;
-  background: rgba(0, 0, 0, 0.18);
+  background: #fff;
   border: none;
   cursor: pointer;
   padding: 0;
@@ -270,12 +305,17 @@ defineExpose({
   z-index: 3;
   transition: background-color 0.2s;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.32);
   }
 
-  &:active {
+  &:active:not(:disabled) {
     transform: scale(0.96);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 }
 
@@ -288,7 +328,7 @@ defineExpose({
 .npd-header-illu {
   position: absolute;
   top: -260px; // H5: 10.4vw ≈ 84px，减去 card padding-top(324) → -240px 偏上露出
-  left: 45px; // H5: 5.58vw ≈ 45px
+  left: -20px; // H5: 5.58vw ≈ 45px
   width: 286px; // H5: 35.44vw ≈ 286px
   height: 247px; // H5: 30.6vw ≈ 247px
   z-index: 1;
@@ -312,7 +352,7 @@ defineExpose({
   font-weight: 700;
   line-height: 1.35;
   color: #ffffff;
-  margin: 0 0 77px 0; // H5 margin-bottom: 9.5vw ≈ 77px
+  margin: 0 0 60px 0; // H5 margin-bottom: 9.5vw ≈ 77px
 }
 
 // 表单
@@ -395,11 +435,77 @@ defineExpose({
 .npd-tips {
   margin: 4px 0 0 0; // H5: 0.5vw ≈ 4px
   color: #ffffff;
-  font-size: 23px; // H5: 2.8vw ≈ 23px
+  font-size: 22px; // H5: 2.8vw ≈ 23px
   font-weight: 400;
   line-height: 1.5;
   text-align: center;
-  opacity: 0.85;
+  // opacity: 0.85;
+}
+
+// 阶段 2：loading 视图
+.npd-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  min-height: 520px;
+}
+
+.npd-spinner {
+  width: 72px;
+  height: 72px;
+  border: 6px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: npd-spin 0.8s linear infinite;
+}
+
+.npd-loading-text {
+  margin: 0;
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+@keyframes npd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// 阶段 3：二维码视图 —— 居中展示
+.npd-qrcode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+
+  .npd-title {
+    margin: 0;
+    text-align: center;
+  }
+}
+
+.npd-qrcode-frame {
+  width: 360px;
+  height: 360px;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.npd-qrcode-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 // 过渡动画（对齐 PasswordDialog 的 dialog-fade）

@@ -1167,7 +1167,6 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
      *
      * YUV_420_888 在 Android 上有 3 个 plane（Y/U/V），但 stride 可能大于 width。
      * YuvImage 只接受 NV21（Y 全平面 + VU 交错平面）的紧密排列，所以要先做一次拷贝。
-     * 对于 1280x960 的 USB 摄像头单帧，这是 ~1.8MB 内存操作，单次 < 50ms。
      */
     private byte[] yuvImageToJpegBytes(Image image) {
         int w = image.getWidth();

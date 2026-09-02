@@ -57,7 +57,7 @@ export interface DiagnosisCopy {
 
 const NORMAL: DiagnosisCopy = {
   title: '正常面容',
-  opening: '恭喜宝贝！根据拍摄的照片分析，你的面型发育正常，五官协调，棒棒哒！',
+  opening: '你好棒，颌面发育正常！',
   body: [
     '温馨提醒：线上评估仅供参考，牙齿和面型也会随着成长发生变化，建议每6个月做一次口腔检查，继续好好爱护牙齿，保持健康习惯，给快乐成长持续护航哦~',
   ],

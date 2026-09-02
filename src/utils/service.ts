@@ -132,3 +132,37 @@ export const getAnalysisResult = (taskId: string) => {
     taskId,
   })
 }
+
+/**
+ * 绑定手机号 到 llmAnalysisId（h5 项目同名接口 `LLM_TASK_BIND_PHONE_API`）。
+ *
+ * POST /api/ai/llm-task/bind-phone
+ * body: { llmAnalysisId, phone, sessionId（由 post 自动注入） }
+ * 注：h5 项目中此接口只传 `{ llmAnalysisId, phone }`，name 不在此接口上报。
+ */
+export const bindPhoneToLlmAnalysis = (payload: {
+  llmAnalysisId: string
+  phone: string
+}) => {
+  return post(
+    '/api/ai/llm-task/bind-phone',
+    payload as unknown as Record<string, any>,
+  )
+}
+
+/**
+ * 获取公众号关注二维码（git 历史中曾用 `createSubscriptionTask`，被 e093a7d
+ * 改写为前端拼接后删除；本次回退使用原接口实现）。
+ *
+ * POST /api/wechat/follow-task/create
+ * body: 无（仅依赖 sessionId；sessionId 由 post 自动注入）
+ * 返回 data: { qrcodeUrl: string, followTaskId: string }
+ *   - qrcodeUrl  -> 二维码图片 URL，直接 <img :src="..."> 渲染
+ *   - followTaskId -> 用于后续轮询关注状态（getSubscriptionStatus）
+ */
+export const createFollowTask = (): Promise<{
+  qrcodeUrl: string
+  followTaskId: string
+}> => {
+  return post('/api/wechat/follow-task/create')
+}

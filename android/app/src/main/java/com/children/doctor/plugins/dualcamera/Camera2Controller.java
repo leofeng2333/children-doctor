@@ -128,7 +128,7 @@ public class Camera2Controller {
             //     slot=1（右）：照片逆时针偏90° → 需补顺时针90° → captureRotationOffset=90
             if (i == 0) {
                 sessions[i].setCalibration(270, false);
-                sessions[i].setCaptureRotationOffset(270);
+                sessions[i].setCaptureRotationOffset(90);
                 log("CALIBRATION slot=0 preview extraRotate=270 / capture captureRotationOffset=270 extraMirror=false");
             } else if (i == 1) {
                 sessions[i].setCalibration(90, false);

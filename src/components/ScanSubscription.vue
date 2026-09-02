@@ -2,9 +2,9 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import VueQrcode from 'vue-qrcode'
-import { useQrcodeIdid } from '@/composables/useQrcode'
+import { Toast } from '@capacitor/toast'
 import { useAnalysisStore } from '@/stores'
+import { bindPhoneToLlmAnalysis, createFollowTask } from '@/utils/service'
 import { DualCamera } from '@/plugins/dual-camera'
 import { printPhoto } from '@/utils/print-current'
 
@@ -19,30 +19,89 @@ withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 
-// 二维码 url 形如 <base>/follow?id=<llmAnalysisId>&first=1。
-// first=1 写死在 buildQrcodeUrl，H5 入口 input-first.html 收到此参数
-// 后切换为"姓名 + 手机号"表单、跳过短信验证码流程（后端验证接口待补）。
-// llmAnalysisId 后端以 number 返回（之前曾以 string 返回），归一化
-// 在 useQrcodeIdid 内部完成。接口未就绪时 url 为空字符串，模板里
-// spinner 占位 + 按钮 disabled。
+/**
+ * 把 llmAnalysisId（后端可能返 string 也可能返 number）规范化为字符串。
+ * 0 / NaN / 空字符串都视为未就绪，返回空字符串让上层走占位分支。
+ */
+function normalizeLlmAnalysisId(raw: string | number | null | undefined): string {
+  if (raw === null || raw === undefined) return ''
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) && raw > 0 ? String(raw) : ''
+  }
+  const trimmed = String(raw).trim()
+  return trimmed.length > 0 ? trimmed : ''
+}
+
 const analysisStore = useAnalysisStore()
 const { result: analysisResult } = storeToRefs(analysisStore)
-const llmAnalysisIdGetter = () => {
-  const v = analysisResult.value;
-  return v?.llmAnalysis.llmAnalysisId;
-}
-const { url: qrcodeUrl } = useQrcodeIdid(llmAnalysisIdGetter)
-const hasLlmAnalysisId = computed(() => !!qrcodeUrl.value)
+const llmAnalysisId = computed(() =>
+  normalizeLlmAnalysisId(analysisResult.value?.llmAnalysis.llmAnalysisId),
+)
+const hasLlmAnalysisId = computed(() => !!llmAnalysisId.value)
 const isFinishing = ref(false)
 const isPrinting = ref(false)
 const hasPrinted = ref(false)
 const printError = ref('')
+/** 是否显示"姓名 + 手机号"弹窗（NamePhoneDialog） */
+const showNamePhoneDialog = ref(false)
+/**
+ * 绑定成功后从后端拉到的公众号二维码图片 URL。
+ * 非空时 NamePhoneDialog 切换到二维码视图；关闭弹窗时清空。
+ */
+const qrcodeUrl = ref('')
+/** 正在调用"绑定 + 取二维码"接口 —— 弹窗切到 loading、关闭按钮禁用 */
+const isBinding = ref(false)
 
 const printButtonLabel = computed(() => {
   if (isPrinting.value) return '正在准备打印...'
   if (hasPrinted.value) return '已打印完成\n请在下方取走宝贝照片'
   return '打印带走宝贝照片'
 })
+
+function handleOpenNamePhoneDialog() {
+  // 始终允许点击：若 llmAnalysisId 为空，由 NamePhoneDialog 内部 Toast 提示。
+  showNamePhoneDialog.value = true
+}
+
+function handleNamePhoneDialogClose() {
+  showNamePhoneDialog.value = false
+  // 关闭弹窗时清空绑定状态，避免下次打开直接落在 qrcode / loading 视图
+  qrcodeUrl.value = ''
+  isBinding.value = false
+}
+
+async function handleNamePhoneDialogSubmit(payload: {
+  name: string
+  phone: string
+  llmAnalysisId: string
+}) {
+  if (isBinding.value) return
+  isBinding.value = true
+  try {
+    // 1) 绑定手机号 到 llmAnalysisId（h5 同名接口 /api/ai/llm-task/bind-phone，
+    //    此接口按 h5 约定只接收 llmAnalysisId + phone，name 不参与绑定）
+    await bindPhoneToLlmAnalysis({
+      llmAnalysisId: payload.llmAnalysisId,
+      phone: payload.phone,
+    })
+    // 2) 拉取公众号关注二维码（git 历史曾用 createSubscriptionTask，
+    //    路径 /api/wechat/follow-task/create，返回 { qrcodeUrl, followTaskId }）
+    const { qrcodeUrl: url } = await createFollowTask()
+    if (!url) {
+      throw new Error('未返回二维码图片')
+    }
+    qrcodeUrl.value = url
+  } catch (e: any) {
+    console.error('[ScanSubscription] bindPhoneToLlmAnalysis/createFollowTask failed:', e)
+    await Toast.show({
+      text: e?.message ?? '绑定失败，请稍后重试',
+      position: 'center',
+      duration: 'short',
+    })
+  } finally {
+    isBinding.value = false
+  }
+}
 
 async function onFinish() {
   if (isFinishing.value) return
@@ -75,7 +134,7 @@ async function onPrint(goodImgUrl: string) {
     // HiTi 直接打图，不支持 QR 排版 —— HiTi 不可用时不再降级到 system printer
     // （v2 改造前用过旧 @/utils/print，会自动 fallback 到 @capgo/capacitor-printer
     //  系统对话框把 goodImg + QR 拼成 HTML 打印 —— 该路径已弃用，QR 不再打印）。
-    // qrcodeUrl.vue 的 <vue-qrcode> 仍然展示给用户扫码关注，与打印流程无关。
+    // 原二维码位置改为按钮，点击弹出 NamePhoneDialog 收集姓名 + 手机号。
     await printPhoto({
       goodImgUrl,
       jobName: '宝贝照片',
@@ -95,19 +154,15 @@ async function onPrint(goodImgUrl: string) {
 
 <template>
   <div class="scan-subscription">
-    <!-- 未关注态: 左 QR + 描述 / 右 两按钮上下排 -->
+    <!-- 未关注态: 左 按钮（点击弹 NamePhoneDialog） / 右 两按钮上下排 -->
     <div class="scan-row">
       <div class="qrcode-block">
-        <div class="qrcode-container">
-          <div v-if="!hasLlmAnalysisId" class="qrcode-loading" aria-hidden="true">
-            <div class="qrcode-loading-spinner"></div>
-          </div>
-          <VueQrcode v-else :value="qrcodeUrl" :width="200" :height="200" :margin="2"
-            :color="{ dark: '#000000ff', light: '#ffffffff' }" type="image/png" />
-        </div>
-        <div class="qrcode-desc">
-          {{ hasLlmAnalysisId ? '扫一扫获取电子版' : '准备二维码中...' }}
-        </div>
+        <div class="btn-tips">争做低碳小卫士！</div>
+        <PrimaryButton type="button" class="qrcode-btn" :aria-label="hasLlmAnalysisId ? '查看电子版报告' : '报告正在准备中'"
+          @click="handleOpenNamePhoneDialog">
+          点击获取
+          电子照片
+        </PrimaryButton>
       </div>
 
       <div class="action-buttons">
@@ -121,14 +176,16 @@ async function onPrint(goodImgUrl: string) {
         </PrimaryButton>
         <PrimaryButton class="action-btn secondary" type="button" :disabled="isFinishing || !hasLlmAnalysisId"
           @click="onFinish">
-          完成诊断
+          直接结束本次诊断
         </PrimaryButton>
       </div>
     </div>
 
     <p v-if="printError" class="print-error">{{ printError }}</p>
 
-    <!-- 已关注态 -->
+    <!-- 姓名 + 手机号输入弹窗 -->
+    <NamePhoneDialog :visible="showNamePhoneDialog" :llm-analysis-id="llmAnalysisId" :qrcode-url="qrcodeUrl"
+      :loading="isBinding" @close="handleNamePhoneDialogClose" @submit="handleNamePhoneDialogSubmit" />
   </div>
 </template>
 
@@ -154,45 +211,54 @@ async function onPrint(goodImgUrl: string) {
   flex-shrink: 0;
 }
 
-.qrcode-container {
-  width: 200px;
+.btn-tips {
+  font-weight: 700px;
+  font-size: 24px;
+  line-height: 30px;
+  color: #F2684E;
+}
+
+/* 原二维码位置（200×200）改为按钮：黄色背景 + 搜索图标 + "查看报告" 文字 */
+.qrcode-btn {
+  width: 218px;
   height: 200px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+  padding: 0 30px;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  color: #000;
+  line-height: 45px;
+  font-weight: 700;
+  font-family: inherit;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 
-  img,
-  canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 }
 
-.qrcode-loading {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f5f7;
-  border-radius: 8px;
+.qrcode-btn-icon {
+  display: block;
+  color: inherit;
 }
 
-.qrcode-loading-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #d0d7de;
-  border-top-color: #1f6feb;
-  border-radius: 50%;
-  animation: qrcode-loading-spin 0.8s linear infinite;
-}
-
-@keyframes qrcode-loading-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.qrcode-btn-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: inherit;
+  line-height: 1;
 }
 
 .qrcode-desc {
