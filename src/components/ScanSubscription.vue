@@ -192,7 +192,7 @@ async function onPrint(goodImgUrl: string) {
 <style scoped lang="scss">
 .scan-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 30px;
   font-family:
     'Inter',
@@ -207,6 +207,7 @@ async function onPrint(goodImgUrl: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -273,18 +274,20 @@ async function onPrint(goodImgUrl: string) {
 .action-buttons {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 20px;
   flex-shrink: 0;
 }
 
 .action-btn {
   width: 425px;
-  height: 95px;
+  height: 110px;
   font-family: inherit;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 55px;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease;

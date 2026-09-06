@@ -128,31 +128,29 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         </div>
       </template>
       <template v-else-if="swiperIndex === 0">
-        <div class="text-section">
-          <div class="text-section-content">
-            <h1 class="page-title">
-              啊哦，<br />
-              颌面发育似乎不太妙！
-            </h1>
-            <!-- 说明文字 -->
-            <p class="description">
-              根据预判结果，你可能会有
-              <span class="diagnosis-name">{{ diagnosisName }}</span>
-              的问题，请爸爸妈妈尽早带你去医院详细检查哦！
-            </p>
-          </div>
+        <div class="text-section text-section--reversed">
+          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
+          <h1 class="page-title">
+            啊哦，<br />
+            颌面发育似乎不太妙！
+          </h1>
+          <!-- 说明文字 -->
+          <p class="description">
+            根据预判结果，你可能会有
+            <span class="diagnosis-name">{{ diagnosisName }}</span>
+            的问题，请爸爸妈妈尽早带你去医院详细检查哦！
+          </p>
         </div>
       </template>
       <template v-else-if="swiperIndex === 1">
-        <div class="text-section">
-          <div class="text-section-content">
-            <h1 class="page-title">
-              但是不用担心，<br />
-              矫正后面容会变成这样！
-            </h1>
-            <!-- 说明文字 -->
-            <p class="description">通过科学手段干预，颌面会被修复为：</p>
-          </div>
+        <div class="text-section text-section--reversed">
+          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
+          <h1 class="page-title">
+            但是不用担心，<br />
+            矫正后面容会变成这样！
+          </h1>
+          <!-- 说明文字 -->
+          <p class="description">通过科学手段干预，颌面会被修复为：</p>
         </div>
       </template>
 
@@ -167,30 +165,36 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
             <img :src="healthyWholeImgUrl" alt="analysis-success" />
           </div>
           <div class="analysis-success-body">
-            <p v-for="(paragraph, idx) in diagnosisCopy.body" :key="idx" class="tips-content"
-              style="margin-bottom: 12px">
+            <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
               {{ paragraph }}
             </p>
+          </div>
+          <div class="handle-img-tips">
+            <p>诊断完成，可以通过以下方式获取照片或结束体验！</p>
           </div>
           <ScanSubscription :good-img-url="healthyWholeImgUrl" />
         </div>
         <div class="analysis-failed" v-else>
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
-            <div v-show="swiperIndex === 0" class="analysis-failed-tips">
-              <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
-              <p v-for="(paragraph, idx) in diagnosisCopy.body" :key="idx" class="tips-content"
-                style="margin-bottom: 12px">
-                {{ paragraph }}
-              </p>
-              <p v-if="diagnosisCopy.careTips" class="tips-content" style="margin-top: 16px">
-                <strong>日常护理小贴士：</strong>{{ diagnosisCopy.careTips }}
-              </p>
-              <p v-if="diagnosisCopy.habitNote" class="tips-content" style="margin-top: 12px; color: #c0392b">
-                {{ diagnosisCopy.habitNote }}
-              </p>
+            <div v-show="swiperIndex === 0">
+              <div class="analysis-failed-tips analysis-failed-tips--primary">
+                <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
+                <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
+                  {{ paragraph }}
+                </p>
+              </div>
+              <div class="analysis-failed-tips analysis-failed-tips--secondary" style="margin-top: 16px">
+                <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
+                <p v-if="diagnosisCopy.careTips" class="tips-content">
+                  <strong>日常护理小贴士：</strong>{{ diagnosisCopy.careTips }}
+                </p>
+              </div>
             </div>
-            <ScanSubscription v-show="swiperIndex === 1" :good-img-url="goodImgUrl" />
+            <div v-show="swiperIndex === 1">
+              <p class="failed-content-handle-img-tips">诊断完成，可以通过以下方式获取照片或结束体验！</p>
+              <ScanSubscription :good-img-url="goodImgUrl" />
+            </div>
           </div>
         </div>
       </div>
@@ -300,6 +304,27 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   }
 }
 
+.text-section--reversed {
+  flex-wrap: wrap;
+
+  .page-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    font-size: 55px;
+    line-height: 80px;
+  }
+
+  .description {
+    flex-basis: 100%;
+    font-size: 32px;
+    line-height: 52px;
+    padding-right: 36px;
+  }
+}
+
 .page-content {
   flex-grow: 1;
   flex-shrink: 1;
@@ -350,7 +375,17 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         font-size: 24px;
         line-height: 30px;
         font-weight: 400;
-        margin-bottom: 30px;
+        margin-bottom: 24px;
+        margin-top: 12px;
+      }
+
+      .handle-img-tips {
+        width: 100%;
+        text-align: left;
+        font-size: 24px;
+        line-height: 36px;
+        font-weight: 400;
+        margin-bottom: 24px;
       }
 
       .analysis-success-tips {
@@ -418,10 +453,11 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         color: #000;
         text-align: center;
         width: 100%;
-        background-color: #FF9900;
+        background-color: #FFE361;
         box-sizing: border-box;
-        padding: 40px;
+        padding: 32px 20px;
         text-align: left;
+        position: relative;
 
         .tips-title {
           font-size: 24px;
@@ -432,6 +468,30 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         .tips-content {
           font-size: 20px;
           line-height: 24px;
+          margin-bottom: 12px;
+
+          &:last-child {
+            margin-bottom: 0;
+          }
+        }
+      }
+
+      .failed-content-handle-img-tips {
+        font-size: 30px;
+        line-height: 36px;
+        font-weight: 400;
+        margin-bottom: 24px;
+      }
+
+      .analysis-failed-tips--secondary {
+        background-color: #FFC28B;
+
+        img {
+          width: 80px;
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          top: -40px;
         }
       }
     }
