@@ -46,7 +46,7 @@ const printError = ref('')
 const showNamePhoneDialog = ref(false)
 /**
  * 绑定成功后从后端拉到的公众号二维码图片 URL。
- * 非空时 NamePhoneDialog 切换到二维码视图；关闭弹窗时清空。
+ * 非空时 NamePhoneDialog 切换到二维码视图；保留以便关闭弹窗后再次打开仍展示二维码。
  */
 const qrcodeUrl = ref('')
 /** 正在调用"绑定 + 取二维码"接口 —— 弹窗切到 loading、关闭按钮禁用 */
@@ -65,8 +65,7 @@ function handleOpenNamePhoneDialog() {
 
 function handleNamePhoneDialogClose() {
   showNamePhoneDialog.value = false
-  // 关闭弹窗时清空绑定状态，避免下次打开直接落在 qrcode / loading 视图
-  qrcodeUrl.value = ''
+  // 保留 qrcodeUrl：已绑定后再次打开弹窗，直接展示二维码，不再回到 input UI
   isBinding.value = false
 }
 
