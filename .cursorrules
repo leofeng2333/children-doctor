@@ -1,0 +1,19 @@
+# Cursor 规则
+
+## Git 操作安全规则
+
+**禁止使用 `git checkout` 命令恢复文件**。这个命令会丢弃工作目录中所有未提交的修改，非常危险。
+
+如果需要查看文件的旧版本，使用以下替代方案：
+
+1. **查看旧版本内容**：`git show <commit>:<file>`
+2. **临时查看旧版本**：`git show <commit>:<file> | less`（不要 checkout）
+3. **保留当前修改**：先 `git stash`，需要恢复时 `git stash pop`
+
+## 示例
+
+❌ 禁止：`git checkout src/file.vue`
+✅ 可以：`git show HEAD~1:src/file.vue`
+
+❌ 禁止：`git checkout -- .`
+✅ 可以：`git stash` / `git stash pop`
