@@ -14,6 +14,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
     CaptureSession: typeof import('./components/CaptureSession.vue')['default']
+    ConfirmDialog: typeof import('./components/ConfirmDialog.vue')['default']
     IconButton: typeof import('./components/IconButton.vue')['default']
     LogoText: typeof import('./components/LogoText.vue')['default']
     NamePhoneDialog: typeof import('./components/NamePhoneDialog.vue')['default']
@@ -29,6 +30,7 @@ declare module 'vue' {
 declare global {
   const AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
   const CaptureSession: typeof import('./components/CaptureSession.vue')['default']
+  const ConfirmDialog: typeof import('./components/ConfirmDialog.vue')['default']
   const IconButton: typeof import('./components/IconButton.vue')['default']
   const LogoText: typeof import('./components/LogoText.vue')['default']
   const NamePhoneDialog: typeof import('./components/NamePhoneDialog.vue')['default']

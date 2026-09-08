@@ -4,15 +4,16 @@ import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '../components/LogoText.vue'
 import IconButton from '../components/IconButton.vue'
-import PasswordDialog from '../components/PasswordDialog.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { createSession } from '@/utils/service'
+import { QuitApp } from '@/plugins/quit-app'
 import { useFlowStore } from '@/stores/flow'
 import { onMounted } from 'vue'
 
 const router = useRouter()
 const flowStore = useFlowStore()
 
-const showPasswordDialog = ref(false)
+const showExitConfirmDialog = ref(false)
 
 const goToForm = () => {
   router.push('/diagnosis')
@@ -22,16 +23,23 @@ const goToPrintTest = () => {
   router.push('/print-test')
 }
 
-// 密码验证通过：切换长/短流程（不再跳打印测试页，避免覆盖原调试入口）
-const handlePasswordSuccess = () => {
-  flowStore.toggle()
-  console.log(`[flow] 已切换为${flowStore.mode === 'long' ? '长' : '短'}流程`)
-  // 切完关闭弹窗，避免用户停留在已无意义的面板上
-  showPasswordDialog.value = false
+// 右上角双击：弹出确认对话框，经用户确认后退出 App。
+// 替代原先"双击 -> 密码验证 -> 切换长/短流程"的调试入口。
+const handleAdminButtonDoubleClick = () => {
+  showExitConfirmDialog.value = true
 }
 
-const handleAdminButtonClick = () => {
-  showPasswordDialog.value = true
+const handleConfirmExit = async () => {
+  showExitConfirmDialog.value = false
+  try {
+    await QuitApp.exitApp()
+  } catch (err) {
+    console.error('[WelcomeView] exitApp failed', err)
+  }
+}
+
+const handleCancelExit = () => {
+  showExitConfirmDialog.value = false
 }
 
 onMounted(async () => {
@@ -44,7 +52,7 @@ onMounted(async () => {
   <div class="welcome-container">
     <!-- 右上角空白按钮 + 流程模式指示点 -->
     <div class="admin-area">
-      <IconButton class="admin-button" @dblclick="handleAdminButtonClick" />
+      <IconButton class="admin-button" @dblclick="handleAdminButtonDoubleClick" />
       <span class="flow-indicator" :class="{ 'is-short': flowStore.isShort }"
         :title="flowStore.isShort ? '当前：短流程' : '当前：长流程'"></span>
     </div>
@@ -83,9 +91,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 密码验证弹窗 -->
-    <PasswordDialog :visible="showPasswordDialog" @close="showPasswordDialog = false"
-      @success="handlePasswordSuccess" />
+    <!-- 退出确认弹窗 -->
+    <ConfirmDialog :visible="showExitConfirmDialog" title="退出应用" message="确定要退出应用吗？" confirm-text="退出" cancel-text="取消"
+      @confirm="handleConfirmExit" @cancel="handleCancelExit" @close="handleCancelExit" />
   </div>
 </template>
 
