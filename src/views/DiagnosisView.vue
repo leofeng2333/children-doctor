@@ -75,11 +75,14 @@ onUnmounted(() => {
   <div class="diagnosis-container">
     <div class="page-top-container">
       <!-- 欢迎语 -->
-      <div class="welcome-text">Hi，<br />我是你的AI口腔医生！</div>
+      <div class="welcome-container">
+        <img src="@/assets/images/common-left.png" alt="" class="mascot" aria-hidden="true" />
+        <div class="welcome-text">Hi，我是<br />你的AI口腔医生！</div>
+      </div>
 
       <!-- 说明文字 -->
       <p class="description">
-        该设备通过简单的问答和对使用者面容的专业医学视觉分析，帮助使用者提前发现颌骨问题并预测未来发展趋势。
+        亲爱的小朋友们，我将通过为你拍摄照片，结合你的简单问答后，进行颌面发育分析。<br />这样可以帮助爸爸妈妈更好地掌握你的颌面发育情况，以及面部可能的未来发展趋势。
       </p>
 
       <!-- 步骤区域 -->
@@ -156,6 +159,19 @@ onUnmounted(() => {
   justify-content: space-between;
 }
 
+.welcome-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 32px;
+
+  .mascot {
+    width: 140px;
+    height: 150px;
+    object-fit: contain;
+  }
+}
+
 /* 欢迎语 */
 .welcome-text {
   font-family:
@@ -180,7 +196,7 @@ onUnmounted(() => {
   font-weight: 400;
   line-height: 52px;
   color: #000;
-  margin: 16px 0 48px 0;
+  margin: 48px 0 48px 0;
 }
 
 /* 步骤容器 */

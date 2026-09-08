@@ -14,14 +14,14 @@ const goToCapture = () => {
   <div class="capture-intro-page">
     <!-- 页面内容 -->
     <div class="content">
-      <!-- 标题 -->
-      <h1 class="title">你的表现太棒了！<br />现在进入拍照环节吧！</h1>
-
-      <!-- 说明文字 -->
-      <p class="description">
-        请注视屏幕<br />
-        根据屏幕提示，请拍摄不同角度的照片。
-      </p>
+      <!-- 顶部：吉祥物 + 标题区 -->
+      <div class="hero">
+        <img src="@/assets/images/common-left.png" alt="" class="mascot" aria-hidden="true" />
+        <div class="hero-text">
+          <h1 class="title">欢迎来到拍照环节</h1>
+          <p class="description">请根据屏幕提示，<br />拍摄露齿笑与闭嘴巴两组照片哦！</p>
+        </div>
+      </div>
 
       <!-- 示例图片区域 -->
       <div class="sample-images">
@@ -46,7 +46,7 @@ const goToCapture = () => {
             <div class="corner bottom-right"></div>
             <img src="@/assets/images/capture-sample-left.png" alt="右侧视图示例" class="sample-image" />
           </div>
-          <span class="sample-label">右侧视图</span>
+          <span class="sample-label">侧视图</span>
         </div>
       </div>
     </div>
@@ -94,7 +94,36 @@ const goToCapture = () => {
   font-weight: 700;
   line-height: 80px;
   color: #000;
+  margin: 0;
+}
+
+.hero {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 32px;
   margin-top: 24px;
+}
+
+.mascot {
+  flex: 0 0 auto;
+  width: 140px;
+  height: 150px;
+  object-fit: contain;
+}
+
+.hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.title-underline {
+  width: 320px;
+  max-width: 100%;
+  height: 24px;
+  margin-top: 4px;
 }
 
 .description {
@@ -107,13 +136,12 @@ const goToCapture = () => {
   font-weight: 400;
   line-height: 52px;
   color: #000;
-  margin: 16px 0 48px 0;
 }
 
 .sample-images {
   display: flex;
   justify-content: space-between;
-  margin-top: 36px;
+  margin-top: 150px;
   padding: 0 50px;
 }
 
@@ -144,9 +172,9 @@ const goToCapture = () => {
 /* 四角边框 */
 .corner {
   position: absolute;
-  width: 48px;
-  height: 48px;
-  border: 2px solid #FF9900;
+  width: 56px;
+  height: 56px;
+  border: 4px solid #FF9900;
 
   &.top-left {
     top: 0;
@@ -190,9 +218,9 @@ const goToCapture = () => {
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
-  font-size: 14px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 1.625;
+  line-height: 52px;
   color: #000;
   margin-top: 20px;
 }

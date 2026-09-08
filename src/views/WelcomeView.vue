@@ -63,14 +63,14 @@ onMounted(async () => {
       <div class="bottom-section-content">
         <!-- 小图标 -->
         <div class="small-icon">
-          <img src="@/assets/images/home-icon.png" alt="口腔科图标" />
+          <img src="@/assets/images/common-left.png" alt="口腔科图标" />
         </div>
 
         <!-- 主标题 -->
-        <h1 class="main-title">儿童颜面发育<br />AI预诊断</h1>
+        <h1 class="main-title">魔法笑容小侦探<br />拍照寻宝大冒险</h1>
 
         <!-- 副标题 -->
-        <p class="sub-title">识别诊断 × AI预测 × 专家建议</p>
+        <p class="sub-title">AI辅助儿童颌面发育诊断</p>
       </div>
       <!-- 按钮 -->
       <div class="bottom-section-buttons">
@@ -224,16 +224,15 @@ onMounted(async () => {
 }
 
 .small-icon {
-  width: 150px;
-  height: 140px;
-  overflow: hidden;
+  width: 140px;
+  height: 150px;
   margin-bottom: 32px;
 }
 
 .small-icon img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .main-title {
