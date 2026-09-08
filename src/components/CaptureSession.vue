@@ -178,9 +178,11 @@ const handleConfirm = async () => {
       <span>请确认你的照片</span>
     </div>
     <div v-else class="session-tip">
-      <span class="tip-text"> 请正面看向屏幕 </span>
-      <span v-if="round === 1 && !pendingPhoto" class="round-badge">开心地露出牙齿拍摄哦！</span>
-      <span v-if="round === 2 && !pendingPhoto" class="round-badge">合上小嘴巴，让我来看看面部！</span>
+      <img src="@/assets/images/common-left.png" alt="" class="session-tip-icon" aria-hidden="true" />
+      <div class="round-badge-container">
+        <div v-if="round === 1 && !pendingPhoto" class="round-badge">请正视屏幕左侧的镜头，让自己的面部居于虚线框中<br />记得开心地露出牙齿拍摄哦！</div>
+        <div v-if="round === 2 && !pendingPhoto" class="round-badge">请正视屏幕左侧的镜头，让自己的面部居于虚线框中<br />合上小嘴巴，让我来看看面部！</div>
+      </div>
       <span class="countdown-text">{{ countdownText }}</span>
     </div>
 
@@ -219,6 +221,9 @@ const handleConfirm = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: max(80px, env(safe-area-inset-top));
+  padding-left: 90px;
+  padding-right: 90px;
 }
 
 .confirm-tip-icon {
@@ -233,11 +238,33 @@ const handleConfirm = async () => {
   flex-direction: column;
   align-items: center;
 
+  position: relative;
+
+  .session-tip-icon {
+    width: 140px;
+    height: 150px;
+    object-fit: contain;
+    margin-right: 24px;
+    position: absolute;
+    top: 155px;
+    left: 52px;
+  }
+
+  .round-badge-container {
+    padding-top: max(64px, env(safe-area-inset-top));
+    padding-left: 80px;
+    padding-right: 80px;
+    padding-bottom: 24px;
+    background-color: #FFE361;
+    width: 100%;
+  }
+
   .countdown-text {
     font-weight: 400;
-    font-size: 42px;
+    font-size: 40px;
     line-height: 52px;
     font-weight: 700;
+    margin-top: 30px;
   }
 
   .tip-text {
@@ -254,6 +281,7 @@ const handleConfirm = async () => {
   }
 
   .round-badge {
+    text-align: center;
     font-size: 32px;
     line-height: 52px;
     font-weight: 700;
@@ -293,7 +321,7 @@ const handleConfirm = async () => {
 }
 
 .session-actions {
-  padding: 16px 0 8px;
+  padding: 16px 90px calc(40px + env(safe-area-inset-bottom));
   width: 100%;
   display: flex;
   justify-content: center;

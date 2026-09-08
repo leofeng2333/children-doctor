@@ -164,9 +164,6 @@ const startAnalysis = async () => {
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  padding: 0 90px;
-  padding-top: max(80px, env(safe-area-inset-top));
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 
@@ -263,6 +260,9 @@ const startAnalysis = async () => {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  // padding-top: max(80px, env(safe-area-inset-top));
+  padding-left: 90px;
+  padding-right: 90px;
 
   .photo-row {
     display: flex;
@@ -359,6 +359,9 @@ const startAnalysis = async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding-left: 90px;
+  padding-right: 90px;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
 
   .logo {
     margin-top: 20px;
