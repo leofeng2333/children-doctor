@@ -8,6 +8,7 @@ import { useImageSplit } from '@/composables/useImageSplit'
 import {
   getDiagnosisCopyFromLLMResult,
   getDiagnosisCopy,
+  DETAIL_PAGE_COPY,
   type DiagnosisCopy,
 } from '@/utils/diagnosisCopy'
 // path-current: HiTi init/release 现在由 router.beforeEach 守卫统一管理
@@ -66,16 +67,15 @@ const healthyCopy = computed<DiagnosisCopy>(() => getDiagnosisCopy(0))
 
 /**
  * 当前不健康分支对应的中文章节名（与 diagnosisCopy.title 一致）
- *   - 0 NORMAL              -> 正常面容
- *   - 1 ASYMMETRY           -> 偏颌/大小脸
- *   - 2 ANTERIOR_CROSSBITE  -> 反颌（地包天）
- *   - 3 OPEN_BITE           -> 开颌
+ *   - 0 NORMAL              -> 正常
+ *   - 1 ASYMMETRY           -> 偏𬌗
+ *   - 2 ANTERIOR_CROSSBITE  -> 反𬌗
+ *   - 3 OPEN_BITE           -> 开𬌗
  *   - 4 GUMMY_SMILE         -> 露龈笑
- *   - 5 UPPER_PROTRUSION    -> 牙齿前突（龅牙）/ 上颌前突/下颌后缩
+ *   - 5 UPPER_PROTRUSION    -> 前突
  *   - 6 CROWDING            -> 牙列拥挤
  *   - 7 SPACING             -> 牙列稀疏
  */
-const diagnosisName = computed(() => diagnosisCopy.value.title)
 
 /** 不健康面型路径：后端生成的矫正后预测图 URL */
 const aiImageUrl = computed(
@@ -83,16 +83,17 @@ const aiImageUrl = computed(
     analysisResult.value?.aiAnalysis?.result?.predictions?.futureImageUrl ?? '',
 )
 /**
- * 切割后两半图片的 URL。
+ * 矫正后的"好"面容 URL。
  *
  * 业务约定（与 `AnalysisFailedSwiper.vue` / `ScanSubscription` 保持一致）：
- *   - `leftUrl`  -> 矫正后的"好"面容（swipe 第 1 张、ScanSubscription 订阅图）
- *   - `rightUrl` -> 矫正前的"坏"面容（swipe 第 2 张）
+ *   - 此 URL 渲染在 swiper 第 1 张（矫正后好面容），同时复用为
+ *     - 不健康分支 `ScanSubscription` 的订阅图
+ *     - 健康分支 `healthyWholeImgUrl`（避免再调一次 native splitImage）
  *
  * 注：原生插件 `DualCamera.splitImage` 返回的 `leftUrl` 实际对应原图左半（坏），
- * `useImageSplit` 内部已交叉赋值，无需在此处再处理。
+ * `useImageSplit` 内部已交叉赋值；这里只取交叉后代表"好面容"的一侧。
  */
-const { leftUrl: goodImgUrl, rightUrl: badImgUrl } = useImageSplit(
+const { leftUrl: goodImgUrl } = useImageSplit(
   () => aiImageUrl.value,
   0.5,
   { inset: 20 },
@@ -123,7 +124,7 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
           <div class="text-section-content">
             <h1 class="page-title">{{ healthyCopy.opening }}</h1>
             <!-- 说明文字 -->
-            <p class="description">16年后，你的长相是这样的</p>
+            <!-- <p class="description">16年后，你的长相是这样的</p> -->
           </div>
         </div>
       </template>
@@ -131,26 +132,20 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         <div class="text-section text-section--reversed">
           <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
           <h1 class="page-title">
-            啊哦，<br />
-            颌面发育似乎不太妙！
+            但是不用担心，<br />
+            矫正后面容会变成这样！
           </h1>
           <!-- 说明文字 -->
-          <p class="description">
-            根据预判结果，你可能会有
-            <span class="diagnosis-name">{{ diagnosisName }}</span>
-            的问题，请爸爸妈妈尽早带你去医院详细检查哦！
-          </p>
+          <!-- <p class="description">通过科学手段干预，颌面会被修复为：</p> -->
         </div>
       </template>
       <template v-else-if="swiperIndex === 1">
         <div class="text-section text-section--reversed">
           <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
           <h1 class="page-title">
-            但是不用担心，<br />
-            矫正后面容会变成这样！
+            啊哦，<br />
+            颌面发育似乎不太妙！
           </h1>
-          <!-- 说明文字 -->
-          <p class="description">通过科学手段干预，颌面会被修复为：</p>
         </div>
       </template>
 
@@ -178,6 +173,10 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
             <div v-show="swiperIndex === 0">
+              <p class="failed-content-handle-img-tips">诊断完成，可以通过以下方式获取照片或结束体验！</p>
+              <ScanSubscription :good-img-url="goodImgUrl" />
+            </div>
+            <div v-show="swiperIndex === 1">
               <div class="analysis-failed-tips analysis-failed-tips--primary">
                 <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
                 <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
@@ -187,13 +186,9 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
               <div class="analysis-failed-tips analysis-failed-tips--secondary" style="margin-top: 16px">
                 <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
                 <p v-if="diagnosisCopy.careTips" class="tips-content">
-                  <strong>日常护理小贴士：</strong>{{ diagnosisCopy.careTips }}
+                  <strong>{{ DETAIL_PAGE_COPY.careTipsPrefix }}</strong>{{ diagnosisCopy.careTips }}
                 </p>
               </div>
-            </div>
-            <div v-show="swiperIndex === 1">
-              <p class="failed-content-handle-img-tips">诊断完成，可以通过以下方式获取照片或结束体验！</p>
-              <ScanSubscription :good-img-url="goodImgUrl" />
             </div>
           </div>
         </div>
@@ -265,23 +260,6 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   // margin-top: 24px;
 }
 
-.description {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  font-size: 32px;
-  font-weight: 400;
-  line-height: 52px;
-  color: #000;
-  // margin: 16px 0 32px 0;
-
-  .diagnosis-name {
-    font-weight: 700;
-  }
-}
-
 /* 健康 / 不健康分支统一的"文案区"布局容器：
    - 顶部安全区（max(100px, env(safe-area-inset-top))）+ 左右 90px padding
    - 健康分支左侧带 .text-section-decor 装饰图，不健康分支无图 */
@@ -315,13 +293,6 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
     align-items: center;
     font-size: 55px;
     line-height: 80px;
-  }
-
-  .description {
-    flex-basis: 100%;
-    font-size: 32px;
-    line-height: 52px;
-    padding-right: 36px;
   }
 }
 

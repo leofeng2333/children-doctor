@@ -81,7 +81,12 @@ const goResult = () => {
       <!-- 答题态 -->
       <div v-if="currentQuestion">
         <!-- 标题 -->
-        <h1 class="title">智慧问答</h1>
+        <h1 class="title">趣味问答</h1>
+
+        <!-- 描述 -->
+        <p class="desc">
+          预测结果正在生成中，<br />等待期间来玩一组趣味问答吧！
+        </p>
 
         <!-- 题目 -->
         <p class="question-text">{{ currentQuestion.question }}</p>
@@ -196,10 +201,23 @@ const goResult = () => {
     BlinkMacSystemFont,
     sans-serif;
   font-size: 36px;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 52px;
   color: #000;
-  margin: 30px 0 0 0;
+  margin: 42px 0 0 0;
+}
+
+.desc {
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 45px;
+  color: #000;
+  margin: 24px 0 0 0;
 }
 
 .options-grid {

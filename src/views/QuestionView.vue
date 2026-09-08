@@ -77,13 +77,13 @@ const goNext = async () => {
   <div class="question-page">
     <div class="question-content">
       <!-- 返回按钮 -->
-      <div class="back-button" @click="goBack">
-        <!-- <img src="@/assets/images/back-button.png" alt="返回" /> -->
+      <div class="back-button">
+        <img src="@/assets/images/common-left.png" alt="返回" />
       </div>
 
       <!-- 问询标题 -->
       <div class="header">
-        <h1 class="title">问询 {{ currentQuestion }}</h1>
+        <h1 class="title">为了更好地完成诊断，<br />请认真回答以下问题哦！</h1>
         <p class="progress">( {{ currentQuestion }} / {{ questionTexts.length }} )</p>
       </div>
 
@@ -130,8 +130,8 @@ const goNext = async () => {
 }
 
 .back-button {
-  width: 80px;
-  height: 80px;
+  width: 140px;
+  height: 150px;
   padding: 0;
   border: none;
   background: transparent;

@@ -9,6 +9,8 @@ import 'swiper/css/effect-cards'
 import { EffectCards } from 'swiper/modules'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useImageSplit } from '@/composables/useImageSplit'
+import { getToothIssueImage } from '@/utils/toothIssueImages'
+import { getDiagnosisCopyFromLLMResult } from '@/utils/diagnosisCopy'
 
 const emit = defineEmits(['slideChange'])
 
@@ -22,14 +24,39 @@ const imgSrc = computed(
   () => props.analysisResult?.aiAnalysis?.result?.predictions?.futureImageUrl ?? '',
 )
 
-const { leftUrl: leftUrlRef, rightUrl: rightUrlRef } = useImageSplit(
+/**
+ * 矫正后的"好"面容（swiper 第 1 张）。
+ *
+ * useImageSplit 内部已交叉赋值：返回的 leftUrl 实为原图右半（好图）。
+ */
+const { leftUrl: goodImgUrl } = useImageSplit(
   () => imgSrc.value,
   0.5,
   { inset: 20 },
 )
 
-const leftUrl = computed(() => leftUrlRef.value)
-const rightUrl = computed(() => rightUrlRef.value)
+/**
+ * 不健康分支当前的诊断分类编码（来自 `llmAnalysis.result.categoryCode`）。
+ * 非法/缺失值 → 走 getToothIssueImage 的回退分支。
+ */
+const categoryCode = computed(() => {
+  const llmResult = props.analysisResult?.llmAnalysis?.result
+  if (!llmResult || typeof llmResult !== 'object') return null
+  const raw = (llmResult as Record<string, any>).categoryCode
+  if (typeof raw === 'number' && Number.isInteger(raw)) return raw
+  if (typeof raw === 'string') {
+    const n = Number(raw)
+    if (Number.isInteger(n)) return n
+  }
+  return null
+})
+
+/**
+ * 不健康面型的示意图（swiper 第 1 张）：
+ * 按当前分类编码返回对应牙颌面问题示意图；
+ * 不再依赖 useImageSplit 切出的左半坏脸。
+ */
+const badIssueImageUrl = computed(() => getToothIssueImage(categoryCode.value))
 
 const swiperInstance = ref<any>(null)
 
@@ -59,10 +86,10 @@ onUnmounted(() => {
     <div class="swiper detail-swiper">
       <div class="swiper-wrapper">
         <div class="swiper-slide">
-          <img :src="leftUrl" alt="bad-img" srcset="" />
+          <img :src="goodImgUrl" alt="矫正后面容" srcset="" />
         </div>
         <div class="swiper-slide">
-          <img :src="rightUrl" alt="good-img" srcset="" />
+          <img :src="badIssueImageUrl" :alt="`牙颌面问题示意图-${categoryCode}`" srcset="" />
         </div>
       </div>
     </div>

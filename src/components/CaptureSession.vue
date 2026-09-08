@@ -173,7 +173,10 @@ const handleConfirm = async () => {
 <template>
   <div class="capture-session">
     <!-- 顶部提示 -->
-    <div v-if="pendingPhoto" class="confirm-tip">请确认图片</div>
+    <div v-if="pendingPhoto" class="confirm-tip">
+      <img src="@/assets/images/common-left.png" alt="" class="confirm-tip-icon" aria-hidden="true" />
+      <span>请确认你的照片</span>
+    </div>
     <div v-else class="session-tip">
       <span class="tip-text"> 请正面看向屏幕 </span>
       <span v-if="round === 1 && !pendingPhoto" class="round-badge">开心地露出牙齿拍摄哦！</span>
@@ -213,8 +216,16 @@ const handleConfirm = async () => {
 .confirm-tip {
   font-size: 64px;
   font-weight: 700;
-  line-height: 200px;
-  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-tip-icon {
+  width: 140px;
+  height: 150px;
+  object-fit: contain;
+  margin-right: 24px;
 }
 
 .session-tip {
