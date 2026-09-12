@@ -67,6 +67,8 @@ const handleConfirmed = (photo: DualCameraPhoto) => {
     // 进入最终确认时停止摄像头预览
     DualCamera.stopPreview().catch(() => { })
     console.log('[CameraCapture] finalReview, stopped preview')
+    // 4 张照片都已就绪（顺序：露齿前 / 露齿后 / 非露齿前 / 非露齿后）
+    void logFourPhotoDimensions()
   } else {
     currentRound.value++
     console.log('[CameraCapture] 进入 round', currentRound.value)
@@ -77,6 +79,81 @@ const handleConfirmed = (photo: DualCameraPhoto) => {
 const handleFinalConfirmed = () => {
   console.log('[CameraCapture] handleFinalConfirmed')
   startAnalysis()
+}
+
+/**
+ * 4 张照片全部采集完成后，异步读取每张图的 naturalWidth / naturalHeight，
+ * 通过 vconsole 打印。src 是 file:// / http(s) / data: 都靠 <img> decode。
+ */
+const FOUR_PHOTO_TITLES = [
+  '露齿正视图(前置)',
+  '露齿右侧视图(后置)',
+  '非露齿正视图(前置)',
+  '非露齿右侧视图(后置)',
+] as const
+
+interface FourPhotoDimensionEntry {
+  index: number
+  title: string
+  width?: number
+  height?: number
+  source?: string
+  error?: string
+}
+
+function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    img.onerror = () => reject(new Error(`Image decode failed: ${src.slice(0, 64)}`))
+    img.src = src
+  })
+}
+
+async function logFourPhotoDimensions() {
+  const urls = allPhotos.value
+  console.log(
+    '[CameraCapture] 4张照片全部采集完成, 开始读取尺寸, 共',
+    urls.length,
+    '张',
+  )
+  if (urls.length !== 4) {
+    console.warn(
+      '[CameraCapture] 期望4张照片, 实际',
+      urls.length,
+      '张, 跳过尺寸打印',
+    )
+    return
+  }
+  const entries: FourPhotoDimensionEntry[] = await Promise.all(
+    urls.map(async (src, index) => {
+      const entry: FourPhotoDimensionEntry = {
+        index,
+        title: FOUR_PHOTO_TITLES[index] ?? `照片#${index + 1}`,
+        source: src,
+      }
+      try {
+        const { width, height } = await loadImageDimensions(src)
+        entry.width = width
+        entry.height = height
+      } catch (e) {
+        entry.error = (e as Error).message
+      }
+      return entry
+    }),
+  )
+  // vconsole 友好：先汇总一行，再把每张照片的明细作为对象数组打印
+  console.log('[CameraCapture] 4张照片尺寸汇总:')
+  console.table(entries)
+  entries.forEach((e) => {
+    if (e.error) {
+      console.warn(`[CameraCapture] #${e.index} ${e.title} 读取失败:`, e.error)
+    } else {
+      console.log(
+        `[CameraCapture] #${e.index} ${e.title}: ${e.width} x ${e.height} px`,
+      )
+    }
+  })
 }
 
 /** finalReview 页面点击"重新拍摄" */
