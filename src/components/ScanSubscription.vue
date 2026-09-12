@@ -4,9 +4,12 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Toast } from '@capacitor/toast'
 import { useAnalysisStore } from '@/stores'
-import { bindPhoneToLlmAnalysis, createFollowTask } from '@/utils/service'
+import { bindPhoneToLlmAnalysis } from '@/utils/service'
 import { DualCamera } from '@/plugins/dual-camera'
 import { printPhoto } from '@/utils/print-current'
+// 公众号关注二维码改为本地静态资源（无需再请求 /api/wechat/follow-task/create）。
+// Vite 会把 import 解析为打包后的资源 URL，可以直接作为 <img :src> 使用。
+import staticQrcodeUrl from '@/assets/images/qrcode.jpg'
 
 interface Props {
   /** 主图 URL（不健康面型路径下：右半图矫正后面容；健康面型路径下：analysis-success.png） */
@@ -83,15 +86,11 @@ async function handleNamePhoneDialogSubmit(payload: {
       llmAnalysisId: payload.llmAnalysisId,
       phone: payload.phone,
     })
-    // 2) 拉取公众号关注二维码（git 历史曾用 createSubscriptionTask，
-    //    路径 /api/wechat/follow-task/create，返回 { qrcodeUrl, followTaskId }）
-    const { qrcodeUrl: url } = await createFollowTask()
-    if (!url) {
-      throw new Error('未返回二维码图片')
-    }
-    qrcodeUrl.value = url
+    // 2) 直接使用本地静态二维码资源（Vite 解析后的 URL 字符串），
+    //    不再请求 /api/wechat/follow-task/create 接口。
+    qrcodeUrl.value = staticQrcodeUrl
   } catch (e: any) {
-    console.error('[ScanSubscription] bindPhoneToLlmAnalysis/createFollowTask failed:', e)
+    console.error('[ScanSubscription] bindPhoneToLlmAnalysis failed:', e)
     await Toast.show({
       text: e?.message ?? '绑定失败，请稍后重试',
       position: 'center',
