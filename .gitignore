@@ -66,4 +66,8 @@ __screenshots__/
 /YF-3566_3568系统签名文件_*.rar
 /YF-3566_3568系统签名文件_*/
 
+# 设计稿原始文件（1.5MB+，二进制 diff 不可读，保留 ai 源文件但不入库，
+# 设计变更后导出 PNG/JPG 进 src/assets/images/ 即可）
+/相纸.ai
+
 .vscode
