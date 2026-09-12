@@ -7,6 +7,7 @@ import { uploadPhotos } from '@/utils/service'
 import { useAnalysisStore } from '@/stores'
 import CaptureSession from '@/components/CaptureSession.vue'
 import LogoText from '@/components/LogoText.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
 
@@ -16,6 +17,8 @@ const captureState = ref<'capturing' | 'finalReview' | 'uploading'>('capturing')
 /** 当前正在进行的拍摄轮次（1 或 2） */
 const currentRound = ref(1)
 const isUploading = ref(false)
+/** AI 分析阶段独立标志：startAnalysis 可能耗时数十秒，期间需单独锁定 UI 并切换文案 */
+const isAnalyzing = ref(false)
 const errorMsg = ref('')
 const isPreviewReady = ref(false)
 
@@ -52,6 +55,15 @@ onUnmounted(async () => {
     isPreviewReady.value = false
   }
 })
+
+/** startAnalysis 失败时的错误提示框（单按钮「返回」→ /capture-intro） */
+const showAnalysisErrorDialog = ref(false)
+const handleAnalysisErrorConfirm = async () => {
+  showAnalysisErrorDialog.value = false
+  // 重置 analysis store，避免下一轮残留 error
+  useAnalysisStore().reset()
+  await router.push({ name: 'capture-intro' })
+}
 
 /**
  * CaptureSession 内点击"确认"：本轮照片确认，进入下一轮或最终确认
@@ -173,21 +185,36 @@ const handleRetake = () => {
 }
 
 const startAnalysis = async () => {
-  if (isUploading.value) return
+  // 任一阶段进行中均拒绝重复触发
+  if (isUploading.value || isAnalyzing.value) return
   isUploading.value = true
   errorMsg.value = ''
   try {
     console.log('[CameraCapture] 开始分析, 照片组数:', confirmedSessions.value.length)
     const uploadResult = await uploadPhotos(confirmedSessions.value)
     console.log('[CameraCapture] 上传结果:', uploadResult)
+
+    // 上传完成，切到 AI 分析阶段。startAnalysis 不一定立即返回（AI 分析可能耗时数十秒），
+    // 因此用独立遮罩 + 文案告诉用户当前在做什么，避免长时间停留在「正在上传照片...」误导。
+    isUploading.value = false
+    isAnalyzing.value = true
+
     const analysisStore = useAnalysisStore()
-    analysisStore.start()
+    await analysisStore.start()
+    // startAnalysis 接口失败时，store 会把 message 写入 analysisStore.error。
+    // 此时弹错误提示框（单按钮「返回」），不再进入 /question。
+    if (analysisStore.error) {
+      console.warn('[CameraCapture] startAnalysis 失败:', analysisStore.error)
+      showAnalysisErrorDialog.value = true
+      return
+    }
     await router.push({ path: '/question' })
   } catch (e) {
     errorMsg.value = (e as Error).message
     console.error('[CameraCapture] 开始分析失败:', e)
   } finally {
     isUploading.value = false
+    isAnalyzing.value = false
   }
 }
 </script>
@@ -214,19 +241,40 @@ const startAnalysis = async () => {
       <!-- uploading: 由全屏遮罩 .uploading-overlay 统一处理，此处不需要重复 -->
     </div>
 
-    <!-- 全屏遮罩：上传中锁屏，防误触 -->
+    <!-- 全屏遮罩：上传阶段，锁屏防误触 -->
     <div v-if="isUploading" class="uploading-overlay">
       <div class="uploading-icon"></div>
       <p class="uploading-text">正在上传照片...</p>
       <p class="uploading-sub">请稍候，不要退出</p>
     </div>
 
+    <!-- 全屏遮罩：AI 分析阶段（startAnalysis 可能耗时数十秒，单独提示文案） -->
+    <div v-if="isAnalyzing" class="uploading-overlay">
+      <div class="uploading-icon"></div>
+      <p class="uploading-text">AI 分析中...</p>
+      <p class="uploading-sub">请稍候，分析可能需要数十秒</p>
+    </div>
+
     <!-- 底部区域 -->
     <div class="bottom-section">
-      <!-- finalReview: 两个按钮 -->
-      <primary-button v-if="captureState === 'finalReview'" @click="handleFinalConfirmed" text="开始分析"></primary-button>
+      <!-- finalReview: 「开始分析」按钮 — 上传/分析阶段隐藏，避免和遮罩重叠造成可点击的视觉误导 -->
+      <primary-button
+        v-if="captureState === 'finalReview' && !isUploading && !isAnalyzing"
+        @click="handleFinalConfirmed"
+        text="开始分析"
+      />
       <LogoText class="logo" />
     </div>
+
+    <!-- startAnalysis 接口失败提示：单按钮「返回」→ /capture-intro -->
+    <ConfirmDialog
+      :visible="showAnalysisErrorDialog"
+      title="提示"
+      message="出现问题啦~可能是人脸拍摄不够标准或者网络波动，点击返回重试"
+      confirm-text="返回"
+      single-button
+      @confirm="handleAnalysisErrorConfirm"
+    />
   </div>
 </template>
 

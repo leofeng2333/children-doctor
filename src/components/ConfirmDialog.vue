@@ -14,6 +14,16 @@
  *     @close="onCancel"
  *   />
  *
+ * 单按钮模式（仅展示「确认」按钮，隐藏取消按钮和关闭 X）：
+ *   <ConfirmDialog
+ *     :visible="show"
+ *     title="提示"
+ *     message="xxx"
+ *     confirm-text="返回"
+ *     single-button
+ *     @confirm="onConfirm"
+ *   />
+ *
  * 视觉上沿用 PasswordDialog 的样式（同样的圆角、字号、按钮配色），
  * 这样首页右上角的双击退出对话框看起来和原本的管理员密码框一致。
  */
@@ -26,6 +36,8 @@ withDefaults(
     cancelText?: string
     /** 确认按钮主题色，默认与 PasswordDialog 一致 #ff9900 */
     confirmColor?: string
+    /** 仅展示一个确认按钮（隐藏取消按钮 + 关闭 X），用于强制引导用户走唯一路径 */
+    singleButton?: boolean
   }>(),
   {
     title: '确认',
@@ -33,6 +45,7 @@ withDefaults(
     confirmText: '确认',
     cancelText: '取消',
     confirmColor: '#ff9900',
+    singleButton: false,
   },
 )
 
@@ -55,7 +68,13 @@ const handleClose = () => emit('close')
           <!-- Header -->
           <div class="dialog-header">
             <h2 class="dialog-title">{{ title }}</h2>
-            <button class="dialog-close" type="button" aria-label="关闭" @click="handleClose">
+            <button
+              v-if="!singleButton"
+              class="dialog-close"
+              type="button"
+              aria-label="关闭"
+              @click="handleClose"
+            >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                 <path
                   d="M18 6L6 18M6 6l12 12"
@@ -75,7 +94,14 @@ const handleClose = () => emit('close')
 
           <!-- Footer -->
           <div class="dialog-footer">
-            <button class="btn-cancel" type="button" @click="handleCancel">{{ cancelText }}</button>
+            <button
+              v-if="!singleButton"
+              class="btn-cancel"
+              type="button"
+              @click="handleCancel"
+            >
+              {{ cancelText }}
+            </button>
             <button
               class="btn-confirm"
               type="button"
