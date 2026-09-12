@@ -15,6 +15,13 @@ interface SlotForm {
   previewRotation: number
   captureRotation: number
   mirror: boolean
+  /**
+   * 拍照独立的水平镜像翻转（v2 schema 引入）。
+   *
+   * <p>与 {@link mirror}（预览镜像）解耦：预览镜像只动 preview TextureView，本字段
+   * 只影响拍照 JPEG / YUV 输出。
+   */
+  captureMirror: boolean
   /** 数字缩放倍数（1.0 = 原画）。UI 限制 [1.0, 4.0]，落入 native 时夹紧到 [1.0, 10.0]。 */
   zoom: number
 }
@@ -33,6 +40,7 @@ const emptySlot = (): SlotForm => ({
   previewRotation: 0,
   captureRotation: 0,
   mirror: false,
+  captureMirror: false,
   zoom: 1.0,
 })
 
@@ -42,15 +50,21 @@ const form = ref<{ slots: SlotTuple }>({
 
 const loading = ref(false)
 const saving = ref(false)
+const resetting = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+/**
+ * 当前生效的配置文件绝对路径。native: external app-specific 路径；web: localStorage key。
+ * 弹窗展示出来方便"现场调好 → 拷到另一台同包名设备即用"。
+ */
+const configPath = ref('')
 
 const isDirty = ref(false)
 const showExitConfirm = ref(false)
 
 const snapshot = ref<string>('')
 
-const slotsToTuple = (slots: ReadonlyArray<{ previewRotation: number; captureRotation: number; mirror: boolean; zoom: number }>): SlotTuple => {
+const slotsToTuple = (slots: ReadonlyArray<{ previewRotation: number; captureRotation: number; mirror: boolean; captureMirror?: boolean; zoom: number }>): SlotTuple => {
   const s0 = slots[0]
   const s1 = slots[1]
   return [
@@ -58,12 +72,15 @@ const slotsToTuple = (slots: ReadonlyArray<{ previewRotation: number; captureRot
       previewRotation: s0?.previewRotation ?? 0,
       captureRotation: s0?.captureRotation ?? 0,
       mirror: s0?.mirror ?? false,
+      // v1 schema / 老 localStorage 没有 captureMirror → 默认 false
+      captureMirror: s0?.captureMirror ?? false,
       zoom: clampZoom(s0?.zoom ?? 1.0),
     },
     {
       previewRotation: s1?.previewRotation ?? 0,
       captureRotation: s1?.captureRotation ?? 0,
       mirror: s1?.mirror ?? false,
+      captureMirror: s1?.captureMirror ?? false,
       zoom: clampZoom(s1?.zoom ?? 1.0),
     },
   ]
@@ -94,6 +111,7 @@ const loadConfig = async () => {
   try {
     const cfg = await DualCamera.getCaptureConfig()
     form.value.slots = slotsToTuple(cfg.slots)
+    configPath.value = cfg.configPath ?? ''
     snapshot.value = JSON.stringify(form.value)
     isDirty.value = false
   } catch (err) {
@@ -111,6 +129,9 @@ watch(
       loadConfig()
     }
   },
+  // immediate: true 保证"父组件初始就传 visible=true"这种边缘场景也能读一次。
+  // 内部 if (v) 守卫保证 visible=false 时不会触发读盘。
+  { immediate: true },
 )
 
 watch(
@@ -128,6 +149,7 @@ const handleSave = async () => {
   try {
     const updated = await DualCamera.setCaptureConfig({ slots: form.value.slots })
     form.value.slots = slotsToTuple(updated.slots)
+    configPath.value = updated.configPath ?? configPath.value
     snapshot.value = JSON.stringify(form.value)
     isDirty.value = false
     successMsg.value = '已保存。下次进入拍照预览生效。'
@@ -135,6 +157,45 @@ const handleSave = async () => {
     errorMsg.value = err instanceof Error ? err.message : String(err)
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 把拍照方向校准恢复为 native defaults()。
+ *
+ * <p>注意：不是"清空表单"，而是显式调用 native 端的 {@code applyCaptureConfigInternal}
+ * 把默认值落盘 + 推给活跃预览周期。表单会立即重置为 defaults。
+ */
+const handleReset = async () => {
+  resetting.value = true
+  errorMsg.value = ''
+  successMsg.value = ''
+  try {
+    const updated = await DualCamera.resetCaptureConfig()
+    form.value.slots = slotsToTuple(updated.slots)
+    configPath.value = updated.configPath ?? configPath.value
+    snapshot.value = JSON.stringify(form.value)
+    isDirty.value = false
+    successMsg.value = '已重置为默认值。'
+  } catch (err) {
+    errorMsg.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    resetting.value = false
+  }
+}
+
+/**
+ * 把当前配置文件绝对路径写到剪贴板（方便用户 adb pull / push）。
+ * 失败降级为 prompt（开发模式下可手动复制）。
+ */
+const handleCopyPath = async () => {
+  if (!configPath.value) return
+  try {
+    await navigator.clipboard.writeText(configPath.value)
+    successMsg.value = `路径已复制：${configPath.value}`
+  } catch {
+    // 剪贴板 API 在某些 webview 不可用，降级显示
+    window.prompt('请手动复制路径：', configPath.value)
   }
 }
 
@@ -192,6 +253,26 @@ const handleExitCancelled = () => {
               <span v-else-if="isDirty" class="status-text dirty">有未保存修改</span>
             </div>
             <p class="section-hint">保存后写入 native JSON 配置；下次进入拍照预览时生效。</p>
+
+            <!-- 配置路径：native = external app-specific；web = localStorage key -->
+            <div v-if="configPath" class="path-row">
+              <span class="path-label">配置路径</span>
+              <input
+                class="path-input"
+                type="text"
+                readonly
+                :value="configPath"
+                @focus="($event.target as HTMLInputElement).select()"
+              />
+              <button
+                class="path-copy"
+                type="button"
+                :disabled="!configPath"
+                @click="handleCopyPath"
+              >
+                复制
+              </button>
+            </div>
 
             <div class="slot-grid">
               <fieldset class="slot-block">
@@ -266,6 +347,14 @@ const handleExitCancelled = () => {
                     <option v-for="r in ROTATION_OPTIONS" :key="r" :value="r">{{ r }}°</option>
                   </select>
                 </label>
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    v-model="form.slots[0].captureMirror"
+                    :disabled="loading || saving"
+                  />
+                  <span>水平镜像（独立拍照翻转）</span>
+                </label>
               </fieldset>
 
               <fieldset class="slot-block">
@@ -276,6 +365,14 @@ const handleExitCancelled = () => {
                     <option v-for="r in ROTATION_OPTIONS" :key="r" :value="r">{{ r }}°</option>
                   </select>
                 </label>
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    v-model="form.slots[1].captureMirror"
+                    :disabled="loading || saving"
+                  />
+                  <span>水平镜像（独立拍照翻转）</span>
+                </label>
               </fieldset>
             </div>
 
@@ -284,18 +381,26 @@ const handleExitCancelled = () => {
           </section>
 
           <footer class="dev-footer">
-            <button class="btn-secondary" type="button" :disabled="saving" @click="handleClose">
+            <button class="btn-secondary" type="button" :disabled="saving || resetting" @click="handleClose">
               关闭
+            </button>
+            <button
+              class="btn-secondary"
+              type="button"
+              :disabled="loading || saving || resetting"
+              @click="handleReset"
+            >
+              {{ resetting ? '重置中…' : '重置默认' }}
             </button>
             <button
               class="btn-primary"
               type="button"
-              :disabled="loading || saving || !isDirty"
+              :disabled="loading || saving || resetting || !isDirty"
               @click="handleSave"
             >
               {{ saving ? '保存中…' : '保存配置' }}
             </button>
-            <button class="btn-danger" type="button" :disabled="saving" @click="askExit">
+            <button class="btn-danger" type="button" :disabled="saving || resetting" @click="askExit">
               退出应用
             </button>
           </footer>
@@ -423,6 +528,54 @@ const handleExitCancelled = () => {
   line-height: 1.5;
 }
 
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.path-label {
+  font-size: 16px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid #d9d9d9;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  padding: 0 12px;
+  background: #fafafa;
+  color: #333;
+  // 单行省略路径中间（路径过长时省略号定位）
+  text-overflow: ellipsis;
+}
+
+.path-copy {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  font-size: 16px;
+  color: #000;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    background: #f5f5f5;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 .slot-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -521,7 +674,7 @@ const handleExitCancelled = () => {
 
 .dev-footer {
   display: flex;
-  gap: 16px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -529,11 +682,15 @@ const handleExitCancelled = () => {
   flex: 1;
   height: 76px;
   border-radius: 50px;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
   border: none;
+  // 4 个按钮等分空间；允许文字缩小而不换行
+  white-space: nowrap;
+  padding: 0 4px;
+  min-width: 0;
 
   &:active:not(:disabled) {
     transform: scale(0.98);

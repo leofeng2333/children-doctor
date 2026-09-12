@@ -555,16 +555,19 @@ public class DualCameraPlugin extends Plugin {
      * 读取拍照方向校准配置。
      *
      * <p>走 {@link CaptureConfigRepository#loadOrCreate()}：文件不存在/解析失败时
-     * 会用默认值重建一份并写回磁盘。返回结构：
+     * 会用默认值重建一份并写回磁盘。返回结构（v2）：
      * <pre>
      *   {
-     *     "version": 1,
+     *     "version": 2,
+     *     "configPath": "/storage/emulated/0/Android/data/com.children.doctor/files/capture_config.json",
      *     "slots": [
-     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false },
-     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false }
+     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false, "captureMirror": false, "zoom": 1.0 },
+     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false, "captureMirror": false, "zoom": 1.0 }
      *     ]
      *   }
      * </pre>
+     *
+     * <p>老 v1 配置文件无 {@code captureMirror} 字段，解析时默认为 false，与历史行为一致。
      */
     @PluginMethod()
     public void getCaptureConfig(PluginCall call) {
@@ -586,18 +589,19 @@ public class DualCameraPlugin extends Plugin {
      * 推到对应 session，rotation/mirror 重算 TextureView transform，zoom 重发
      * SCALER_CROP_REGION，三者都在下一帧生效。
      *
-     * <p>输入格式：
+     * <p>输入格式（v2）：
      * <pre>
      *   {
      *     "slots": [
-     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false, "zoom": 1.0 },
-     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false, "zoom": 1.0 }
+     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false, "captureMirror": false, "zoom": 1.0 },
+     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false, "captureMirror": false, "zoom": 1.0 }
      *     ]
      *   }
      * </pre>
      *
      * <p>字段缺失时按 slot 索引用对应默认值兜底；旋转角会被规范化到
-     * 0/90/180/270。返回归一化后的完整配置，前端用于刷新表单显示。
+     * 0/90/180/270。{@code captureMirror} 缺省视为 false（与 v1 行为一致）。
+     * 返回归一化后的完整配置，前端用于刷新表单显示。
      */
     @PluginMethod()
     public void setCaptureConfig(PluginCall call) {
@@ -657,6 +661,9 @@ public class DualCameraPlugin extends Plugin {
 
     /**
      * 把 {@link CaptureConfig} 转成给前端的 JSObject。
+     *
+     * <p>同时附带 {@code configPath}，方便前端展示当前生效的配置文件绝对路径——
+     * 现场调好后用户要拷贝到其他设备，必须先知道路径在哪。
      */
     private JSObject captureConfigToJson(CaptureConfig cfg) {
         JSObject root = new JSObject();
@@ -668,11 +675,32 @@ public class DualCameraPlugin extends Plugin {
             o.put("previewRotation", s.previewRotation);
             o.put("captureRotation", s.captureRotation);
             o.put("mirror", s.mirror);
+            o.put("captureMirror", s.captureMirror);
             o.put("zoom", s.zoom);
             arr.put(o);
         }
         root.put("slots", arr);
+        root.put("configPath", new CaptureConfigRepository(getContext()).getConfigFile().getAbsolutePath());
         return root;
+    }
+
+    /**
+     * 重置拍照方向校准到默认值。等同于把 {@link CaptureConfig#defaults()}
+     * 走 {@link #applyCaptureConfigInternal}（落盘 + 推给活跃预览）。
+     *
+     * <p>提供独立 PluginMethod 而非让前端调用 setCaptureConfig 传 defaults，
+     * 是为了避免前端 / native schema 不一致导致写入"看起来对了但实际不全"的配置。
+     */
+    @PluginMethod()
+    public void resetCaptureConfig(PluginCall call) {
+        try {
+            CaptureConfig defaults = CaptureConfig.defaults();
+            CaptureConfig after = applyCaptureConfigInternal(defaults);
+            call.resolve(captureConfigToJson(after));
+        } catch (Exception e) {
+            Log.e(TAG, "resetCaptureConfig failed", e);
+            call.reject("Failed to reset capture config: " + e.getMessage(), e);
+        }
     }
 
     @PluginMethod()

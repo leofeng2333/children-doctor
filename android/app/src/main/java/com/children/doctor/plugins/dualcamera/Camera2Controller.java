@@ -128,8 +128,10 @@ public class Camera2Controller {
             CaptureConfig.Slot slot = config.slots[i];
             sessions[i].setCalibration(slot.previewRotation, slot.mirror);
             sessions[i].setCaptureRotationOffset(slot.captureRotation);
+            sessions[i].setCaptureMirrorOffset(slot.captureMirror);
             log("CALIBRATION slot=" + i + " preview extraRotate=" + slot.previewRotation
                     + " / capture captureRotationOffset=" + slot.captureRotation
+                    + " captureMirrorOffset=" + slot.captureMirror
                     + " extraMirror=" + slot.mirror);
         }
 
@@ -862,13 +864,15 @@ public class Camera2Controller {
     }
 
     /**
-     * 把一份完整 CaptureConfig 推到当前预览周期。覆盖三个字段：
+     * 把一份完整 CaptureConfig 推到当前预览周期。覆盖四个字段：
      *   - previewRotation / mirror → {@link Camera2Session#setCalibration}
      *   - captureRotation → {@link Camera2Session#setCaptureRotationOffset}
+     *   - captureMirror → {@link Camera2Session#setCaptureMirrorOffset}
      *   - zoom → {@link Camera2Session#setZoomRatio}（setZoomRatio 内部会推到活跃 preview）
      *
-     * <p>三个字段都立即生效：rotation/mirror 走 configureTransform 重算，zoom 走
-     * SCALER_CROP_REGION 重发；不需要 stop/start preview。cameraManager == null 时静默跳过。
+     * <p>字段都立即生效：rotation/mirror 走 configureTransform 重算，zoom 走
+     * SCALER_CROP_REGION 重发，captureMirror 是拍照路径使用，下一次拍照时生效；
+     * 不需要 stop/start preview。cameraManager == null 时静默跳过。
      */
     public void applyCaptureConfig(CaptureConfig config) {
         if (config == null) return;
@@ -882,12 +886,14 @@ public class Camera2Controller {
                 if (s == null) continue;
                 s.setCalibration(slot.previewRotation, slot.mirror);
                 s.setCaptureRotationOffset(slot.captureRotation);
+                s.setCaptureMirrorOffset(slot.captureMirror);
                 s.setZoomRatio(slot.zoom);
                 // 旋转 / 镜像重算 TextureView transform；zoom 自身在 session 内部已重发
                 configureTransform(i, "applyCaptureConfig(slot=" + i + ")");
                 log("APPLY_CFG slot=" + i + " previewRot=" + slot.previewRotation
                         + " captureRot=" + slot.captureRotation
                         + " mirror=" + slot.mirror
+                        + " captureMirror=" + slot.captureMirror
                         + " zoom=" + slot.zoom);
             }
             log("applyCaptureConfig applied: " + config.debugSummary());

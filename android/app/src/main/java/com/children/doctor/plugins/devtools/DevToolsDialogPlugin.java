@@ -2,6 +2,9 @@ package com.children.doctor.plugins.devtools;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
@@ -40,10 +43,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * 完全不受影响。
  *
  * <p>弹窗里渲染 4 个 slot 的校准控件：左预览 / 右预览（旋转 + 镜像 + 缩放） +
- * 左拍照 / 右拍照（仅旋转）。底部三个按钮：关闭 / 保存配置 / 退出应用。
+ * 左拍照 / 右拍照（仅旋转）。底部四个按钮：关闭 / 重置默认 / 保存配置 / 退出应用，
+ * 中间还有"配置路径"+复制按钮（方便"现场调好 → 拷到另一台同包名设备即用"）。
  *
  * <p>保存：调 {@link DualCameraPlugin#applyCaptureConfigInternal(CaptureConfig)}，
- * 落盘 + 推到当前活跃预览周期。退出：{@code getActivity().finish()}。
+ * 落盘 + 推到当前活跃预览周期。重置默认：同上但传 {@link CaptureConfig#defaults()}。
+ * 退出：{@code getActivity().finish()}。
  *
  * <p>JS 调用：
  * <pre>
@@ -148,10 +153,13 @@ public class DevToolsDialogPlugin extends Plugin {
 
         TextView status = root.findViewById(com.children.doctor.R.id.dev_status);
         TextView msg = root.findViewById(com.children.doctor.R.id.dev_msg);
+        TextView configPath = root.findViewById(com.children.doctor.R.id.dev_config_path);
         Button btnClose = root.findViewById(com.children.doctor.R.id.dev_close);
         Button btnCancel = root.findViewById(com.children.doctor.R.id.btn_cancel);
+        Button btnReset = root.findViewById(com.children.doctor.R.id.btn_reset);
         Button btnSave = root.findViewById(com.children.doctor.R.id.btn_save);
         Button btnExit = root.findViewById(com.children.doctor.R.id.btn_exit);
+        Button btnCopyPath = root.findViewById(com.children.doctor.R.id.btn_copy_path);
 
         Spinner spinnerS0PreviewRot = root.findViewById(com.children.doctor.R.id.spinner_s0_preview_rot);
         CheckBox checkS0PreviewMirror = root.findViewById(com.children.doctor.R.id.check_s0_preview_mirror);
@@ -162,7 +170,9 @@ public class DevToolsDialogPlugin extends Plugin {
         EditText editS1PreviewZoom = root.findViewById(com.children.doctor.R.id.edit_s1_preview_zoom);
 
         Spinner spinnerS0CaptureRot = root.findViewById(com.children.doctor.R.id.spinner_s0_capture_rot);
+        CheckBox checkS0CaptureMirror = root.findViewById(com.children.doctor.R.id.check_s0_capture_mirror);
         Spinner spinnerS1CaptureRot = root.findViewById(com.children.doctor.R.id.spinner_s1_capture_rot);
+        CheckBox checkS1CaptureMirror = root.findViewById(com.children.doctor.R.id.check_s1_capture_mirror);
 
         // 旋转选项 string array
         ArrayAdapter<String> rotAdapter = new ArrayAdapter<>(
@@ -183,7 +193,17 @@ public class DevToolsDialogPlugin extends Plugin {
         editS1PreviewZoom.setText(formatZoom(current.slots[1].zoom));
 
         applyToSpinner(spinnerS0CaptureRot, current.slots[0].captureRotation);
+        checkS0CaptureMirror.setChecked(current.slots[0].captureMirror);
         applyToSpinner(spinnerS1CaptureRot, current.slots[1].captureRotation);
+        checkS1CaptureMirror.setChecked(current.slots[1].captureMirror);
+
+        // 把当前生效的配置文件绝对路径显示给用户，方便"现场调好 → 拷到另一台同包名设备即用"。
+        // Repository 已经在内部解析过路径（externalFilesDir + 一次性 internal 迁移），
+        // 这里直接拿 getConfigFile() 即可。
+        final String configPathText = repo.getConfigFile().getAbsolutePath();
+        if (configPath != null) {
+            configPath.setText(configPathText);
+        }
 
         if (status != null) {
             status.setText(activity.getString(com.children.doctor.R.string.devtools_status_idle));
@@ -213,11 +233,13 @@ public class DevToolsDialogPlugin extends Plugin {
             float s1pZoom = parseZoom(editS1PreviewZoom, current.slots[1].zoom);
 
             int s0cRot = spinnerValueToRotation(spinnerS0CaptureRot.getSelectedItemPosition());
+            boolean s0cMirror = checkS0CaptureMirror.isChecked();
             int s1cRot = spinnerValueToRotation(spinnerS1CaptureRot.getSelectedItemPosition());
+            boolean s1cMirror = checkS1CaptureMirror.isChecked();
 
             CaptureConfig next = new CaptureConfig();
-            next.slots[0] = new CaptureConfig.Slot(s0pRot, s0cRot, s0pMirror, s0pZoom);
-            next.slots[1] = new CaptureConfig.Slot(s1pRot, s1cRot, s1pMirror, s1pZoom);
+            next.slots[0] = new CaptureConfig.Slot(s0pRot, s0cRot, s0pMirror, s0cMirror, s0pZoom);
+            next.slots[1] = new CaptureConfig.Slot(s1pRot, s1cRot, s1pMirror, s1cMirror, s1pZoom);
 
             // 保存路径：优先复用 DualCameraPlugin（落盘 + 推给活跃 preview）。
             // 兜底：如果用户没启动过 preview，DualCameraPlugin 可能尚未加载，
@@ -254,6 +276,57 @@ public class DevToolsDialogPlugin extends Plugin {
             } finally {
                 // 即便上面 resolve 抛异常也要保证 Activity 关闭。
                 activity.finish();
+            }
+        });
+
+        // 重置默认：落盘 defaults + 推给活跃预览周期（与 save 同路径，但不走 UI 控件值）。
+        btnReset.setOnClickListener(v -> {
+            DualCameraPlugin dualCam = findDualCameraPlugin();
+            try {
+                CaptureConfig defaults = CaptureConfig.defaults();
+                CaptureConfig after;
+                if (dualCam != null) {
+                    after = dualCam.applyCaptureConfigInternal(defaults);
+                } else {
+                    // 没有活跃 preview 时直接走 repository 落盘（语义同 save 的兜底分支）。
+                    repo.save(defaults);
+                    after = repo.loadOrCreate();
+                    Log.i(TAG, "reset without DualCameraPlugin: " + after.debugSummary());
+                }
+                // 把控件值刷成 defaults，让 UI 跟磁盘一致（避免显示 stale 状态）
+                applyToSpinner(spinnerS0PreviewRot, after.slots[0].previewRotation);
+                checkS0PreviewMirror.setChecked(after.slots[0].mirror);
+                editS0PreviewZoom.setText(formatZoom(after.slots[0].zoom));
+                applyToSpinner(spinnerS1PreviewRot, after.slots[1].previewRotation);
+                checkS1PreviewMirror.setChecked(after.slots[1].mirror);
+                editS1PreviewZoom.setText(formatZoom(after.slots[1].zoom));
+                applyToSpinner(spinnerS0CaptureRot, after.slots[0].captureRotation);
+                checkS0CaptureMirror.setChecked(after.slots[0].captureMirror);
+                applyToSpinner(spinnerS1CaptureRot, after.slots[1].captureRotation);
+                checkS1CaptureMirror.setChecked(after.slots[1].captureMirror);
+
+                showMsg(activity, msg,
+                        activity.getString(com.children.doctor.R.string.devtools_reset_done), false);
+            } catch (Throwable t) {
+                Log.e(TAG, "reset failed", t);
+                showMsg(activity, msg, "重置失败: " + t.getMessage(), true);
+            }
+        });
+
+        // 复制路径：用户拷贝后能直接 adb pull / push，或用 MTP 找到该文件。
+        btnCopyPath.setOnClickListener(v -> {
+            try {
+                ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("capture_config_path", configPathText));
+                    showMsg(activity, msg,
+                            activity.getString(com.children.doctor.R.string.devtools_path_copied), false);
+                } else {
+                    showMsg(activity, msg, "剪贴板不可用", true);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "copy path failed: " + t.getMessage());
+                showMsg(activity, msg, "复制失败: " + t.getMessage(), true);
             }
         });
 
@@ -348,6 +421,7 @@ public class DevToolsDialogPlugin extends Plugin {
             o.put("previewRotation", s.previewRotation);
             o.put("captureRotation", s.captureRotation);
             o.put("mirror", s.mirror);
+            o.put("captureMirror", s.captureMirror);
             o.put("zoom", s.zoom);
             arr.put(o);
         }

@@ -98,8 +98,13 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
    * 这里仅在浏览器 dev / iOS fallback 路径下被调用。
    */
   async getCaptureConfig(): Promise<CaptureConfigPayload> {
-    const stored = readWebCaptureConfig()
-    return stored ?? defaultWebCaptureConfig()
+    const stored = readWebCaptureConfig() ?? defaultWebCaptureConfig()
+    // Web 端没有真实文件系统，给前端一个描述性的"路径"标识，
+    // 跟 native 端 schema 保持一致（字段可选，前端不强依赖）。
+    return {
+      ...stored,
+      configPath: `localStorage:${WEB_CAPTURE_CONFIG_STORAGE_KEY}`,
+    }
   }
 
   /**
@@ -120,7 +125,26 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
         // 写入失败仍返回归一化结果，不让前端弹错。
       }
     }
-    return normalized
+    return { ...normalized, configPath: `localStorage:${WEB_CAPTURE_CONFIG_STORAGE_KEY}` }
+  }
+
+  /**
+   * Web 端用 native 默认值覆盖 localStorage。等同 native 端的
+   * {@code applyCaptureConfigInternal(CaptureConfig.defaults())} 语义。
+   */
+  async resetCaptureConfig(): Promise<CaptureConfigPayload> {
+    const defaults = defaultWebCaptureConfig()
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(
+          WEB_CAPTURE_CONFIG_STORAGE_KEY,
+          JSON.stringify(defaults),
+        )
+      } catch {
+        // 同 setCaptureConfig，写入失败不抛。
+      }
+    }
+    return { ...defaults, configPath: `localStorage:${WEB_CAPTURE_CONFIG_STORAGE_KEY}` }
   }
 
   /**
@@ -245,7 +269,7 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
  */
 function defaultWebCaptureConfig(): CaptureConfigPayload {
   return {
-    version: 1,
+    version: 2,
     slots: defaultSlots(),
   }
 }
@@ -255,8 +279,8 @@ export const ZOOM_INPUT_MAX = 4.0
 
 function defaultSlots(): [CaptureConfigSlotPayload, CaptureConfigSlotPayload] {
   return [
-    { previewRotation: 270, captureRotation: 90, mirror: false, zoom: 1.0 },
-    { previewRotation: 90, captureRotation: 90, mirror: false, zoom: 1.0 },
+    { previewRotation: 270, captureRotation: 90, mirror: false, captureMirror: false, zoom: 1.0 },
+    { previewRotation: 90, captureRotation: 90, mirror: false, captureMirror: false, zoom: 1.0 },
   ]
 }
 
@@ -288,12 +312,14 @@ function normalizeWebCaptureConfig(
       previewRotation: normalizeRotation(incoming.previewRotation),
       captureRotation: normalizeRotation(incoming.captureRotation),
       mirror: Boolean(incoming.mirror),
+      // v1 配置 / 老 localStorage 没有 captureMirror → 默认 false（与 v1 行为一致）
+      captureMirror: Boolean(incoming.captureMirror),
       zoom: normalizeZoom(incoming.zoom ?? fallback.zoom),
     }
     if (i === 0) out[0] = built
     else out[1] = built
   }
-  return { version: 1, slots: out }
+  return { version: 2, slots: out }
 }
 
 /**

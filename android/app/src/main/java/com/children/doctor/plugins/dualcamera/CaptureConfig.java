@@ -10,8 +10,12 @@ import java.util.List;
 /**
  * 拍照方向校准配置。现场可根据左右 UVC 摄像头实测角度修改，简化调参流程。
  *
- * <p>由 {@link CaptureConfigRepository} 负责持久化到
- * {@code <filesDir>/capture_config.json}。读不到文件时使用 {@link #defaults()} 并写回磁盘。
+ * <p>由 {@link CaptureConfigRepository} 负责持久化到外部 app-specific 目录下的
+ * {@code capture_config.json}（具体路径
+ * {@code /storage/emulated/0/Android/data/<pkg>/files/capture_config.json}）。
+ * 读不到文件时使用 {@link #defaults()} 并写回磁盘。
+ * <p>外部路径是为了"现场调好拷给另一台设备即用"——内部
+ * {@code /data/data/<pkg>/files/} 需要 root 才能拷出。
  *
  * <p>字段含义：
  * <ul>
@@ -19,7 +23,10 @@ import java.util.List;
  *       的额外旋转角（0/90/180/270）</li>
  *   <li>{@code slots[i].captureRotation} → {@code Camera2Session.setCaptureRotationOffset(rotate)}
  *       的额外旋转角（0/90/180/270）</li>
- *   <li>{@code slots[i].mirror} → {@code setCalibration} 的第二个参数，是否再补一次水平镜像</li>
+ *   <li>{@code slots[i].mirror} → {@code setCalibration} 的第二个参数，是否再补一次水平镜像
+ *       （仅影响预览；不影响拍照输出方向，拍照有独立的 {@code captureMirror}）</li>
+ *   <li>{@code slots[i].captureMirror} → {@code Camera2Session.setCaptureMirrorOffset}，
+ *       拍照时是否再做一次独立水平镜像翻转（v2 引入）</li>
  * </ul>
  *
  * <p>索引约定：{@code slots[0]} = 左预览，{@code slots[1]} = 右预览（与
@@ -27,7 +34,15 @@ import java.util.List;
  */
 public final class CaptureConfig {
 
-    public static final int CURRENT_VERSION = 1;
+    /**
+     * schema 版本：
+     * <ul>
+     *   <li>v1: previewRotation / captureRotation / mirror / zoom</li>
+     *   <li>v2: + {@code captureMirror}（独立的拍照水平镜像翻转开关）</li>
+     * </ul>
+     * 老 v1 配置文件会被 fromJson 容错读取，{@code captureMirror} 默认 false（不翻转）。
+     */
+    public static final int CURRENT_VERSION = 2;
 
     /** 配置生效的 slot 数量。当前项目硬编码为左右两个 UVC。 */
     public static final int SLOT_COUNT = 2;
@@ -36,6 +51,17 @@ public final class CaptureConfig {
         public int previewRotation;
         public int captureRotation;
         public boolean mirror;
+        /**
+         * 拍照时独立的水平镜像翻转开关（v2 引入）。
+         *
+         * <p>与 {@link #mirror}（预览镜像）解耦：预览镜像只动 preview TextureView transform，
+         * 拍照是另一路 JPEG / YUV 输出，需要单独控制。
+         *
+         * <p>语义：{@code captureMirror=true} 时把拍照路径计算出来的"基础镜像方向"再翻一次，
+         * 即对最终结果 XOR。{@code captureMirror=false} 时不翻转（保持基础逻辑，
+         * 与 v1 行为一致，迁移无感）。
+         */
+        public boolean captureMirror;
         /**
          * 摄像头缩放倍数（1.0 = 原画，>1.0 = 数字放大）。
          *
@@ -48,13 +74,20 @@ public final class CaptureConfig {
             this.previewRotation = 0;
             this.captureRotation = 0;
             this.mirror = false;
+            this.captureMirror = false;
             this.zoom = 1.0f;
         }
 
         public Slot(int previewRotation, int captureRotation, boolean mirror, float zoom) {
+            this(previewRotation, captureRotation, mirror, false, zoom);
+        }
+
+        public Slot(int previewRotation, int captureRotation,
+                    boolean mirror, boolean captureMirror, float zoom) {
             this.previewRotation = previewRotation;
             this.captureRotation = captureRotation;
             this.mirror = mirror;
+            this.captureMirror = captureMirror;
             this.zoom = zoom;
         }
 
@@ -63,6 +96,7 @@ public final class CaptureConfig {
                     .put("previewRotation", previewRotation)
                     .put("captureRotation", captureRotation)
                     .put("mirror", mirror)
+                    .put("captureMirror", captureMirror)
                     .put("zoom", zoom);
         }
 
@@ -74,6 +108,8 @@ public final class CaptureConfig {
                     o.optInt("previewRotation", 0),
                     o.optInt("captureRotation", 0),
                     o.optBoolean("mirror", false),
+                    // v1 配置没有 captureMirror → 默认 false（不动拍照方向，与 v1 行为一致）
+                    o.optBoolean("captureMirror", false),
                     zoom);
         }
     }
@@ -90,13 +126,13 @@ public final class CaptureConfig {
 
     /**
      * 目标机器实测默认值（与 Camera2Controller 旧版硬编码一致）：
-     *   left  : preview 270 / capture 90 / mirror false / zoom 1.0
-     *   right : preview 90  / capture 90 / mirror false / zoom 1.0
+     *   left  : preview 270 / capture 90 / mirror false / captureMirror false / zoom 1.0
+     *   right : preview 90  / capture 90 / mirror false / captureMirror false / zoom 1.0
      */
     public static CaptureConfig defaults() {
         CaptureConfig c = new CaptureConfig();
-        c.slots[0] = new Slot(270, 90, false, 1.0f); // left
-        c.slots[1] = new Slot(90, 90, false, 1.0f);  // right
+        c.slots[0] = new Slot(270, 90, false, false, 1.0f); // left
+        c.slots[1] = new Slot(90, 90, false, false, 1.0f);  // right
         return c;
     }
 
@@ -145,6 +181,7 @@ public final class CaptureConfig {
               .append("[").append(s.previewRotation)
               .append("/").append(s.captureRotation)
               .append(s.mirror ? "/M" : "")
+              .append(s.captureMirror ? "/cM" : "")
               .append("/z").append(formatZoom(s.zoom))
               .append("] ");
         }

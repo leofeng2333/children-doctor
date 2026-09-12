@@ -15,11 +15,17 @@
     <string name="devtools_slot1_capture">右拍照（slot 1 / capture）</string>
     <string name="devtools_rotation">旋转角度</string>
     <string name="devtools_mirror">水平镜像</string>
+    <string name="devtools_capture_mirror">水平镜像（独立拍照翻转）</string>
     <string name="devtools_zoom">数字缩放</string>
     <string name="devtools_btn_cancel">关闭</string>
+    <string name="devtools_btn_reset">重置默认</string>
     <string name="devtools_btn_save">保存配置</string>
     <string name="devtools_btn_exit">退出应用</string>
+    <string name="devtools_btn_copy_path">复制路径</string>
+    <string name="devtools_config_path_label">配置路径：</string>
     <string name="devtools_saved">已保存</string>
+    <string name="devtools_reset_done">已重置为默认值</string>
+    <string name="devtools_path_copied">路径已复制到剪贴板</string>
     <string name="devtools_status_reading">读取中…</string>
     <string name="devtools_status_idle">就绪</string>
 </resources>

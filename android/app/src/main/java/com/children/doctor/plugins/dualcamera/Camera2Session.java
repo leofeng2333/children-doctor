@@ -1303,6 +1303,18 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     private volatile int captureRotationOffset = 0;
 
     /**
+     * 拍照方向的水平镜像翻转开关（与预览的 {@link #extraMirror} 解耦）。
+     *
+     * <p>背景：{@code extraMirror} 只动 preview TextureView transform，但拍照走
+     * JPEG / YUV 输出，需要独立的镜像控制。例如某些 UVC 设备预览正常但拍照是反的，
+     * 就把 {@code captureMirror=true} 把拍照输出再翻一次。
+     *
+     * <p>语义：在 {@code applyFrontMirrorIfNeeded} 里把"基础镜像方向"再 XOR 一次，
+     * {@code captureMirror=false}（默认）= 不翻转，保持 v1 行为；true = 反转最终结果。
+     */
+    private volatile boolean captureMirrorOffset = false;
+
+    /**
      * 数字缩放倍数（1.0 = 原画，>1.0 = 数字放大）。
      *
      * <p>Camera2 上 preview 和 capture 共享同一个 {@code SCALER_CROP_REGION}，所以这里只有一个值。
@@ -1458,6 +1470,22 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     public int getCaptureRotationOffset() { return captureRotationOffset; }
 
     /**
+     * 设置拍照时的独立水平镜像翻转开关。
+     *
+     * <p>与 {@link #setCalibration} 的 {@code extraMirror} 独立：preview mirror 只动
+     * preview TextureView，本开关只影响拍照输出。{@code true} 时把拍照路径计算出来的
+     * "基础镜像方向"再翻一次；{@code false} 时不动（保持 v1 行为）。
+     */
+    public void setCaptureMirrorOffset(boolean mirror) {
+        this.captureMirrorOffset = mirror;
+        Log.d(TAG, "setCaptureMirrorOffset cameraId=" + cameraId
+                + " captureMirrorOffset=" + this.captureMirrorOffset);
+        log("setCaptureMirrorOffset cameraId=" + cameraId
+                + " captureMirrorOffset=" + this.captureMirrorOffset);
+    }
+    public boolean getCaptureMirrorOffset() { return captureMirrorOffset; }
+
+    /**
      * 对拍照得到的 JPEG bytes 做方向/镜像修正，让最终文件 = 预览方向。
      *
      * <p>两条路径：
@@ -1510,7 +1538,13 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
         //   - extraRotate 仍叠加（兼容旧校准链）
         //   - captureRotationOffset 是独立的拍照方向偏移，与预览解耦
         int finalDegrees = (yuvDegrees + extraRotate + captureRotationOffset) % 360;
-        boolean finalNeedMirror = extraMirror ? !needMirror : needMirror;
+        // 镜像决策：
+        //   1. 基础镜像 = 镜头朝向自动（前置默认镜像 / 后置不镜像 / UVC 不镜像）
+        //      乘以 preview 的 extraMirror 跨耦合翻转（v1 老逻辑，保持兼容）
+        //   2. captureMirrorOffset 独立再 XOR 一次：
+        //        false → 不动基础结果（与 v1 行为一致，老配置零迁移成本）
+        //        true  → 把基础结果翻一次（独立于 preview / 镜头朝向）
+        boolean finalNeedMirror = (extraMirror ? !needMirror : needMirror) ^ captureMirrorOffset;
 
         String formatStr;
         switch (captureImageFormat) {
@@ -1538,6 +1572,7 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
                 + " needMirror=" + needMirror
                 + " extraRotate=" + extraRotate + " extraMirror=" + extraMirror
                 + " captureRotationOffset=" + captureRotationOffset
+                + " captureMirrorOffset=" + captureMirrorOffset
                 + " finalDegrees=" + finalDegrees + " finalNeedMirror=" + finalNeedMirror
                 + " jpegOrientation=" + getJpegOrientation(getDisplayRotation()));
 

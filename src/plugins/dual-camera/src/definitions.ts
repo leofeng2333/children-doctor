@@ -139,6 +139,14 @@ export interface DualCameraPlugin {
    * 用户选择走冷启动路径（下次 startPreview 读新值）。
    */
   setCaptureConfig(options: { slots: CaptureConfigSlotPayload[] }): Promise<CaptureConfigPayload>
+
+  /**
+   * 把拍照方向校准恢复到默认值（{@link CaptureConfig#defaults()}）。
+   *
+   * <p>native 端走 {@code applyCaptureConfigInternal(defaults)}：落盘 + 推给活跃预览。
+   * Web 端用 native 默认值覆盖 localStorage。
+   */
+  resetCaptureConfig(): Promise<CaptureConfigPayload>
 }
 
 export interface CaptureConfigSlotPayload {
@@ -148,6 +156,16 @@ export interface CaptureConfigSlotPayload {
   captureRotation: number
   /** 是否在预览上额外水平镜像，写入 setCalibration 的 extraMirror */
   mirror: boolean
+  /**
+   * 拍照时独立的水平镜像翻转开关（v2 引入）。
+   *
+   * <p>与 {@link mirror}（预览镜像）解耦：预览镜像只影响 preview TextureView，
+   * 本字段只影响拍照 JPEG / YUV 输出。
+   *
+   * <p>语义：{@code captureMirror=true} 时把拍照路径计算出的"基础镜像方向"再翻一次；
+   * {@code captureMirror=false}（默认）= 不翻转，保持 v1 行为。
+   */
+  captureMirror: boolean
   /**
    * 数字缩放倍数（1.0 = 原画，>1.0 = 数字放大）。
    * preview 和 capture 共享同一个 zoom（Camera2 SCALER_CROP_REGION 同一份）。
@@ -160,4 +178,14 @@ export interface CaptureConfigPayload {
   /** 配置 schema 版本（当前 1） */
   version: number
   slots: CaptureConfigSlotPayload[]
+  /**
+   * 当前生效的配置文件绝对路径。
+   *
+   * <ul>
+   *   <li>native: {@code /storage/emulated/0/Android/data/<pkg>/files/capture_config.json}，
+   *       adb / MTP 可直接访问，跨设备同名包路径一致</li>
+   *   <li>web: localStorage key 描述（浏览器无文件系统）</li>
+   * </ul>
+   */
+  configPath?: string
 }
