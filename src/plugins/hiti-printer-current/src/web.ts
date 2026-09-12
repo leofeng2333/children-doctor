@@ -24,6 +24,8 @@ export class HiTiPrinterCurrentWeb extends WebPlugin implements HiTiPrinterCurre
   resumeJob(): Promise<HiTiCurrentResult<never>> { return this.unavailable() }
   ejectPaperJam(): Promise<HiTiCurrentResult<never>> { return this.unavailable() }
   printPhoto(): Promise<HiTiCurrentResult<never>> { return this.unavailable() }
+  /** 开发期临时预览通道，web 端无可用实现 */
+  composePrintOverlay(): Promise<HiTiCurrentResult<never>> { return this.unavailable() }
   async startLogSession(): Promise<HiTiCurrentResult<{ path: string }>> { return { ok: true, data: { path: '' } } }
   async closeLogSession(): Promise<HiTiCurrentResult<string>> { return { ok: true, data: '' } }
   async captureLog(): Promise<HiTiCurrentResult<string>> { return { ok: true, data: '' } }

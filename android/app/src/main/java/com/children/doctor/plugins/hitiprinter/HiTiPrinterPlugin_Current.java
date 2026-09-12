@@ -248,6 +248,120 @@ public class HiTiPrinterPlugin_Current extends Plugin {
         }
     }
 
+    /**
+     * 临时预览通道：只合成 overlay（主图 + QR + icon + 文案 + 珊瑚橙渐变背景），
+     * 不发送给打印机，返回合成后 JPEG 的 base64 dataURL 片段。
+     *
+     * <p>调用方在用户确认效果后再调用 {@link #printPhoto} 完成实际打印。
+     *
+     * <p>请求：
+     * <ul>
+     *   <li>base64：原图 base64 (与 printPhoto 同)</li>
+     *   <li>paperType（可选，默认 2）：4×6 = 2, 5×7 = 3, 6×8 = 4, 6×4 split 2up = 5, 6×6 = 6</li>
+     * </ul>
+     *
+     * <p>响应（成功）：
+     * <pre>{ ok: true, data: { base64: "&lt;JPEG base64 NO_WRAP&gt;", contentType: "image/jpeg", paperType: 2 } }</pre>
+     *
+     * <p>注意：
+     * <ul>
+     *   <li>preview 过程中用到的两个临时文件（输入 + 合成图）都在 finally 中 deleteQuietly，磁盘不留垃圾</li>
+     *   <li>不需要 startService（不涉及 USB）</li>
+     *   <li>不需要 initForPage / tablesReady：composeOverlayOnly 内部已经检查 tablesRoot，
+     *       如果 tablesRoot 未就绪会抛 "Tables root not ready" 错误</li>
+     * </ul>
+     */
+    @PluginMethod()
+    public void composePrintOverlay(PluginCall call) {
+        String base64 = call.getString("base64", "");
+        int paperType = call.getInt("paperType", 2);
+        logD("[current] composePrintOverlay: paperType=" + paperType
+                + " base64Len=" + (base64 == null ? "null" : base64.length()));
+        if (base64 == null || base64.isEmpty()) {
+            JSObject err = new JSObject();
+            err.put("ok", false);
+            err.put("error", "base64 is required");
+            call.resolve(err);
+            return;
+        }
+        File cache = getContext().getExternalCacheDir();
+        if (cache == null) {
+            JSObject err = new JSObject();
+            err.put("ok", false);
+            err.put("error", "External cache dir not available");
+            call.resolve(err);
+            return;
+        }
+        final File inputFile;
+        try {
+            byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+            inputFile = new File(cache, "hiti_preview_in_" + System.currentTimeMillis() + ".jpg");
+            try (FileOutputStream fos = new FileOutputStream(inputFile)) {
+                fos.write(bytes);
+            }
+            logD("[current] composePrintOverlay: input written, " + inputFile.length() + " bytes");
+        } catch (Throwable t) {
+            logE("[current] composePrintOverlay: input decode/write failed", t);
+            JSObject err = new JSObject();
+            err.put("ok", false);
+            err.put("error", t.getMessage() != null ? t.getMessage() : "decode failed");
+            call.resolve(err);
+            return;
+        }
+
+        final java.io.File overlayFile;
+        try {
+            overlayFile = manager.composeOverlayOnly(inputFile.getAbsolutePath(), paperType);
+        } catch (Throwable t) {
+            logE("[current] composePrintOverlay: overlay compose failed", t);
+            HiTiPrintOverlayBuilder.deleteQuietly(inputFile);
+            JSObject err = new JSObject();
+            err.put("ok", false);
+            err.put("error", "Overlay compose failed: "
+                    + (t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+            call.resolve(err);
+            return;
+        }
+
+        try {
+            byte[] overlayBytes = readAllBytes(overlayFile);
+            String overlayB64 = android.util.Base64.encodeToString(overlayBytes, android.util.Base64.NO_WRAP);
+            logD("[current] composePrintOverlay: success, base64 len=" + overlayB64.length()
+                    + " (" + overlayFile.length() + " bytes JPEG)");
+            JSObject data = new JSObject();
+            data.put("base64", overlayB64);
+            data.put("contentType", "image/jpeg");
+            data.put("paperType", paperType);
+            JSObject result = new JSObject();
+            result.put("ok", true);
+            result.put("data", data);
+            call.resolve(result);
+        } catch (Throwable t) {
+            logE("[current] composePrintOverlay: read back overlay failed", t);
+            JSObject err = new JSObject();
+            err.put("ok", false);
+            err.put("error", "Read overlay failed: "
+                    + (t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+            call.resolve(err);
+        } finally {
+            HiTiPrintOverlayBuilder.deleteQuietly(inputFile);
+            HiTiPrintOverlayBuilder.deleteQuietly(overlayFile);
+        }
+    }
+
+    private static byte[] readAllBytes(java.io.File f) throws java.io.IOException {
+        byte[] data = new byte[(int) f.length()];
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(f)) {
+            int read = 0;
+            while (read < data.length) {
+                int n = fis.read(data, read, data.length - read);
+                if (n < 0) throw new java.io.IOException("Unexpected EOF reading " + f.getAbsolutePath());
+                read += n;
+            }
+        }
+        return data;
+    }
+
     @PluginMethod()
     public void startService(PluginCall call) {
         manager.startService(new HiTiPrinterManager_Current.Callback<com.hiti.usb.service.ErrorCode>() {

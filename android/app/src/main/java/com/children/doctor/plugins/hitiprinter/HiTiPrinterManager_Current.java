@@ -123,7 +123,7 @@ public class HiTiPrinterManager_Current {
      * (2) 等比缩放 + 不裁剪 → 按图片本身比例打印；
      * (3) 四周白边（少量）→ 用户接受。
      */
-    private static final int[] PAPER_TYPE_2_PIXELS = {1844, 1240}; // PAPER_SIZE_6X4_PHOTO
+    private static final int[] PAPER_TYPE_2_PIXELS = {1240, 1844}; // PAPER_SIZE_6X4_SPLIT_2UP（设计稿 100×150mm 竖版）
     private static final int[] PAPER_TYPE_3_PIXELS = {1548, 2140}; // PAPER_SIZE_5X7_PHOTO
     private static final int[] PAPER_TYPE_4_PIXELS = {1844, 2434}; // PAPER_SIZE_6X8_PHOTO
     private static final int[] PAPER_TYPE_5_PIXELS = {1240, 1844}; // PAPER_SIZE_6X4_SPLIT_2UP
@@ -143,10 +143,14 @@ public class HiTiPrinterManager_Current {
     private String tablesRoot = "";
     private int nextJobId = 101;
     private final CountDownLatch tablesReady = new CountDownLatch(1);
+    /** 打印叠加图层构建器（主图 + QR + icon + 文案 + 珊瑚橙渐变背景，详见该类 javadoc）。
+     *  在 printPhoto 开头由 bitmap 直接生成 paper-sized 合成图，SDK 收到的不再是裸主图。 */
+    private final HiTiPrintOverlayBuilder overlayBuilder;
 
     public HiTiPrinterManager_Current(Context context, PrintLogger printLogger) {
         this.context = context.getApplicationContext();
         this.printLogger = printLogger;
+        this.overlayBuilder = new HiTiPrintOverlayBuilder(context, printLogger);
     }
 
     private void logD(String msg) {
@@ -212,6 +216,29 @@ public class HiTiPrinterManager_Current {
     public void shutdown() {
         io.shutdownNow();
         printExecutor.shutdownNow();
+    }
+
+    /**
+     * 只合成 overlay（不发送给 SDK），用于"先看效果，确认后再打印"的预览通道。
+     *
+     * <p>路径与 {@link #printPhoto} 的 step 1-4.5 完全一致：
+     * tablesReady / warmupGate / pauseClockTask / bitmap 解码 / overlay 合成。
+     * 不同：跳过 PrintPara 装配 + doService + retry + resumeClockTask。
+     *
+     * <p>注意：此方法不在 io executor，而是同步阻塞调用（composing 是纯 bitmap 操作，
+     * 不涉及 SDK USB transfer，~100~300ms）。调用方应该在合适的线程（plugin 内部已
+     * 是 Capacitor worker thread）。
+     *
+     * @throws IOException overlay 合成失败（asset 缺失、bitmap 解码失败、IO 等）
+     */
+    public java.io.File composeOverlayOnly(String inputPath, int paperType) throws IOException {
+        logD("composeOverlayOnly: paperType=" + paperType + " inputPath=" + inputPath);
+        // 与 printPhoto 一致：等待 tablesReady，但 compose 本身不需要 ClockTask / warmupGate，
+        // 这里只在 tablesRoot 已就绪时调 composeAndWriteToCache，否则直接抛错。
+        if (tablesRoot == null || tablesRoot.isEmpty()) {
+            throw new IOException("composeOverlayOnly: Tables root not ready (call initForPage + startService first?)");
+        }
+        return overlayBuilder.composeAndWriteToCache(inputPath, paperType);
     }
 
     // ---- SDK ops ----
@@ -286,6 +313,8 @@ public class HiTiPrinterManager_Current {
             @Override
             public void run() {
                 boolean clockPausedByUs = false;
+                java.io.File overlayFile = null;
+                android.graphics.Bitmap rawBitmap = null;
                 try {
                     // 1) tablesReady
                     boolean tablesLoaded = tablesReady.await(10, TimeUnit.SECONDS);
@@ -318,8 +347,9 @@ public class HiTiPrinterManager_Current {
                             + " MATTE=" + MATTE + " PRINTMODE=" + PRINTMODE
                             + " PaperType=" + PaperType);
 
-                    // 4) bitmap 解码 → paperType=2 fast path
-                    android.graphics.Bitmap rawBitmap = android.graphics.BitmapFactory.decodeFile(opts.bitmapPath);
+                    // 4) 主图 bitmap 解码（仅用于做 overlay 合成素材 + finally 中兜底回收）。
+                    // 使用外层 try 上方声明的 rawBitmap，避免作用域遮蔽导致 finally 看不到引用。
+                    rawBitmap = android.graphics.BitmapFactory.decodeFile(opts.bitmapPath);
                     if (rawBitmap == null) {
                         logE("printPhoto: BitmapFactory.decodeFile returned null");
                         post(cb, "USB_PRINT_PHOTOS : err <0x? Bitmap decode failed: " + opts.bitmapPath + ">", null);
@@ -327,44 +357,37 @@ public class HiTiPrinterManager_Current {
                     }
                     logD("printPhoto: decoded bitmap " + rawBitmap.getWidth() + "x" + rawBitmap.getHeight());
 
+                    // 4.5) overlay 合成：主图 + QR (qrcode.jpg) + icon (home-icon.png) + 文案
+                    //      + 珊瑚橙垂直渐变背景 → paper-sized 临时文件
+                    //      (ExternalCacheDir/hiti_overlay_<ts>.jpg)。
+                    //      SDK 通过 file path 读盘。本次 print 走完（无论成功失败），
+                    //      finally 块中 HiTiPrintOverlayBuilder.deleteQuietly 删除。
                     PaperSize size = paperTypeToSize(PaperType);
-                    int[] target = paperTypeToTargetPixels(PaperType);
-                    int paperW = target[0];
-                    int paperH = target[1];
-                    logD("printPhoto: target paper pixels " + paperW + "x" + paperH
-                            + " (PaperSize=" + size + ", safeMargin=" + SAFE_MARGIN_PX + "px)");
-                    android.graphics.Bitmap bitmap = rawBitmap;
-                    final int imgW = bitmap.getWidth();
-                    final int imgH = bitmap.getHeight();
-                    final boolean imagePortrait = imgH > imgW;
-                    final boolean paperPortrait = paperH > paperW;
-                    // 朝向适配：图片朝向与相纸朝向不一致 → 旋转 90° 让两者方向一致。
-                    // 之后再 letterbox 到 PaperSize 物理像素（安全区内白底居中），
-                    // 不裁切图片内容，只在缩放后四周保留 SAFE_MARGIN_PX 白边。
-                    // square（paper 6×6 或图片本身正方形）不需要旋转。
-                    if (imagePortrait != paperPortrait) {
-                        logD("printPhoto: [orientation] image " + imgW + "x" + imgH
-                                + " (portrait=" + imagePortrait + ") vs paper "
-                                + paperW + "x" + paperH + " (portrait=" + paperPortrait
-                                + ") → rotating 90° to align");
-                        android.graphics.Matrix m = new android.graphics.Matrix();
-                        m.postRotate(90f);
-                        android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
-                                bitmap, 0, 0, imgW, imgH, m, true);
-                        bitmap = rotated;
-                        logD("printPhoto: after rotation bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
-                    } else {
-                        logD("printPhoto: [orientation] image " + imgW + "x" + imgH
-                                + " (portrait=" + imagePortrait + ") matches paper "
-                                + paperW + "x" + paperH + " (portrait=" + paperPortrait
-                                + "), no rotation needed");
+                    logD("printPhoto: [overlay] composing PaperSize=" + size + " (paperType=" + PaperType + ")");
+                    try {
+                        overlayFile = overlayBuilder.composeAndWriteToCache(opts.bitmapPath, PaperType);
+                    } catch (Throwable t) {
+                        logE("printPhoto: overlay compose failed", t);
+                        post(cb, "USB_PRINT_PHOTOS : err <0x? Overlay compose failed: "
+                                + (t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()) + ">",
+                                null);
+                        return;
                     }
-                    if (bitmap.getWidth() != paperW || bitmap.getHeight() != paperH) {
-                        logD("printPhoto: [letterbox] fitting " + bitmap.getWidth() + "x" + bitmap.getHeight()
-                                + " into " + paperW + "x" + paperH
-                                + " (keep aspect ratio + white border, safeMargin=" + SAFE_MARGIN_PX + "px)");
-                        bitmap = letterboxBitmapToPaper(bitmap, paperW, paperH);
+                    android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(
+                            overlayFile.getAbsolutePath());
+                    // 释放原始主图 bitmap（overlay 合成已经把原图绘制到 paper-sized canvas 上）。
+                    if (rawBitmap != null && !rawBitmap.isRecycled()) {
+                        rawBitmap.recycle();
                     }
+                    rawBitmap = null; // 已回收，清空引用 → finally 跳过兜底 recycle
+                    if (bitmap == null) {
+                        logE("printPhoto: overlay bitmap decode failed: " + overlayFile.getAbsolutePath());
+                        post(cb, "USB_PRINT_PHOTOS : err <0x? Overlay bitmap decode failed: "
+                                + overlayFile.getAbsolutePath() + ">", null);
+                        return;
+                    }
+                    logD("printPhoto: [overlay] composed " + bitmap.getWidth() + "x" + bitmap.getHeight()
+                            + " (paper-sized bitmap ready for SDK, skipping orientation adapt + letterbox)");
 
                     // 5) PrintPara 装配
                     int jobId = nextJobId++;
@@ -434,6 +457,14 @@ public class HiTiPrinterManager_Current {
                     if (clockPausedByUs) {
                         resumeClockTask();
                     }
+                    // 清理 overlay 临时文件（4.5 步骤写到 ExternalCacheDir/hiti_overlay_<ts>.jpg）：
+                    // 不论 print 成功 / 失败 / 抛异常，都必须删除。deleteQuietly 内部已 null-safe。
+                    HiTiPrintOverlayBuilder.deleteQuietly(overlayFile);
+                    // 兜底回收 rawBitmap：4.5 步骤成功路径上已经 recycle + 清空引用，
+                    // 这里仅防御 finally 兜底（在 4 步 decode 成功但 4.5 步未执行前就跳到 finally 的极端路径）。
+                    if (rawBitmap != null && !rawBitmap.isRecycled()) {
+                        rawBitmap.recycle();
+                    }
                 }
             }
         }, "HiTi-Current-Print-" + System.currentTimeMillis());
@@ -481,7 +512,7 @@ public class HiTiPrinterManager_Current {
             case 5: return PaperSize.PAPER_SIZE_6X4_SPLIT_2UP;
             case 6: return PaperSize.PAPER_SIZE_6X6_PHOTO;
             case 2:
-            default: return PaperSize.PAPER_SIZE_6X4_PHOTO;
+            default: return PaperSize.PAPER_SIZE_6X4_SPLIT_2UP; // paperType=2 = 4×6 portrait（设计稿 100×150mm 竖版）
         }
     }
 

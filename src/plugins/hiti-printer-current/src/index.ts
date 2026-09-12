@@ -11,6 +11,8 @@ export type {
   HiTiPrinterCurrentPlugin,
   HiTiCurrentResult,
   HiTiCurrentPrintPhotoOptions,
+  HiTiCurrentComposePrintOverlayOptions,
+  HiTiCurrentComposePrintOverlayData,
   HiTiCurrentErrorCode,
   HiTiCurrentPrinterStatus,
 } from './definitions'
