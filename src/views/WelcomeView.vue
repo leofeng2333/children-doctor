@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PrimaryButton from '../components/PrimaryButton.vue'
 import LogoText from '../components/LogoText.vue'
-import IconButton from '../components/IconButton.vue'
-import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { createSession } from '@/utils/service'
-import { QuitApp } from '@/plugins/quit-app'
-import { useFlowStore } from '@/stores/flow'
 import { onMounted } from 'vue'
 
 const router = useRouter()
-const flowStore = useFlowStore()
-
-const showExitConfirmDialog = ref(false)
 
 const goToForm = () => {
   router.push('/diagnosis')
@@ -21,25 +13,6 @@ const goToForm = () => {
 
 const goToPrintTest = () => {
   router.push('/print-test')
-}
-
-// 右上角双击：弹出确认对话框，经用户确认后退出 App。
-// 替代原先"双击 -> 密码验证 -> 切换长/短流程"的调试入口。
-const handleAdminButtonDoubleClick = () => {
-  showExitConfirmDialog.value = true
-}
-
-const handleConfirmExit = async () => {
-  showExitConfirmDialog.value = false
-  try {
-    await QuitApp.exitApp()
-  } catch (err) {
-    console.error('[WelcomeView] exitApp failed', err)
-  }
-}
-
-const handleCancelExit = () => {
-  showExitConfirmDialog.value = false
 }
 
 onMounted(async () => {
@@ -50,13 +23,6 @@ onMounted(async () => {
 
 <template>
   <div class="welcome-container">
-    <!-- 右上角空白按钮 + 流程模式指示点 -->
-    <div class="admin-area">
-      <IconButton class="admin-button" @dblclick="handleAdminButtonDoubleClick" />
-      <span class="flow-indicator" :class="{ 'is-short': flowStore.isShort }"
-        :title="flowStore.isShort ? '当前：短流程' : '当前：长流程'"></span>
-    </div>
-
     <!-- 顶部装饰图形：靠着 bottom-section 顶部边界左右分布 -->
     <div class="top-section">
       <div class="shape shape-square" aria-hidden="true"></div>
@@ -90,10 +56,7 @@ onMounted(async () => {
         <LogoText class="logo" />
       </div>
     </div>
-
-    <!-- 退出确认弹窗 -->
-    <ConfirmDialog :visible="showExitConfirmDialog" title="退出应用" message="确定要退出应用吗？" confirm-text="退出" cancel-text="取消"
-      @confirm="handleConfirmExit" @cancel="handleCancelExit" @close="handleCancelExit" />
+    <!-- 右上角开发者入口已统一上移到全局 DevToolsLauncher（App.vue），本页面不再维护。 -->
   </div>
 </template>
 
@@ -168,35 +131,6 @@ onMounted(async () => {
 
   margin-bottom: 75px;
   margin-left: -48px;
-}
-
-/* 右上角管理员按钮 */
-.admin-area {
-  position: absolute;
-  top: max(20px, env(safe-area-inset-top));
-  right: max(20px, env(safe-area-inset-right));
-  z-index: 20;
-}
-
-.admin-button {
-  // 由父级 .admin-area 控制定位
-  position: static;
-}
-
-// 流程模式指示点：长流程=绿色圆点，短流程=橙色圆点
-.flow-indicator {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #2ecc71;
-  box-shadow: 0 0 0 2px #ffffff;
-}
-
-.flow-indicator.is-short {
-  background: #ff9900;
 }
 
 /* 底部区域 */

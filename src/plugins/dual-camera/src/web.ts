@@ -7,7 +7,14 @@ import type {
   DualCameraUploadOptions,
   ImageSplitOptions,
   ImageSplitResult,
+  CaptureConfigPayload,
+  CaptureConfigSlotPayload,
 } from './definitions'
+
+/**
+ * Web 端 CaptureConfig 持久化 key。开发模式下让前端编辑配置可跨刷新生效。
+ */
+const WEB_CAPTURE_CONFIG_STORAGE_KEY = 'children-doctor.capture-config.v1'
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -83,6 +90,37 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
   }
   async getLogSessionInfo(): Promise<{ path: string | null; uri: string | null; size: number }> {
     return { path: null, uri: null, size: 0 }
+  }
+
+  /**
+   * Web 端从 localStorage 读取；缺失时回退到 native 默认值（左 270/90、右 90/90）。
+   * 整个方法在 native 端会直接被 Capacitor 路由到 DualCameraPlugin.java，
+   * 这里仅在浏览器 dev / iOS fallback 路径下被调用。
+   */
+  async getCaptureConfig(): Promise<CaptureConfigPayload> {
+    const stored = readWebCaptureConfig()
+    return stored ?? defaultWebCaptureConfig()
+  }
+
+  /**
+   * Web 端写入 localStorage；不做运行时校准（保持冷启动路径一致）。
+   * 输入做归一化：旋转角夹到 0/90/180/270，缺失 slot 用默认填充。
+   */
+  async setCaptureConfig(options: {
+    slots: CaptureConfigSlotPayload[]
+  }): Promise<CaptureConfigPayload> {
+    const normalized = normalizeWebCaptureConfig(options.slots)
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(
+          WEB_CAPTURE_CONFIG_STORAGE_KEY,
+          JSON.stringify(normalized),
+        )
+      } catch {
+        // 写入失败仍返回归一化结果，不让前端弹错。
+      }
+    }
+    return normalized
   }
 
   /**
@@ -199,4 +237,80 @@ export class DualCameraWeb extends WebPlugin implements DualCameraPlugin {
       img.src = imageUrl
     })
   }
+}
+
+/**
+ * Web 端默认配置：与 Android CaptureConfig.defaults() 完全一致。
+ * 修改任一端都要同步另一端。
+ */
+function defaultWebCaptureConfig(): CaptureConfigPayload {
+  return {
+    version: 1,
+    slots: defaultSlots(),
+  }
+}
+
+/** 用户在弹窗里输入的最大缩放，避免误触录到很大值。 */
+export const ZOOM_INPUT_MAX = 4.0
+
+function defaultSlots(): [CaptureConfigSlotPayload, CaptureConfigSlotPayload] {
+  return [
+    { previewRotation: 270, captureRotation: 90, mirror: false, zoom: 1.0 },
+    { previewRotation: 90, captureRotation: 90, mirror: false, zoom: 1.0 },
+  ]
+}
+
+function readWebCaptureConfig(): CaptureConfigPayload | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null
+  try {
+    const raw = window.localStorage.getItem(WEB_CAPTURE_CONFIG_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CaptureConfigPayload>
+    if (!parsed || !Array.isArray(parsed.slots)) return null
+    return normalizeWebCaptureConfig(parsed.slots as CaptureConfigSlotPayload[])
+  } catch {
+    return null
+  }
+}
+
+function normalizeWebCaptureConfig(
+  slots: CaptureConfigSlotPayload[],
+): CaptureConfigPayload {
+  const [d0, d1] = defaultSlots()
+  const out: [CaptureConfigSlotPayload, CaptureConfigSlotPayload] = [
+    { ...d0 },
+    { ...d1 },
+  ]
+  for (let i = 0; i < 2; i++) {
+    const fallback = i === 0 ? d0 : d1
+    const incoming = slots[i] ?? fallback
+    const built: CaptureConfigSlotPayload = {
+      previewRotation: normalizeRotation(incoming.previewRotation),
+      captureRotation: normalizeRotation(incoming.captureRotation),
+      mirror: Boolean(incoming.mirror),
+      zoom: normalizeZoom(incoming.zoom ?? fallback.zoom),
+    }
+    if (i === 0) out[0] = built
+    else out[1] = built
+  }
+  return { version: 1, slots: out }
+}
+
+/**
+ * 缩放值归一化：缺字段 / NaN / 越界都退回 1.0；上限放到 10.0（与 native 端对应），
+ * 弹窗会用 ZOOM_INPUT_MAX=4.0 进一步限制输入，存档时是 4.0 落库。
+ */
+function normalizeZoom(z: number): number {
+  if (typeof z !== 'number' || !Number.isFinite(z)) return 1.0
+  // 防御：NaN、负数、0 都纠正为 1.0
+  if (z < 1.0) return 1.0
+  if (z > 10.0) return 10.0
+  // 一位小数对齐 native / UI
+  return Math.round(z * 10) / 10
+}
+
+function normalizeRotation(deg: number): number {
+  if (!Number.isFinite(deg)) return 0
+  const r = Math.round(deg) % 360
+  return ((r + 360) % 360)
 }

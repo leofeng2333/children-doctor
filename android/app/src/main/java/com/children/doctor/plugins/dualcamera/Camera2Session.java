@@ -622,6 +622,26 @@ public class Camera2Session {
                 Log.w(TAG, "openWithRetryImpl: pre-check getCameraIdList() failed", cae);
             }
 
+            // 在 openCamera 之前顺便把 sensor 有效区缓存一次，给 zoom 的 SCALER_CROP_REGION 计算用。
+            // 读不到也不致命，applyZoomToBuilder 会在 activeArrayRect==null 时跳过 crop。
+            try {
+                CameraCharacteristics chars = manager.getCameraCharacteristics(idToOpen);
+                android.graphics.Rect activeRect = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+                if (activeRect != null) {
+                    this.activeArrayRect = activeRect;
+                    Log.d(TAG, "activeArrayRect cached: " + activeRect.width() + "x" + activeRect.height()
+                            + " cameraId=" + idToOpen);
+                    log("activeArrayRect cached: " + activeRect.width() + "x" + activeRect.height()
+                            + " cameraId=" + idToOpen);
+                } else {
+                    Log.w(TAG, "SENSOR_INFO_ACTIVE_ARRAY_SIZE is null for " + idToOpen
+                            + ", zoom will be a no-op");
+                    log("activeArrayRect null for cameraId=" + idToOpen + ", zoom disabled");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to read SENSOR_INFO_ACTIVE_ARRAY_SIZE for " + idToOpen, e);
+            }
+
             manager.openCamera(idToOpen, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
@@ -848,6 +868,13 @@ public class Camera2Session {
             builder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
 
+            // zoom：把 zoomRatio 折算成 SCALER_CROP_REGION
+            applyZoomToBuilder(builder);
+
+            // 保存 builder 引用，runtime 改 zoom / 校准时可以直接 setRepeatingRequest 推新请求。
+            // previewRequestBuilder 必须等于本次 builder，否则 setZoomRatio push 时会改到错的请求。
+            this.previewRequestBuilder = builder;
+
             session.setRepeatingRequest(builder.build(), null, cameraHandler);
         } catch (CameraAccessException | IllegalStateException e) {
             Log.e(TAG, "Failed to start preview", e);
@@ -960,6 +987,9 @@ public class Camera2Session {
         try {
             CameraCaptureSession s = captureSession;
             captureSession = null;
+            // session 关闭时一并丢弃 builder：restartPreviewWithExistingSurface 会建一个新 session，
+            // 不清的话下次 setZoomRatio 会拿到旧 builder push 到已死的 session 上抛异常。
+            this.previewRequestBuilder = null;
             if (s != null) s.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing capture session", e);
@@ -1089,6 +1119,10 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
             builder.addTarget(imageReader.getSurface());
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+
+            // zoom：拍照路径与预览共享同一份 SCALER_CROP_REGION
+            applyZoomToBuilder(builder);
+
             int jpegOrientation = getJpegOrientation(getDisplayRotation());
             builder.set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation);
             log("capture REQ cameraId=" + cameraId
@@ -1268,6 +1302,21 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
      */
     private volatile int captureRotationOffset = 0;
 
+    /**
+     * 数字缩放倍数（1.0 = 原画，>1.0 = 数字放大）。
+     *
+     * <p>Camera2 上 preview 和 capture 共享同一个 {@code SCALER_CROP_REGION}，所以这里只有一个值。
+     * 取值范围：[1.0, 10.0]，但 UVC 外接摄像头一般实际可用上限远低于 10，1.0-4.0 较稳妥。
+     * 写入格式：{@link #setZoomRatio} / {@link #applyZoomToBuilder}；apply 阶段读 activeArrayRect。
+     */
+    private volatile float zoomRatio = 1.0f;
+
+    /**
+     * 缓存 {@code SENSOR_INFO_ACTIVE_ARRAY_SIZE}，仅在 {@link #open} 时读一次。
+     * 为 null 时 {@link #applyZoomToBuilder} 直接跳过，不报错。
+     */
+    private volatile android.graphics.Rect activeArrayRect;
+
     /** 全局开关：true 时所有后置摄像头的拍照输出都会水平镜像。 */
     public static void setGlobalForceBackMirror(boolean v) { globalForceBackMirror = v; }
     /** 单 session 覆盖。 */
@@ -1287,6 +1336,113 @@ imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener
     }
     public int getExtraRotate() { return extraRotate; }
     public boolean getExtraMirror() { return extraMirror; }
+
+    /**
+     * 设置数字缩放倍数。
+     *
+     * <p>两条路径生效：
+     * <ol>
+     *   <li>立即 push：如果当前正在预览（{@code startPreview} 之后），会重建当前
+     *       {@link CaptureRequest} 并重发 {@code setRepeatingRequest}，
+     *       SCALER_CROP_REGION 在下一帧就生效。</li>
+     *   <li>冷启动兜底：如果还没预览或 preview 已停，新值会缓存到 {@link #zoomRatio}，
+     *       下次 {@link #startPreview} 时由 {@link #applyZoomToBuilder} 自动写入。</li>
+     * </ol>
+     *
+     * <p>自动夹紧到 [1.0, 10.0] 区间，0 或负值会被纠正为 1.0。
+     */
+    public void setZoomRatio(float ratio) {
+        if (!Float.isFinite(ratio)) ratio = 1.0f;
+        float clamped = Math.max(1.0f, Math.min(ratio, 10.0f));
+        this.zoomRatio = clamped;
+        Log.d(TAG, "setZoomRatio cameraId=" + cameraId + " zoomRatio=" + clamped);
+        log("setZoomRatio cameraId=" + cameraId + " zoomRatio=" + clamped);
+        pushZoomToLivePreview();
+    }
+    public float getZoomRatio() { return zoomRatio; }
+
+    /**
+     * 把 zoomRatio 折算成 SCALER_CROP_REGION 写到 builder。1.0x 时不动 crop。
+     *
+     * <p>相机未打开（activeArrayRect 为 null）时跳过；HAL 拒收时也吞掉异常，不让外层 build 失败。
+     */
+    private void applyZoomToBuilder(CaptureRequest.Builder builder) {
+        if (zoomRatio <= 1.0f) {
+            // 1.0 = 不缩，省一次 set
+            return;
+        }
+        android.graphics.Rect active = activeArrayRect;
+        if (active == null || active.isEmpty()) {
+            log("applyZoomToBuilder cameraId=" + cameraId + " SKIP activeArray null/empty");
+            return;
+        }
+        android.graphics.Rect crop = computeCropRegion(active, zoomRatio);
+        if (crop == null) return;
+        try {
+            builder.set(CaptureRequest.SCALER_CROP_REGION, crop);
+            log("applyZoomToBuilder cameraId=" + cameraId
+                    + " zoomRatio=" + zoomRatio
+                    + " active=" + active.width() + "x" + active.height()
+                    + " crop=" + crop.width() + "x" + crop.height());
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "SCALER_CROP_REGION setting rejected by HAL, ignoring: " + e.getMessage());
+            log("applyZoomToBuilder cameraId=" + cameraId + " HAL rejected crop: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 给定 zoomRatio + activeArray 算出居中裁剪区，结果一定落在 activeArray 内。
+     * 返回 null 当 active 为空或参数非法（内部会用全幅兜底，调用方按需判断）。
+     */
+    private android.graphics.Rect computeCropRegion(android.graphics.Rect active, float ratio) {
+        if (active == null || active.isEmpty()) return null;
+        if (ratio <= 1.0f) return new android.graphics.Rect(active);
+        int cropW = Math.round((float) active.width() / ratio);
+        int cropH = Math.round((float) active.height() / ratio);
+        if (cropW <= 0) cropW = 1;
+        if (cropH <= 0) cropH = 1;
+        int left = active.centerX() - cropW / 2;
+        int top  = active.centerY() - cropH / 2;
+        if (left < active.left) left = active.left;
+        if (top  < active.top)  top  = active.top;
+        if (left + cropW > active.right)  left = active.right  - cropW;
+        if (top  + cropH > active.bottom) top  = active.bottom - cropH;
+        return new android.graphics.Rect(left, top, left + cropW, top + cropH);
+    }
+
+    /**
+     * 把当前 zoomRatio 推到活跃预览（runtime 改 zoom 的核心路径）。
+     *
+     * <p>在 {@link #setZoomRatio} 之后调用。preview 没在跑 / 还没 open 时静默跳过，
+     * 下次 {@link #startPreview} 会自然读到这个值（与 {@link #setCalibration}
+     * 保持同样的"冷启动兜底"语义）。
+     */
+    private void pushZoomToLivePreview() {
+        if (cameraHandler == null || cameraThread == null || !cameraThread.isAlive()) return;
+        cameraHandler.post(() -> {
+            if (isShutdown || !isPreviewActive.get()) {
+                log("pushZoomToLivePreview cameraId=" + cameraId + " SKIP preview not active");
+                return;
+            }
+            if (captureSession == null || previewRequestBuilder == null || cameraDevice == null) {
+                log("pushZoomToLivePreview cameraId=" + cameraId + " SKIP session null");
+                return;
+            }
+            try {
+                // builder.set 重复相同 key 是允许的（覆盖），不需要新建 builder
+                // （新建 builder 会丢失 AF/AE/zoom 等已配置的状态）。
+                // 但 zoomRatio <= 1.0 时 activeArrayRect 仍要写回 activeArray（清掉旧 crop），
+                // 所以这里直接调 applyZoomToBuilder；它内部 1.0x 会跳过 set。
+                applyZoomToBuilder(previewRequestBuilder);
+                captureSession.setRepeatingRequest(previewRequestBuilder.build(), null, cameraHandler);
+                log("pushZoomToLivePreview cameraId=" + cameraId
+                        + " zoomRatio=" + zoomRatio + " pushed");
+            } catch (CameraAccessException | IllegalStateException e) {
+                Log.e(TAG, "pushZoomToLivePreview failed", e);
+                log("pushZoomToLivePreview cameraId=" + cameraId + " FAILED " + e.getMessage());
+            }
+        });
+    }
 
     /**
      * 设置拍照方向的额外旋转（与预览的 {@link #setCalibration} 完全独立）。

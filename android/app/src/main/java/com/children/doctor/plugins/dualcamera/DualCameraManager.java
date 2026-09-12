@@ -171,6 +171,17 @@ public class DualCameraManager {
         });
     }
 
+    /**
+     * 把新 CaptureConfig 立即推到当前预览周期（controller 持有 session 才生效）。
+     * preview 未启动时静默 no-op；下次 startPreview 会自然读到 capture_config.json。
+     */
+    public void applyCaptureConfig(CaptureConfig config) {
+        if (config == null) return;
+        if (controller != null) {
+            controller.applyCaptureConfig(config);
+        }
+    }
+
     public void getAvailableCameras(AvailableCamerasCallback callback) {
         mainHandler.post(() -> {
             try {

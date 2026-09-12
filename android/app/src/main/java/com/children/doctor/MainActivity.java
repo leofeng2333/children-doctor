@@ -1,5 +1,6 @@
 package com.children.doctor;
 
+import com.children.doctor.plugins.devtools.DevToolsDialogPlugin;
 import com.children.doctor.plugins.dualcamera.DualCameraPlugin;
 import com.children.doctor.plugins.hitiprinter.HiTiPrinterPlugin;
 import com.children.doctor.plugins.hitiprinter.HiTiPrinterPlugin_Current;
@@ -13,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(HiTiPrinterPlugin.class);
         registerPlugin(HiTiPrinterPlugin_Current.class);
         registerPlugin(QuitAppPlugin.class);
+        registerPlugin(DevToolsDialogPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

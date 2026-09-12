@@ -551,6 +551,130 @@ public class DualCameraPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /**
+     * 读取拍照方向校准配置。
+     *
+     * <p>走 {@link CaptureConfigRepository#loadOrCreate()}：文件不存在/解析失败时
+     * 会用默认值重建一份并写回磁盘。返回结构：
+     * <pre>
+     *   {
+     *     "version": 1,
+     *     "slots": [
+     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false },
+     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false }
+     *     ]
+     *   }
+     * </pre>
+     */
+    @PluginMethod()
+    public void getCaptureConfig(PluginCall call) {
+        try {
+            CaptureConfigRepository repo = new CaptureConfigRepository(getContext());
+            CaptureConfig cfg = repo.loadOrCreate();
+            call.resolve(captureConfigToJson(cfg));
+        } catch (Exception e) {
+            Log.e(TAG, "getCaptureConfig failed", e);
+            call.reject("Failed to load capture config: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 写入新的拍照方向校准配置，落盘后立即推给当前预览周期。
+     *
+     * <p>preview 未启动时只落盘（下次 startPreview 时自动加载）；
+     * preview 在跑时把每个 slot 的 previewRotation / mirror / zoom / captureRotation
+     * 推到对应 session，rotation/mirror 重算 TextureView transform，zoom 重发
+     * SCALER_CROP_REGION，三者都在下一帧生效。
+     *
+     * <p>输入格式：
+     * <pre>
+     *   {
+     *     "slots": [
+     *       { "previewRotation": 270, "captureRotation": 90, "mirror": false, "zoom": 1.0 },
+     *       { "previewRotation": 90,  "captureRotation": 90, "mirror": false, "zoom": 1.0 }
+     *     ]
+     *   }
+     * </pre>
+     *
+     * <p>字段缺失时按 slot 索引用对应默认值兜底；旋转角会被规范化到
+     * 0/90/180/270。返回归一化后的完整配置，前端用于刷新表单显示。
+     */
+    @PluginMethod()
+    public void setCaptureConfig(PluginCall call) {
+        JSObject data = call.getObject("slots") != null
+                ? new JSObject().put("slots", call.getArray("slots"))
+                : call.getData();
+        try {
+            org.json.JSONArray slotsArr;
+            if (data != null && data.has("slots")) {
+                slotsArr = data.getJSONArray("slots");
+            } else if (call.getArray("slots") != null) {
+                slotsArr = call.getArray("slots");
+            } else {
+                call.reject("slots is required");
+                return;
+            }
+
+            CaptureConfig incoming = new CaptureConfig();
+            // 解析 slots；缺字段时由 CaptureConfig.Slot.fromJson 自己回退默认
+            org.json.JSONArray temp = new org.json.JSONArray();
+            for (int i = 0; i < slotsArr.length(); i++) {
+                org.json.JSONObject o = slotsArr.optJSONObject(i);
+                temp.put(o != null ? o : new org.json.JSONObject());
+            }
+            CaptureConfig parsed = CaptureConfig.fromJson(
+                    new org.json.JSONObject().put("version", 1).put("slots", temp));
+
+            CaptureConfig after = applyCaptureConfigInternal(parsed);
+            call.resolve(captureConfigToJson(after));
+        } catch (Exception e) {
+            Log.e(TAG, "setCaptureConfig failed", e);
+            call.reject("Failed to save capture config: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 内部入口：落盘 + 推给当前活跃预览周期。无活跃 manager 时只落盘。
+     * <p>{@link com.children.doctor.plugins.devtools.DevToolsDialogPlugin} 在 native
+     * 弹窗里点保存时直接调这个方法（不走 PluginCall / JS 桥）。
+     */
+    public CaptureConfig applyCaptureConfigInternal(CaptureConfig parsed) {
+        CaptureConfigRepository repo = new CaptureConfigRepository(getContext());
+        repo.save(parsed);
+
+        CaptureConfig after = repo.loadOrCreate();
+        Log.i(TAG, "setCaptureConfig saved: " + after.debugSummary());
+
+        DualCameraManager mgr = cameraManager;
+        if (mgr != null) {
+            mgr.applyCaptureConfig(after);
+            Log.i(TAG, "setCaptureConfig applied to live preview: " + after.debugSummary());
+        } else {
+            Log.i(TAG, "setCaptureConfig: preview not running, only persisted to disk");
+        }
+        return after;
+    }
+
+    /**
+     * 把 {@link CaptureConfig} 转成给前端的 JSObject。
+     */
+    private JSObject captureConfigToJson(CaptureConfig cfg) {
+        JSObject root = new JSObject();
+        root.put("version", cfg.version);
+        JSArray arr = new JSArray();
+        for (int i = 0; i < CaptureConfig.SLOT_COUNT; i++) {
+            CaptureConfig.Slot s = cfg.slots[i];
+            JSObject o = new JSObject();
+            o.put("previewRotation", s.previewRotation);
+            o.put("captureRotation", s.captureRotation);
+            o.put("mirror", s.mirror);
+            o.put("zoom", s.zoom);
+            arr.put(o);
+        }
+        root.put("slots", arr);
+        return root;
+    }
+
     @PluginMethod()
     public void uploadPhotos(PluginCall call) {
         String uploadUrl = call.getString("uploadUrl");

@@ -111,6 +111,10 @@ public class Camera2Controller {
         photoImageViews = new android.widget.ImageView[slotCount];
         sessions = new Camera2Session[slotCount];
 
+        // 加载方向校准配置（capture_config.json；缺失或损坏时 Repository 自动重建为默认值）
+        CaptureConfig config = new CaptureConfigRepository(context).loadOrCreate();
+        log("USING " + config.debugSummary());
+
         for (int i = 0; i < slotCount; i++) {
             sessions[i] = new Camera2Session(
                     context,
@@ -119,22 +123,14 @@ public class Camera2Controller {
                     cameras.get(i).previewSize,
                     cameras.get(i).captureSize
             );
-            // 硬编码方向校准（目标机器实测）：
-            //   预览层（preview transform）用 setCalibration → extraRotate：
-            //     slot=0（左）：预览顺时针偏90° → 需补逆时针90° → extraRotate=270
-            //     slot=1（右）：预览逆时针偏180° → 需补顺时针180° → extraRotate=180
-            //   拍照层（YUV / JPEG 输出）用 setCaptureRotationOffset → captureRotationOffset（独立调参）：
-            //     slot=0（左）：照片顺时针偏90° → 需补逆时针90° → captureRotationOffset=270
-            //     slot=1（右）：照片逆时针偏90° → 需补顺时针90° → captureRotationOffset=90
-            if (i == 0) {
-                sessions[i].setCalibration(270, false);
-                sessions[i].setCaptureRotationOffset(90);
-                log("CALIBRATION slot=0 preview extraRotate=270 / capture captureRotationOffset=270 extraMirror=false");
-            } else if (i == 1) {
-                sessions[i].setCalibration(90, false);
-                sessions[i].setCaptureRotationOffset(90);
-                log("CALIBRATION slot=1 preview extraRotate=180 / capture captureRotationOffset=90 extraMirror=false");
-            }
+            // 方向校准改为外部 JSON 配置（见 CaptureConfig）。历史硬编码值已迁为 defaults()。
+            //   索引 i 与 slot 严格对齐：i=0 左预览，i=1 右预览。
+            CaptureConfig.Slot slot = config.slots[i];
+            sessions[i].setCalibration(slot.previewRotation, slot.mirror);
+            sessions[i].setCaptureRotationOffset(slot.captureRotation);
+            log("CALIBRATION slot=" + i + " preview extraRotate=" + slot.previewRotation
+                    + " / capture captureRotationOffset=" + slot.captureRotation
+                    + " extraMirror=" + slot.mirror);
         }
 
         isStopped.set(false);
@@ -269,6 +265,11 @@ public class Camera2Controller {
         capParams.bottomMargin = dpToPx(160);
         focusCaption.setLayoutParams(capParams);
         container.addView(focusCaption);
+
+        // container 默认 append 到 contentView 末尾，会盖在 WebView 之上（preview 可见，
+        // WebView 内任何 DOM 都被它盖住，包括开发者工具弹窗）。
+        // 弹窗"原生图层"问题改由 DevToolsDialogPlugin 在 WindowManager 层渲染解决，
+        // 这里保持 preview 始终在 WebView 之上 = 摄像头画面可见性优先。
         rootView.addView(container);
 
         // 一次性把 caption 定位到距屏底 bottomRatio 高度处。
@@ -857,6 +858,39 @@ public class Camera2Controller {
             configureTransform(slot, "calibrationChanged(slot=" + slot + ")");
             Log.d(TAG, "setSlotCalibration applied for slot=" + slot
                     + " extraRotate=" + s.getExtraRotate() + " extraMirror=" + s.getExtraMirror());
+        });
+    }
+
+    /**
+     * 把一份完整 CaptureConfig 推到当前预览周期。覆盖三个字段：
+     *   - previewRotation / mirror → {@link Camera2Session#setCalibration}
+     *   - captureRotation → {@link Camera2Session#setCaptureRotationOffset}
+     *   - zoom → {@link Camera2Session#setZoomRatio}（setZoomRatio 内部会推到活跃 preview）
+     *
+     * <p>三个字段都立即生效：rotation/mirror 走 configureTransform 重算，zoom 走
+     * SCALER_CROP_REGION 重发；不需要 stop/start preview。cameraManager == null 时静默跳过。
+     */
+    public void applyCaptureConfig(CaptureConfig config) {
+        if (config == null) return;
+        mainHandler.post(() -> {
+            if (sessions == null) return;
+            int n = Math.min(sessions.length, config.slots.length);
+            for (int i = 0; i < n; i++) {
+                CaptureConfig.Slot slot = config.slots[i];
+                if (slot == null) continue;
+                Camera2Session s = sessions[i];
+                if (s == null) continue;
+                s.setCalibration(slot.previewRotation, slot.mirror);
+                s.setCaptureRotationOffset(slot.captureRotation);
+                s.setZoomRatio(slot.zoom);
+                // 旋转 / 镜像重算 TextureView transform；zoom 自身在 session 内部已重发
+                configureTransform(i, "applyCaptureConfig(slot=" + i + ")");
+                log("APPLY_CFG slot=" + i + " previewRot=" + slot.previewRotation
+                        + " captureRot=" + slot.captureRotation
+                        + " mirror=" + slot.mirror
+                        + " zoom=" + slot.zoom);
+            }
+            log("applyCaptureConfig applied: " + config.debugSummary());
         });
     }
 

@@ -4,4 +4,23 @@
     <string name="title_activity_main">儿童医生</string>
     <string name="package_name">com.children.doctor</string>
     <string name="custom_url_scheme">com.children.doctor</string>
+
+    <!-- 开发者工具弹窗（由 DevToolsDialogPlugin 渲染） -->
+    <string name="devtools_title">开发者工具</string>
+    <string name="devtools_close_x">×</string>
+    <string name="devtools_hint">保存后写入 native JSON 配置；预览期间保存会立即应用到当前预览周期。</string>
+    <string name="devtools_slot0_preview">左预览（slot 0 / preview）</string>
+    <string name="devtools_slot1_preview">右预览（slot 1 / preview）</string>
+    <string name="devtools_slot0_capture">左拍照（slot 0 / capture）</string>
+    <string name="devtools_slot1_capture">右拍照（slot 1 / capture）</string>
+    <string name="devtools_rotation">旋转角度</string>
+    <string name="devtools_mirror">水平镜像</string>
+    <string name="devtools_zoom">数字缩放</string>
+    <string name="devtools_btn_cancel">关闭</string>
+    <string name="devtools_btn_save">保存配置</string>
+    <string name="devtools_btn_exit">退出应用</string>
+    <string name="devtools_saved">已保存</string>
+    <string name="devtools_status_reading">读取中…</string>
+    <string name="devtools_status_idle">就绪</string>
 </resources>
+

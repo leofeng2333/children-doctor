@@ -18,4 +18,6 @@ export type {
   DualCameraUploadResult,
   ImageSplitOptions,
   ImageSplitResult,
+  CaptureConfigPayload,
+  CaptureConfigSlotPayload,
 } from './definitions'

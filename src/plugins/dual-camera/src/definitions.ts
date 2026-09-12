@@ -124,4 +124,40 @@ export interface DualCameraPlugin {
    *   - size: 文件字节数
    */
   getLogSessionInfo(): Promise<{ path: string | null; uri: string | null; size: number }>
+
+  /**
+   * 读取拍照方向校准配置（4 个角度 + 左右镜像）。
+   * 文件不存在或损坏时 native 端会自动用默认值重建；
+   * Web 端通过 localStorage fallback 保留一份方便本地调试。
+   */
+  getCaptureConfig(): Promise<CaptureConfigPayload>
+
+  /**
+   * 写入新的拍照方向校准配置。返回归一化后的最终值（native 端会把无效字段回退到默认）。
+   *
+   * <p>写入仅落到磁盘，<b>不</b>立即调用 setSlotCalibration 应用到当前预览周期——
+   * 用户选择走冷启动路径（下次 startPreview 读新值）。
+   */
+  setCaptureConfig(options: { slots: CaptureConfigSlotPayload[] }): Promise<CaptureConfigPayload>
+}
+
+export interface CaptureConfigSlotPayload {
+  /** 预览旋转角（0/90/180/270），写入 setCalibration 的 extraRotate */
+  previewRotation: number
+  /** 拍照旋转角（0/90/180/270），写入 setCaptureRotationOffset */
+  captureRotation: number
+  /** 是否在预览上额外水平镜像，写入 setCalibration 的 extraMirror */
+  mirror: boolean
+  /**
+   * 数字缩放倍数（1.0 = 原画，>1.0 = 数字放大）。
+   * preview 和 capture 共享同一个 zoom（Camera2 SCALER_CROP_REGION 同一份）。
+   * 取值范围 [1.0, 10.0]，UI 输入限制 [1.0, 4.0]；落库时夹紧到 [1.0, 10.0]。
+   */
+  zoom: number
+}
+
+export interface CaptureConfigPayload {
+  /** 配置 schema 版本（当前 1） */
+  version: number
+  slots: CaptureConfigSlotPayload[]
 }
