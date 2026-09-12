@@ -124,7 +124,7 @@ const startAnalysis = async () => {
       <CaptureSession v-if="isPreviewReady && captureState === 'capturing'" :round="currentRound"
         @confirmed="handleConfirmed" />
       <!-- finalReview：全部4张照片，按 2x2 网格分组（行=露齿/非露齿，列=正视图/右侧视图） -->
-      <div class="review-state">
+      <div v-if="captureState === 'finalReview'" class="review-state">
         <div v-for="(row, rowIndex) in columnTitles" :key="rowIndex" class="photo-row">
           <div v-for="(title, columnIndex) in row" :key="`${rowIndex}-${columnIndex}`" class="photo-column">
             <div class="column-title">{{ title }}</div>
@@ -294,9 +294,9 @@ const startAnalysis = async () => {
       gap: 16px;
 
       .photo-img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+        width: 331px; // 固定宽度（与 .photo-column 一致）
+        height: auto; // 高度按原图宽高比自适应
+        object-fit: contain; // 完整显示，不裁剪
         background: #f5f5f5;
       }
     }
