@@ -58,6 +58,11 @@ const optionState = (label: string) => {
   return ''
 }
 
+/** 已揭晓 + 该项是正确答案: 用于飘出爱心 */
+const showHeart = (label: string) => {
+  return !!selectedOption.value && label === currentQuestion.value?.answer
+}
+
 const goNext = () => {
   // 分析接口已返回 -> 直接跳转到分析结果页面
   if (hasAnalysisResult.value) {
@@ -99,6 +104,7 @@ const goResult = () => {
               @click="selectOption(opt.label)">
               <span class="option-text">{{ opt.text }}</span>
             </button>
+            <span v-if="showHeart(opt.label)" class="float-heart" aria-hidden="true">❤</span>
           </div>
         </div>
         <div class="next-btn-container">
@@ -237,6 +243,7 @@ const goResult = () => {
 }
 
 .option-cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -301,6 +308,66 @@ const goResult = () => {
       0 8px 24px rgba(239, 68, 68, 0.35),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
     transform: scale(1.02);
+    animation: option-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+}
+
+// 答错时水平抖动
+@keyframes option-shake {
+  0%,
+  100% {
+    transform: scale(1.02) translateX(0);
+  }
+  15% {
+    transform: scale(1.02) translateX(-10px);
+  }
+  30% {
+    transform: scale(1.02) translateX(10px);
+  }
+  45% {
+    transform: scale(1.02) translateX(-7px);
+  }
+  60% {
+    transform: scale(1.02) translateX(7px);
+  }
+  75% {
+    transform: scale(1.02) translateX(-4px);
+  }
+  90% {
+    transform: scale(1.02) translateX(4px);
+  }
+}
+
+// 答对时从正确答案按钮飘出爱心
+.float-heart {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: 38px;
+  line-height: 1;
+  color: #fff;
+  pointer-events: none;
+  z-index: 2;
+  text-shadow:
+    0 4px 12px rgba(255, 100, 130, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.4);
+  animation: float-heart 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes float-heart {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -18px) scale(1.3);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -130px) scale(1);
   }
 }
 

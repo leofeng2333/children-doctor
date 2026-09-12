@@ -42,8 +42,45 @@ const goBack = () => {
   }
 }
 
-const selectOption = (index: number) => {
+/** 本题选中的选项索引（用于短暂高亮 + 切题前动画） */
+const pickedIndex = ref<number | null>(null)
+/** 防抖：动画进行中不再响应点击 */
+const isAdvancing = ref(false)
+
+interface RipplePos { x: number; y: number }
+/** 当前 ripple 触发的选项索引与位置（百分比 0~100） */
+const rippleIndex = ref<number | null>(null)
+const ripplePos = ref<RipplePos>({ x: 50, y: 50 })
+
+function triggerRipple(event: MouseEvent, index: number) {
+  const target = event.currentTarget as HTMLElement | null
+  if (!target) return
+  const rect = target.getBoundingClientRect()
+  ripplePos.value = {
+    x: ((event.clientX - rect.left) / rect.width) * 100,
+    y: ((event.clientY - rect.top) / rect.height) * 100,
+  }
+  // 先重置再赋值，确保连点也能重新触发 keyframe
+  rippleIndex.value = null
+  // 下一帧再赋值
+  requestAnimationFrame(() => {
+    rippleIndex.value = index
+  })
+  setTimeout(() => {
+    if (rippleIndex.value === index) rippleIndex.value = null
+  }, 600)
+}
+
+const onPick = async (event: MouseEvent, index: number) => {
+  if (isAdvancing.value) return
+  isAdvancing.value = true
+  pickedIndex.value = index
+  triggerRipple(event, index)
   answers.value[currentQuestion.value - 1] = index
+  // 短暂停留，让"选中-高亮-切题"看得见
+  await new Promise<void>((r) => setTimeout(r, 220))
+  pickedIndex.value = null
+  isAdvancing.value = false
   nextQuestion()
 }
 
@@ -93,10 +130,34 @@ const goNext = async () => {
 
         <!-- 选项按钮 -->
         <div class="options">
-          <button class="option-button" @click="selectOption(0)">
+          <button
+            class="option-button"
+            :class="{
+              selected: pickedIndex === 0,
+              'ripple-active': rippleIndex === 0,
+            }"
+            @click="onPick($event, 0)"
+          >
+            <span
+              class="ripple"
+              :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
+              aria-hidden="true"
+            ></span>
             <span class="option-text">是，我是这样</span>
           </button>
-          <button class="option-button" @click="selectOption(1)">
+          <button
+            class="option-button"
+            :class="{
+              selected: pickedIndex === 1,
+              'ripple-active': rippleIndex === 1,
+            }"
+            @click="onPick($event, 1)"
+          >
+            <span
+              class="ripple"
+              :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
+              aria-hidden="true"
+            ></span>
             <span class="option-text">不，这不是我</span>
           </button>
         </div>
@@ -207,6 +268,8 @@ const goNext = async () => {
 }
 
 .option-button {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -216,16 +279,61 @@ const goNext = async () => {
   background: #FFE361;
   border-radius: 73.5px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 282px;
   height: 130px;
 
   &.selected {
-    background: #4caf50;
+    background: linear-gradient(135deg, #34d399 0%, #22c55e 100%);
+    transform: scale(1.04);
+    box-shadow:
+      0 8px 24px rgba(34, 197, 94, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    color: #fff;
+
+    .option-text {
+      color: #fff;
+    }
+  }
+
+  &:active:not(.selected) {
+    transform: scale(0.96);
   }
 
   &:first-child {
     margin-right: 48px;
+  }
+}
+
+.ripple {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--rx, 50%) var(--ry, 50%),
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  opacity: 0;
+  transform: scale(0);
+}
+
+.option-button.ripple-active .ripple {
+  animation: option-ripple 0.55s ease-out;
+}
+
+@keyframes option-ripple {
+  0% {
+    opacity: 1;
+    transform: scale(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.4);
   }
 }
 
