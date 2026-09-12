@@ -124,7 +124,7 @@ const startAnalysis = async () => {
       <CaptureSession v-if="isPreviewReady && captureState === 'capturing'" :round="currentRound"
         @confirmed="handleConfirmed" />
       <!-- finalReview：全部4张照片，按 2x2 网格分组（行=露齿/非露齿，列=正视图/右侧视图） -->
-      <div v-if="captureState === 'finalReview'" class="review-state">
+      <div class="review-state">
         <div v-for="(row, rowIndex) in columnTitles" :key="rowIndex" class="photo-row">
           <div v-for="(title, columnIndex) in row" :key="`${rowIndex}-${columnIndex}`" class="photo-column">
             <div class="column-title">{{ title }}</div>
@@ -263,6 +263,8 @@ const startAnalysis = async () => {
   // padding-top: max(80px, env(safe-area-inset-top));
   padding-left: 90px;
   padding-right: 90px;
+  padding-top: 50px;
+
 
   .photo-row {
     display: flex;
