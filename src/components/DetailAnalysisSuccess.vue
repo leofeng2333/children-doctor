@@ -104,10 +104,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="swiper-prev button-icon">
+      <div class="swiper-prev button-icon tappable">
         <img src="@/assets/return.svg" alt="swiper-prev" @click="swiperInstance?.slidePrev()" />
       </div>
-      <div class="swiper-next button-icon">
+      <div class="swiper-next button-icon tappable">
         <img src="@/assets/go-right.svg" alt="swiper-next" @click="swiperInstance?.slideNext()" />
       </div>
     </div>

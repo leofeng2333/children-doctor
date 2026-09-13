@@ -77,3 +77,38 @@ body {
   touch-action: manipulation;
   box-sizing: border-box;
 }
+
+/* ============================================================================
+ * 默认按钮点按反馈 (tap feedback)
+ *
+ * 为所有未自定义 :active 的可点击元素提供一个轻量的统一按压反馈,
+ * 解决 body 上 :active tap-highlight 被 transparent 关掉后某些按钮
+ * 完全无视觉反馈的问题 (e.g. <IconButton> 和 swiper prev/next 图标)。
+ *
+ * 设计要点:
+ *   1. :where(...) 包外层 —— specificity = 0,组件 scoped style 里的
+ *      .btn:active (会自动带上 data-v-xxx 属性选择器, specificity ≥ 30)
+ *      一定胜出,已有反馈的按钮不会被全局默认覆盖。
+ *   2. 仅用 opacity,不用 transform —— 不会和已有的 transform 冲突,
+ *      (position: absolute; translateX(-50%) 等居中逻辑),也不会
+ *      破坏 box-shadow 缩放动画。
+ *   3. :not(:disabled) 让 disabled 按钮不闪;pointer-events: none 时
+ *      :active 本来就不会触发,这里只是再明确一道。
+ *   4. transition opacity —— 松手时平滑收回,不会出现"啪"地一下回弹。
+ *
+ * 用法:
+ *   - <button> 默认就生效
+ *   - 自定义可点击元素: 加 role="button" 或 class="tappable"
+ *   - 完全不要反馈: <button data-no-tap-feedback>
+ * ============================================================================ */
+:where(button, [role='button'], .tappable):not([data-no-tap-feedback]):not(:disabled):active {
+  opacity: 0.78;
+}
+
+:where(button, [role='button'], .tappable):not([data-no-tap-feedback]) {
+  transition:
+    opacity 0.12s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}

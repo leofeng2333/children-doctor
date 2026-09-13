@@ -234,7 +234,7 @@ onUnmounted(() => {
         </div>
 
         <div class="map-area">
-          <img v-show="showReturn" src="@/assets/return.svg" alt="返回" class="return-icon" @click="handleReturn" />
+          <img v-show="showReturn" src="@/assets/return.svg" alt="返回" class="return-icon tappable" @click="handleReturn" />
           <div ref="chartRef" class="map-container"></div>
         </div>
       </div>
