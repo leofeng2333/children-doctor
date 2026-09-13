@@ -123,7 +123,9 @@ public class HiTiPrinterManager_Current {
      * (2) 等比缩放 + 不裁剪 → 按图片本身比例打印；
      * (3) 四周白边（少量）→ 用户接受。
      */
-    private static final int[] PAPER_TYPE_2_PIXELS = {1240, 1844}; // PAPER_SIZE_6X4_SPLIT_2UP（设计稿 100×150mm 竖版）
+    private static final int[] PAPER_TYPE_2_PIXELS = {1240, 1844}; // 设计稿 100×150mm 竖版画布（overlay builder 排版尺寸）；
+                                                                      // 送 SDK 前由 printPhoto() 顺时针旋转 90° 变 1844×1240 landscape，
+                                                                      // 匹配 PAPER_SIZE_6X4_PHOTO。HiTi SDK 没有 4×6 竖版单图枚举。
     private static final int[] PAPER_TYPE_3_PIXELS = {1548, 2140}; // PAPER_SIZE_5X7_PHOTO
     private static final int[] PAPER_TYPE_4_PIXELS = {1844, 2434}; // PAPER_SIZE_6X8_PHOTO
     private static final int[] PAPER_TYPE_5_PIXELS = {1240, 1844}; // PAPER_SIZE_6X4_SPLIT_2UP
@@ -389,6 +391,24 @@ public class HiTiPrinterManager_Current {
                     logD("printPhoto: [overlay] composed " + bitmap.getWidth() + "x" + bitmap.getHeight()
                             + " (paper-sized bitmap ready for SDK, skipping orientation adapt + letterbox)");
 
+                    // 4.6) portrait → landscape 旋转（仅 paperType=2 路径需要）。
+                    //      HiTi 4×6 纸盒只支持横版进纸，SDK 的 PAPER_SIZE_6X4_PHOTO 期望 1844×1240 landscape
+                    //      bitmap，而 overlay builder 是按设计稿 100×150mm 竖版 1240×1844 排版（image 在上、QR+文
+                    //      案在下）。这里在送 SDK 前把 portrait overlay 顺时针旋转 90°，得到 1844×1240 landscape，
+                    //      命中 SDK fast path。用户拿到手把 4×6 相纸顺时针旋转 90° 立起来看，布局与设计稿一致。
+                    //      其他 paperType（3/4/5/6）保持 portrait / square 原状不动。
+                    if (PaperType == 2 && bitmap.getWidth() < bitmap.getHeight()) {
+                        android.graphics.Matrix rotMatrix = new android.graphics.Matrix();
+                        rotMatrix.postRotate(90f);
+                        android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(
+                                bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), rotMatrix, true);
+                        bitmap.recycle();
+                        bitmap = rotated;
+                        logD("printPhoto: [rotate] paperType=2 portrait overlay rotated 90° CW → "
+                                + bitmap.getWidth() + "x" + bitmap.getHeight()
+                                + " (matches PAPER_SIZE_6X4_PHOTO fast path)");
+                    }
+
                     // 5) PrintPara 装配
                     int jobId = nextJobId++;
                     PrinterJob job = new PrinterJob(jobId, Action.USB_PRINT_PHOTOS);
@@ -512,7 +532,11 @@ public class HiTiPrinterManager_Current {
             case 5: return PaperSize.PAPER_SIZE_6X4_SPLIT_2UP;
             case 6: return PaperSize.PAPER_SIZE_6X6_PHOTO;
             case 2:
-            default: return PaperSize.PAPER_SIZE_6X4_SPLIT_2UP; // paperType=2 = 4×6 portrait（设计稿 100×150mm 竖版）
+            default: return PaperSize.PAPER_SIZE_6X4_PHOTO; // paperType=2 = 4×6 单图（设计稿 100×150mm 竖版；
+                                                              // HiTi 4×6 纸盒只支持横版进纸，SDK 把 1240×1844 portrait
+                                                              // overlay 在 printPhoto 里旋转 90° 后变 1844×1240 landscape，
+                                                              // 命中 PAPER_SIZE_6X4_PHOTO 的 fast path。用户拿到手
+                                                              // 顺时针转 90° 立起来看，布局与设计稿 1:1 一致。）
         }
     }
 

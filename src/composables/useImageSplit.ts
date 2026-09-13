@@ -65,8 +65,8 @@ export function useImageSplit(
       // 原生插件 splitImage 返回的 leftUrl 实际是原图左半（矫正前的"坏"面容），
       // rightUrl 是原图右半（矫正后的"好"面容）。
       // 这里把两个 ref 交叉赋值，使下游拿到的 leftUrl 指向"好"图、rightUrl 指向"坏"图。
-      leftUrl.value = toDisplayUrl(r)
-      rightUrl.value = toDisplayUrl(l)
+      leftUrl.value = toDisplayUrl(l)
+      rightUrl.value = toDisplayUrl(r)
     } catch (err) {
       if (current !== token) return
       console.warn(

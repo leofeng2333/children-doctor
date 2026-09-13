@@ -141,11 +141,10 @@ export const getAnalysisResult = (taskId: string) => {
  * 注：h5 项目中此接口只传 `{ llmAnalysisId, phone }`，name 不在此接口上报。
  */
 export const bindPhoneToLlmAnalysis = (payload: {
-  llmAnalysisId: string
+  llmAnalysisId: string | number
   phone: string
 }) => {
   return post(
-    '/api/ai/llm-task/bind-phone',
-    payload as unknown as Record<string, any>,
+    '/api/ai/llm-task/bind-phone?llmAnalysisId=' + payload.llmAnalysisId + '&phone=' + payload.phone,
   )
 }

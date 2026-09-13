@@ -23,7 +23,7 @@ import { isValidPhone, normalizePhone } from '@/utils/phoneValidation'
 const props = defineProps<{
   visible: boolean
   /** LLM 任务 id（来自路由 / 父组件注入），提交时一并抛给父组件 */
-  llmAnalysisId?: string
+  llmAnalysisId?: string | number
   /**
    * 公众号二维码图片 URL。父组件在 `bindNamePhone` + `getWxQrcode`
    * 调用成功后将此 prop 置为非空字符串，弹窗切换到二维码视图。
@@ -39,7 +39,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   /** 校验通过后抛给父组件，父组件决定后续接口调用 + 跳转 */
-  submit: [{ name: string; phone: string; llmAnalysisId: string }]
+  submit: [{ name: string; phone: string; llmAnalysisId: string | number }]
 }>()
 
 const name = ref('')
@@ -87,7 +87,7 @@ async function handleSubmit() {
     return
   }
 
-  const llmAnalysisId = (props.llmAnalysisId ?? '').trim()
+  const llmAnalysisId = String(props.llmAnalysisId ?? '').trim()
   if (!llmAnalysisId) {
     await Toast.show({
       text: '报告链接无效，请重新扫码',

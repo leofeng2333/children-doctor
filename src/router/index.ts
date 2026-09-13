@@ -112,7 +112,9 @@ const router = createRouter({
  *   to=capture    → release
  *   from=capture  → init
  *   from=print    → release
- *   to=print      → noop（HiTi 已经在 init 状态；app 启动 init 一次）
+ *   to=print      → init（兜底：app 启动 race / 中途被 release 后回到 print 时
+ *                       serviceConnector 可能为 null,需要重新 register。native 端
+ *                       init 幂等:serviceConnector != null 时 log skip 不重复 register）
  *   其它任意组合   → noop
  * </pre>
  *
@@ -123,28 +125,42 @@ router.beforeEach(async (to, from, next) => {
   const toU = to.meta.usbHiti
   const fromU = from.meta.usbHiti
 
-  // 进入 capture 路由：release HiTi，让 UVC camera 独占 USB
+  // 进入 capture 路由:release HiTi,让 UVC camera 独占 USB
   if (toU === 'capture') {
     await releaseHiti()
     next()
     return
   }
 
-  // 离开 capture 路由：init HiTi，恢复 HiTi 占用
+  // 进入 print 路由:init HiTi(幂等兜底)
+  // - cover 直接进 print 的路径(welcome → /print-test,或 /question → /detail-analysis
+  //   这种 from 无 meta 的情况),此时 from=capture 规则不会触发
+  // - cover app 启动 race:main.ts 的 initHiti() 是 fire-and-forget,user 快速进
+  //   print 页面可能 init 还没完成,这里再 init 一次保险
+  // - cover 中途被 release 的路径(我刚加的 App.vue handleAnalysisErrorConfirm 也会
+  //   调 releaseHiti;释放后 serviceConnector=null,回到 print 路由时必须再 init)
+  // native 端 manager.init() 幂等:serviceConnector!=null 时只 log skip,不重复 register
+  if (toU === 'print') {
+    await initHiti()
+    next()
+    return
+  }
+
+  // 离开 capture 路由:init HiTi,恢复 HiTi 占用
   if (fromU === 'capture') {
     await initHiti()
     next()
     return
   }
 
-  // 离开 print 路由：release HiTi（用户离开"打印准备"页面，释放 USB 给其它设备）
+  // 离开 print 路由:release HiTi(用户离开"打印准备"页面,释放 USB 给其它设备)
   if (fromU === 'print') {
     await releaseHiti()
     next()
     return
   }
 
-  // to=print / 普通路由相互切换 / 其它任意组合：noop
+  // 普通路由相互切换 / 其它任意组合:noop
   next()
 })
 

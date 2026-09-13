@@ -113,7 +113,7 @@ const aiImageUrl = computed(
  * 注：原生插件 `DualCamera.splitImage` 返回的 `leftUrl` 实际对应原图左半（坏），
  * `useImageSplit` 内部已交叉赋值；这里只取交叉后代表"好面容"的一侧。
  */
-const { rightUrl: goodImgUrl } = useImageSplit(
+const { leftUrl: goodImgUrl } = useImageSplit(
   () => aiImageUrl.value,
   0.5,
   { inset: 20 },

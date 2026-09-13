@@ -75,17 +75,23 @@ function handleNamePhoneDialogClose() {
 async function handleNamePhoneDialogSubmit(payload: {
   name: string
   phone: string
-  llmAnalysisId: string
+  llmAnalysisId: string | number
 }) {
   if (isBinding.value) return
   isBinding.value = true
   try {
+    console.log('bind', {
+      llmAnalysisId: payload.llmAnalysisId,
+      phone: payload.phone,
+    });
+
     // 1) 绑定手机号 到 llmAnalysisId（h5 同名接口 /api/ai/llm-task/bind-phone，
     //    此接口按 h5 约定只接收 llmAnalysisId + phone，name 不参与绑定）
-    await bindPhoneToLlmAnalysis({
+    const res = await bindPhoneToLlmAnalysis({
       llmAnalysisId: payload.llmAnalysisId,
       phone: payload.phone,
     })
+    console.log('bind res', res);
     // 2) 直接使用本地静态二维码资源（Vite 解析后的 URL 字符串），
     //    不再请求 /api/wechat/follow-task/create 接口。
     qrcodeUrl.value = staticQrcodeUrl
