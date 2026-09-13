@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
+import DetailAnalysisTitle from '@/components/DetailAnalysisTitle.vue'
+import DetailAnalysisSuccess from '@/components/DetailAnalysisSuccess.vue'
 import { useAnalysisStore } from '@/stores'
 import { useImageSplit } from '@/composables/useImageSplit'
 import {
@@ -43,7 +45,8 @@ const analysisCompleted = computed(() => {
  * 只在显式为 0 时才视为健康；其余情况（含缺失）一律视为不健康。
  */
 const isHealthyFace = computed(() => {
-  return analysisResult.value?.llmAnalysis?.result?.categoryCode === 0
+  return true;
+  // return analysisResult.value?.llmAnalysis?.result?.categoryCode === 0
 })
 
 const handleReturnReport = () => {
@@ -118,57 +121,15 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   <div v-else class="detail-analysis-page">
     <!-- 页面内容 -->
     <div class="page-content">
-      <template v-if="isHealthyFace">
-        <div class="text-section">
-          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
-          <div class="text-section-content">
-            <h1 class="page-title">{{ healthyCopy.opening }}</h1>
-            <!-- 说明文字 -->
-            <!-- <p class="description">16年后，你的长相是这样的</p> -->
-          </div>
-        </div>
-      </template>
-      <template v-else-if="swiperIndex === 0">
-        <div class="text-section text-section--reversed">
-          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
-          <h1 class="page-title">
-            但是不用担心，<br />
-            矫正后面容会变成这样！
-          </h1>
-          <!-- 说明文字 -->
-          <!-- <p class="description">通过科学手段干预，颌面会被修复为：</p> -->
-        </div>
-      </template>
-      <template v-else-if="swiperIndex === 1">
-        <div class="text-section text-section--reversed">
-          <img src="@/assets/images/common-left.png" alt="" class="text-section-decor" aria-hidden="true" />
-          <h1 class="page-title">
-            啊哦，<br />
-            颌面发育似乎不太妙！
-          </h1>
-        </div>
-      </template>
+      <DetailAnalysisTitle :is-healthy-face="isHealthyFace" :swiper-index="swiperIndex"
+        :healthy-opening="healthyCopy.opening" />
 
       <div class="analysis-result">
-        <div class="analysis-success" v-if="isHealthyFace">
-          <div class="analysis-success-tips">
-            <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
-            <h3 class="tips-title">{{ healthyCopy.opening }}</h3>
-            <p class="tips-content">{{ healthyCopy.careTips }}</p>
-          </div>
-          <div class="analysis-success-img">
-            <img :src="healthyWholeImgUrl" alt="analysis-success" />
-          </div>
-          <div class="analysis-success-body">
-            <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
-              {{ paragraph }}
-            </p>
-          </div>
-          <div class="handle-img-tips">
-            <p>诊断完成，可以通过以下方式获取照片或结束体验！</p>
-          </div>
-          <ScanSubscription :good-img-url="healthyWholeImgUrl" />
-        </div>
+        <DetailAnalysisSuccess
+          v-if="isHealthyFace"
+          :copy="healthyCopy"
+          :img-url="healthyWholeImgUrl"
+        />
         <div class="analysis-failed" v-else>
           <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
           <div class="analysis-failed-content">
@@ -247,164 +208,38 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   }
 }
 
-.page-title {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  font-size: 55px;
-  font-weight: 700;
-  line-height: 80px;
-  color: #000;
-  // margin-top: 24px;
-}
-
-/* 健康 / 不健康分支统一的"文案区"布局容器：
-   - 顶部安全区（max(100px, env(safe-area-inset-top))）+ 左右 90px padding
-   - 健康分支左侧带 .text-section-decor 装饰图，不健康分支无图 */
-.text-section {
-  display: flex;
-  align-items: flex-start;
-  gap: 32px;
-  padding: max(100px, env(safe-area-inset-top)) 0 0 90px;
-
-  .text-section-decor {
-    width: 140px;
-    height: auto;
-    flex-shrink: 0;
-    display: block;
-  }
-
-  .text-section-content {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-}
-
-.text-section--reversed {
-  flex-wrap: wrap;
-
-  .page-title {
-    flex: 1 1 auto;
-    min-width: 0;
-    align-self: flex-start;
-    display: flex;
-    align-items: center;
-    font-size: 55px;
-    line-height: 80px;
-  }
-}
-
 .page-content {
   flex-grow: 1;
   flex-shrink: 1;
   flex-basis: 0%;
   overflow-y: auto;
-  /* padding 已全部下放到 .text-section / .analysis-result / .logo */
+  display: flex;
+  flex-direction: column;
+  background-color: #FFE361;
+  /* padding 已全部下放到 .text-section / .analysis-result / .logo
+     其中 .text-section 相关样式已迁移到 <DetailAnalysisTitle />。 */
 
   .analysis-result {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-top: 60px;
-    /* 水平 padding 下放到这里，顶部 padding 由 .text-section 提供 */
-    padding: 0 90px;
+    background-color: #ffffff;
+    margin-top: 36px;
+    /* padding 已下放到 <DetailAnalysisSuccess /> 的 .analysis-success：
+       - 70px 顶部留白 + 90px 左右内边距由子组件自己声明
+       - 这样父级只承担"白底圆角容器"职责，不掺杂子组件的呼吸感 */
+    border-radius: 78px 78px 0 0;
 
-    .analysis-success {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      position: relative;
-
-      .analysis-success-img {
-        width: 100%;
-        max-width: 485px;
-        aspect-ratio: 3 / 4;
-        margin-bottom: 60px;
-        border-radius: 18px;
-        overflow: hidden;
-
-        img {
-          display: block;
-          width: 100%;
-          height: 100%;
-          max-width: 100%;
-          max-height: 100%;
-          object-fit: contain;
-        }
-      }
-
-      .analysis-success-body {
-        font-family:
-          'Inter',
-          -apple-system,
-          BlinkMacSystemFont,
-          sans-serif;
-        font-size: 24px;
-        line-height: 30px;
-        font-weight: 400;
-        margin-bottom: 24px;
-        margin-top: 12px;
-      }
-
-      .handle-img-tips {
-        width: 100%;
-        text-align: left;
-        font-size: 24px;
-        line-height: 36px;
-        font-weight: 400;
-        margin-bottom: 24px;
-      }
-
-      .analysis-success-tips {
-        font-family:
-          'Inter',
-          -apple-system,
-          BlinkMacSystemFont,
-          sans-serif;
-        font-size: 16px;
-        font-weight: 400;
-        color: #000;
-        position: absolute;
-        top: 520px;
-        right: 40px;
-        text-align: center;
-        width: 270px;
-        background-color: #FFE361;
-        box-sizing: border-box;
-        padding: 20px 12px;
-        text-align: left;
-
-        .tips-title {
-          font-size: 20px;
-          // zoom: 0.65;
-          line-height: 1;
-          font-weight: 700;
-          margin-top: 4px;
-          margin-bottom: 12px;
-        }
-
-        .tips-content {
-          font-size: 20px;
-          // zoom: 0.65;
-          line-height: 24px;
-        }
-
-        img {
-          width: 80px;
-          position: absolute;
-          left: 100px;
-          top: -40px;
-        }
-      }
-    }
+    // .analysis-success 样式已迁移到 <DetailAnalysisSuccess />。
 
     .analysis-failed {
+      /* flex 列容器 .analysis-result 内的剩余高度填充 —— 不能用 height: 100%，
+         因为父高度是经 flex-grow 解算出来的，flex 子项百分比高度不可靠。 */
+      flex: 1;
       width: 100%;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
       background: transparent;
 
       .analysis-failed-content {

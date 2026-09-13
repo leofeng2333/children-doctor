@@ -15,6 +15,8 @@ declare module 'vue' {
     AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
     CaptureSession: typeof import('./components/CaptureSession.vue')['default']
     ConfirmDialog: typeof import('./components/ConfirmDialog.vue')['default']
+    DetailAnalysisSuccess: typeof import('./components/DetailAnalysisSuccess.vue')['default']
+    DetailAnalysisTitle: typeof import('./components/DetailAnalysisTitle.vue')['default']
     DevToolsDialog: typeof import('./components/DevToolsDialog.vue')['default']
     DevToolsLauncher: typeof import('./components/DevToolsLauncher.vue')['default']
     IconButton: typeof import('./components/IconButton.vue')['default']
@@ -25,6 +27,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScanSubscription: typeof import('./components/ScanSubscription.vue')['default']
+    SectionDivider: typeof import('./components/SectionDivider.vue')['default']
   }
 }
 
@@ -33,6 +36,8 @@ declare global {
   const AnalysisFailedSwiper: typeof import('./components/AnalysisFailedSwiper.vue')['default']
   const CaptureSession: typeof import('./components/CaptureSession.vue')['default']
   const ConfirmDialog: typeof import('./components/ConfirmDialog.vue')['default']
+  const DetailAnalysisSuccess: typeof import('./components/DetailAnalysisSuccess.vue')['default']
+  const DetailAnalysisTitle: typeof import('./components/DetailAnalysisTitle.vue')['default']
   const DevToolsDialog: typeof import('./components/DevToolsDialog.vue')['default']
   const DevToolsLauncher: typeof import('./components/DevToolsLauncher.vue')['default']
   const IconButton: typeof import('./components/IconButton.vue')['default']
@@ -43,4 +48,5 @@ declare global {
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']
   const ScanSubscription: typeof import('./components/ScanSubscription.vue')['default']
+  const SectionDivider: typeof import('./components/SectionDivider.vue')['default']
 }

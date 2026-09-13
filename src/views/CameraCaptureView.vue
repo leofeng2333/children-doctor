@@ -258,23 +258,14 @@ const startAnalysis = async () => {
     <!-- 底部区域 -->
     <div class="bottom-section">
       <!-- finalReview: 「开始分析」按钮 — 上传/分析阶段隐藏，避免和遮罩重叠造成可点击的视觉误导 -->
-      <primary-button
-        v-if="captureState === 'finalReview' && !isUploading && !isAnalyzing"
-        @click="handleFinalConfirmed"
-        text="开始分析"
-      />
+      <primary-button v-if="captureState === 'finalReview' && !isUploading && !isAnalyzing"
+        @click="handleFinalConfirmed" text="开始分析" />
       <LogoText class="logo" />
     </div>
 
     <!-- startAnalysis 接口失败提示：单按钮「返回」→ /capture-intro -->
-    <ConfirmDialog
-      :visible="showAnalysisErrorDialog"
-      title="提示"
-      message="出现问题啦~可能是人脸拍摄不够标准或者网络波动，点击返回重试"
-      confirm-text="返回"
-      single-button
-      @confirm="handleAnalysisErrorConfirm"
-    />
+    <ConfirmDialog :visible="showAnalysisErrorDialog" title="提示" message="出现问题啦~可能是人脸拍摄不够标准或者网络波动，点击返回重试"
+      confirm-text="返回" single-button @confirm="handleAnalysisErrorConfirm" />
   </div>
 </template>
 

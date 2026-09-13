@@ -314,25 +314,32 @@ const goResult = () => {
 
 // 答错时水平抖动
 @keyframes option-shake {
+
   0%,
   100% {
     transform: scale(1.02) translateX(0);
   }
+
   15% {
     transform: scale(1.02) translateX(-10px);
   }
+
   30% {
     transform: scale(1.02) translateX(10px);
   }
+
   45% {
     transform: scale(1.02) translateX(-7px);
   }
+
   60% {
     transform: scale(1.02) translateX(7px);
   }
+
   75% {
     transform: scale(1.02) translateX(-4px);
   }
+
   90% {
     transform: scale(1.02) translateX(4px);
   }

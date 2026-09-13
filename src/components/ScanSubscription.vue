@@ -152,32 +152,29 @@ async function onPrint(goodImgUrl: string) {
 
 <template>
   <div class="scan-subscription">
-    <!-- 未关注态: 左 按钮（点击弹 NamePhoneDialog） / 右 两按钮上下排 -->
-    <div class="scan-row">
-      <div class="qrcode-block">
-        <div class="btn-tips">争做低碳小卫士！</div>
-        <PrimaryButton type="button" class="qrcode-btn" :aria-label="hasLlmAnalysisId ? '查看电子版报告' : '报告正在准备中'"
-          @click="handleOpenNamePhoneDialog">
-          点击获取
-          电子照片
-        </PrimaryButton>
-      </div>
-
-      <div class="action-buttons">
-        <PrimaryButton class="action-btn primary" :class="{ 'is-printed': hasPrinted }" type="button"
-          :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId" @click="onPrint(goodImgUrl)">
-          <template v-if="hasPrinted">
-            <span>已打印完成</span>
-            <span>请在下方取走宝贝照片</span>
-          </template>
-          <template v-else>{{ printButtonLabel }}</template>
-        </PrimaryButton>
-        <PrimaryButton class="action-btn secondary" type="button" :disabled="isFinishing || !hasLlmAnalysisId"
-          @click="onFinish">
-          直接结束本次诊断
-        </PrimaryButton>
-      </div>
+    <!-- 上排：打印 + 结束体验，两个按钮并排均分 -->
+    <div class="scan-actions">
+      <PrimaryButton class="scan-btn scan-btn--print" :class="{ 'is-printed': hasPrinted }" type="button"
+        :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId" @click="onPrint(goodImgUrl)">
+        <template v-if="hasPrinted">
+          <span class="scan-btn__line">已打印完成</span>
+          <span class="scan-btn__line">请在下方取走宝贝照片</span>
+        </template>
+        <template v-else>{{ printButtonLabel }}</template>
+      </PrimaryButton>
+      <PrimaryButton class="scan-btn scan-btn--finish" type="button" :disabled="isFinishing || !hasLlmAnalysisId"
+        @click="onFinish">
+        直接结束本次体验
+      </PrimaryButton>
     </div>
+
+    <!-- 下排：订阅公众号（拿电子版照片），通栏按钮，触发 NamePhoneDialog -->
+    <PrimaryButton class="scan-btn scan-btn--subscribe" type="button"
+      :aria-label="hasLlmAnalysisId ? '查看电子版报告' : '报告正在准备中'" @click="handleOpenNamePhoneDialog">
+      争做低碳小卫士！获取永久电子版照片及预测结果
+      <!-- <span class="scan-btn__title">争做低碳小卫士！</span>
+      <span class="scan-btn__desc">获取永久电子版照片及预测结果</span> -->
+    </PrimaryButton>
 
     <p v-if="printError" class="print-error">{{ printError }}</p>
 
@@ -188,10 +185,9 @@ async function onPrint(goodImgUrl: string) {
 </template>
 
 <style scoped lang="scss">
-.scan-row {
-  display: flex;
-  align-items: stretch;
-  gap: 30px;
+/* ===== 整体外层 ===== */
+.scan-subscription {
+  width: 100%;
   font-family:
     'Inter',
     -apple-system,
@@ -201,118 +197,76 @@ async function onPrint(goodImgUrl: string) {
     sans-serif;
 }
 
-.qrcode-block {
+/* ===== 上排：两个按钮并排均分 ===== */
+.scan-actions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-shrink: 0;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
-.btn-tips {
-  font-weight: 700px;
-  font-size: 24px;
-  line-height: 30px;
-  color: #F2684E;
-}
-
-/* 原二维码位置（200×200）改为按钮：黄色背景 + 搜索图标 + "查看报告" 文字 */
-.qrcode-btn {
-  width: 218px;
-  height: 200px;
+/* ===== 所有 scan 按钮的基类：覆盖 PrimaryButton 默认的 90% 宽 + 居中 ===== */
+.scan-btn {
+  width: auto;
+  margin: 0;
+  height: 76px;
+  padding: 0 24px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 0 30px;
-  border: none;
-  border-radius: 50px;
-  cursor: pointer;
-  color: #000;
-  line-height: 45px;
+  font-size: 28px;
+  line-height: 1.2;
   font-weight: 700;
-  font-family: inherit;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-
-  &:active {
-    transform: scale(0.98);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
+  color: #fff;
+  box-shadow: none;
 }
 
-.qrcode-btn-icon {
-  display: block;
+/* 上排里的两个按钮：均分父容器宽度 */
+.scan-actions .scan-btn {
+  flex: 1 1 0;
+}
+
+/* ===== 下排：通栏订阅按钮（多行布局） ===== */
+.scan-btn--subscribe {
+  width: 100%;
+  /* 单独成行，不需要参与 flex grow */
+  flex: 0 0 auto;
+  height: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 22px 40px;
+  text-align: left;
+}
+
+.scan-btn__title {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.2;
   color: inherit;
 }
 
-.qrcode-btn-text {
-  font-size: 22px;
-  font-weight: 700;
-  color: inherit;
-  line-height: 1;
-}
-
-.qrcode-desc {
+.scan-btn__desc {
   font-size: 20px;
   font-weight: 400;
-  line-height: 1.5;
-  color: #000;
-  white-space: nowrap;
-  text-align: center;
+  line-height: 1.2;
+  color: inherit;
 }
 
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 20px;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  width: 425px;
-  height: 110px;
-  font-family: inherit;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 55px;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-
-  &:active {
-    transform: scale(0.98);
-  }
-}
-
-.btn-icon {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
-.is-printed {
+/* ===== 打印成功态：两行小字（沿用旧 is-printed 视觉） ===== */
+.scan-btn--print.is-printed {
   flex-direction: column;
   gap: 4px;
-  padding: 18px 32px;
-
-  &>span {
-    font-size: 22px;
-    font-weight: 700;
-    line-height: 1.2;
-  }
+  padding: 18px 24px;
 }
 
+.scan-btn--print.is-printed .scan-btn__line {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* ===== 错误提示 ===== */
 .print-error {
   margin-top: 12px;
   font-size: 14px;
