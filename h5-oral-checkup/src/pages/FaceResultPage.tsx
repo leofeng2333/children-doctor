@@ -13,7 +13,8 @@ import {
 } from '@/lib/diagnosisCopy'
 import { splitFullImage } from '@/lib/splitImage'
 import { showToast } from '@/components/useToast'
-
+import maskWarning from '@/assets/images/mask-warning.png'
+import clickBlack from '@/assets/images/click-black.png'
 /**
  * 结果页：渲染左右两张对比卡 + 诊断描述。
  *
@@ -30,6 +31,7 @@ import { showToast } from '@/components/useToast'
 export default function FaceResultPage() {
   const [data, setData] = useState<ResultShape | null>(null)
   const [diagnosisCopy, setDiagnosisCopy] = useState<DiagnosisCopy | null>(null)
+  const [showCard2Mask, setShowCard2Mask] = useState(true)
   const goodImgRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
@@ -39,12 +41,12 @@ export default function FaceResultPage() {
     setData(resolved)
     setDiagnosisCopy(copy)
 
-    // 暴露到 window，便于联调 / Cypress
-    ;(window as unknown as { __faceResult?: unknown }).__faceResult = {
-      data: resolved,
-      diagnosisCopy: copy,
-      diagnosisCode: resolved.categoryCode ?? DiagnosisCode.NORMAL,
-    }
+      // 暴露到 window，便于联调 / Cypress
+      ; (window as unknown as { __faceResult?: unknown }).__faceResult = {
+        data: resolved,
+        diagnosisCopy: copy,
+        diagnosisCode: resolved.categoryCode ?? DiagnosisCode.NORMAL,
+      }
     console.log(
       '[face-result] 渲染完成，categoryCode =',
       resolved.categoryCode,
@@ -65,10 +67,10 @@ export default function FaceResultPage() {
         setData((prev) =>
           prev
             ? {
-                ...prev,
-                badImgUrl: prev.badImgUrl || split.badImgUrl,
-                goodImgUrl: prev.goodImgUrl || split.goodImgUrl,
-              }
+              ...prev,
+              badImgUrl: prev.badImgUrl || split.badImgUrl,
+              goodImgUrl: prev.goodImgUrl || split.goodImgUrl,
+            }
             : prev,
         )
         console.log('[face-result] 已根据 fullImgUrl 切割生成左右两半')
@@ -125,7 +127,10 @@ export default function FaceResultPage() {
 
   if (!data || !diagnosisCopy) return null
 
-  const isNormal = data.categoryCode === DiagnosisCode.NORMAL
+  console.log('data.categoryCode', data.categoryCode);
+
+
+  const isNormal = data.categoryCode !== DiagnosisCode.NORMAL
   const badImgSrc = data.badImgUrl || ''
   // NORMAL 时 split 出来的左右两半来自同一张原图，视觉一致 → UI 任取一张（card1 的 good 图）即可
   const goodImgSrc = data.goodImgUrl || ''
@@ -134,9 +139,9 @@ export default function FaceResultPage() {
     <div className="content page-face-result">
       {!isNormal && (
         <h2 className="title-warning">
-          啊哦，
+          根据分析，宝贝可能会有
           <br />
-          颌面发育似乎不太妙！
+          {diagnosisCopy?.title || ''}的问题哦！！
         </h2>
       )}
 
@@ -152,6 +157,20 @@ export default function FaceResultPage() {
                 style={badImgSrc ? undefined : { visibility: 'hidden' }}
               />
             </div>
+            {showCard2Mask && (
+              <div
+                className="card2-mask"
+                role="button"
+                aria-label="点击查看预测面容"
+                onClick={() => setShowCard2Mask(false)}
+              >
+                <img src={maskWarning} alt="card2-mask" className="card2-mask__icon_1" />
+                <span className="card2-mask__text">该预测照片由AI生成，仅作为宝贝可能面临的颌面问题<br />
+                  照片可能会引起您的不适，请谨慎观看<br />
+                  如果接受，请点击查看具体照片</span>
+                <img src={clickBlack} alt="card2-mask-icon" className="card2-mask__icon_2" />
+              </div>
+            )}
           </div>
           <div className="sticker" />
         </div>
@@ -161,9 +180,9 @@ export default function FaceResultPage() {
         <h1 className="title-after title-after--normal">{diagnosisCopy.opening}</h1>
       ) : (
         <h1 className="title-after" id="title-after">
-          但是不用担心，
+          关注口腔问题，及时治疗，
           <br />
-          矫正后面容会变成这样！
+          来看看长大后的样子吧！
         </h1>
       )}
 
@@ -203,6 +222,15 @@ export default function FaceResultPage() {
       <button className="save-btn" id="save-btn" onClick={handleSave}>
         保 存 到 手 机
       </button>
+
+      <div className="footer">
+        <div className="logo">
+          <p className="logo-content">
+            以上分析仅为AI系统根据现场拍摄照片分析得出，不作为医学诊断依据，
+            具体情况请以专业医生检查诊断为准。请勿仅凭本结果自行制定治疗方案。
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

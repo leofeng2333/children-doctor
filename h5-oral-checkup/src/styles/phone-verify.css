@@ -189,4 +189,4 @@
   }
 }
 
-/* 底部 logo 区样式见 ./base.css（三个页面共用） */
+/* phone-verify 不显示底部 logo（仅 face-result 页面需要） */

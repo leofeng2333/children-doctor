@@ -8,6 +8,17 @@ import { showToast } from '@/components/useToast'
 import { STORAGE_KEYS } from '@/lib/dataSource'
 
 /**
+ * 校验节点是否含有效分析结果。
+ * 判定标准与 dataSource.ts 的 pickAiResult / pickLlmResult 保持一致：
+ * 必须是对象 + 含 .result 且 .result 也是对象。
+ */
+function hasAnalysisResult(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false
+  const r = (node as Record<string, unknown>).result
+  return !!r && typeof r === 'object'
+}
+
+/**
  * default 模式：手机号 + 验证码 输入页
  *
  * 流程：
@@ -113,6 +124,21 @@ export default function PhoneVerifyPage() {
         showToast((data as { message?: string })?.message || '验证码错误', 'error')
         codeInputRef.current?.focus()
         codeInputRef.current?.select()
+        return
+      }
+
+      // 校验返回数据中必须同时含 aiAnalysis 和 llmAnalysis，二者缺一不允许跳转
+      const payload = data as
+        | {
+            data?: { aiAnalysis?: unknown; llmAnalysis?: unknown }
+            aiAnalysis?: unknown
+            llmAnalysis?: unknown
+          }
+        | null
+      const aiNode = payload?.data?.aiAnalysis ?? payload?.aiAnalysis
+      const llmNode = payload?.data?.llmAnalysis ?? payload?.llmAnalysis
+      if (!hasAnalysisResult(aiNode) || !hasAnalysisResult(llmNode)) {
+        showToast('分析数据缺失，请重新拍照后再试', 'error')
         return
       }
 

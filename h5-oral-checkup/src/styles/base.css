@@ -104,41 +104,10 @@
     flex: 1 1 auto; /* 让 .content 占满 .page 的剩余空间，把 footer 顶到屏底 */
   }
 
-  /* 底部 logo 区 (跟 LogoText.vue 视觉一致) — 三个页面共用，由 PageShell 在
-   * <Outlet/> 之后统一挂载 .footer > .logo。logo 白条需要左右贴屏边、底贴屏底，
-   * 所以用负 margin 抵消 .content 的左右 padding 和 .page 的底部 padding，
-   * 再在内部 padding 还回来。各 page-*.css 不再重复声明 .footer / .logo。
+  /* 底部 logo 区 — 仅 face-result 页面需要（透明背景，紧贴内容），由 FaceResultPage
+   * 自己在 .content 末尾渲染。name-phone / phone-verify 不需要 logo，故 base.css
+   * 不再声明 .footer / .logo 规则。
    */
-  .footer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 8vw;
-    background-color: #fff;
-    margin-left: calc(-1 * var(--content-px, 0px));
-    margin-right: calc(-1 * var(--content-px, 0px));
-    margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 6vw));
-    padding: 10px var(--content-px, 0px) calc(env(safe-area-inset-bottom) + 6vw);
-  }
-
-  .logo {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 0.99vw; /* 8/807 * 100, 对齐 LogoText.vue 的 gap: 8px */
-  }
-
-  .logo-left,
-  .logo-right {
-    height: 5.95vw; /* 48/807 * 100, 对齐 LogoText.vue 的 height: 48px */
-    width: auto;
-    display: block;
-  }
-
-  .logo-left {
-    margin-right: 4vw; /* 30/807 * 100, 对齐 LogoText.vue 的 margin-left: 30px */
-  }
 
   /* Toast 通用浮层（input 页用到，face-result 也可复用） */
   .toast {

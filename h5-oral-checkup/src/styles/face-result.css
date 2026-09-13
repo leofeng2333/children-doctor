@@ -27,7 +27,7 @@
 }
 
 .page-face-result.content .title-after {
-  width: 70.47vw;
+  width: 75.47vw;
   text-align: left;
   margin-top: 8.34vw;
 }
@@ -91,6 +91,7 @@
   background-size: 720% 400%;
   background-position: 80% 10%;
   transform: scaleX(-1) rotate(0deg);
+  z-index: 2;
 }
 
 .page-face-result.content .card1 {
@@ -110,6 +111,42 @@
 .page-face-result.content .card2 .sticker {
   left: 0;
   background-position: 38% 56%;
+}
+
+.page-face-result.content .card2 .card2-mask {
+  position: absolute;
+  inset: 0;
+  background: #EEFAFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1;
+  transition: opacity 0.2s ease;
+  flex-direction: column;
+
+  .card2-mask__icon_1 {
+    width: 5vw;
+    height: 5vw;
+    margin-bottom: 1vw;
+  }
+
+  .card2-mask__icon_2 {
+    width: 6vw;
+    height: 6vw;
+    margin-top: 1vw;
+  }
+}
+
+.page-face-result.content .card2 .card2-mask:active {
+  opacity: 0.85;
+}
+
+.page-face-result.content .card2 .card2-mask__text {
+  color: #3B6A7E;
+  font-size: 2.44vw;
+  line-height: 3.66vw;
+  text-align: center;
 }
 
 .page-face-result.content .description {
@@ -171,6 +208,34 @@
 
 .page-face-result.content .save-btn:active {
   transform: scale(0.98);
+}
+
+/* 底部 logo 区 — 仅 face-result 页面需要，透明背景紧贴内容
+ * （与主项目 LogoText.vue 一致：免责声明文字，无白底）
+ */
+.page-face-result.content .footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 8vw 0 0;
+  padding: 0 0 calc(env(safe-area-inset-bottom) + 2vw);
+  background-color: transparent;
+}
+
+.page-face-result.content .footer .logo {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.99vw;
+}
+
+.page-face-result.content .footer .logo-content {
+  font-size: 1.98vw; /* 16/807 * 100，对齐 LogoText.vue font-size: 16px */
+  line-height: 2.48vw; /* 20/807 * 100，对齐 LogoText.vue line-height: 20px */
+  color: #fff;
+  text-align: center;
+  margin: 0;
 }
 
 /* 底部 logo 区样式见 ./base.css（三个页面共用） */
