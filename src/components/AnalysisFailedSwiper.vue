@@ -71,7 +71,7 @@ onMounted(() => {
   swiperInstance.value = new Swiper('.detail-swiper', {
     effect: 'cards',
     grabCursor: true,
-    modules: [EffectCards],
+    modules: [],
   })
 
   swiperInstance.value.on('slideChange', onSlideChange)
@@ -99,10 +99,10 @@ onUnmounted(() => {
     <div class="swiper-next button-icon">
       <img src="@/assets/go-right.svg" alt="swiper-next" @click="swiperInstance.slideNext()" />
     </div>
-    <div class="custom-pagination">
+    <!-- <div class="custom-pagination">
       <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 0 }"></div>
       <div class="custom-pagination-bullet" :class="{ 'custom-pagination-bullet-active': swiperIndex === 1 }"></div>
-    </div>
+    </div> -->
   </div>
 </template>
 
@@ -130,8 +130,8 @@ onUnmounted(() => {
   }
 
   .button-icon {
-    width: 60px;
-    height: 60px;
+    width: 40px;
+    height: 40px;
 
     img {
       width: 100%;

@@ -9,7 +9,7 @@
  */
 import Swiper from 'swiper'
 import 'swiper/css'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ScanSubscription from '@/components/ScanSubscription.vue'
 import type { DiagnosisCopy } from '@/utils/diagnosisCopy'
 import SectionDivider from './SectionDivider.vue'
@@ -23,8 +23,20 @@ interface Props {
 
 defineProps<Props>()
 
-/* ===== swiper 状态：实例句柄（仅 prev/next 调用） ===== */
+/* ===== swiper 状态：实例句柄 + 当前页（用于 divider 文案联动） ===== */
 const swiperInstance = ref<any>(null)
+const swiperIndex = ref(0)
+
+/* divider 文案随页码切换：
+   - 第 0 页（诊断正文）→ "诊断建议"
+   - 第 1 页（ScanSubscription 入口）→ "诊断完成，可以通过以下方式获取照片或结束体验！" */
+const dividerText = computed(() =>
+  swiperIndex.value === 0 ? '诊断建议' : '诊断完成，可以通过以下方式获取照片或结束体验！',
+)
+
+const onSlideChange = (e: any) => {
+  swiperIndex.value = e.activeIndex
+}
 
 onMounted(() => {
   swiperInstance.value = new Swiper('.detail-success-swiper', {
@@ -34,6 +46,7 @@ onMounted(() => {
     // 进而让 .analysis-success-body height:100% 真正继承到 swiper 高度。
     autoHeight: false,
   })
+  swiperInstance.value.on('slideChange', onSlideChange)
 })
 
 onUnmounted(() => {
@@ -59,7 +72,7 @@ onUnmounted(() => {
     -->
     <div class="divider-wrapper">
       <SectionDivider>
-        诊断建议
+        {{ dividerText }}
       </SectionDivider>
     </div>
 

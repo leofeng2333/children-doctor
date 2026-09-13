@@ -5,12 +5,14 @@ import { storeToRefs } from 'pinia'
 import LogoText from '@/components/LogoText.vue'
 import DetailAnalysisTitle from '@/components/DetailAnalysisTitle.vue'
 import DetailAnalysisSuccess from '@/components/DetailAnalysisSuccess.vue'
+import DetailAnalysisFailed, {
+  type FailedStage,
+} from '@/components/DetailAnalysisFailed.vue'
 import { useAnalysisStore } from '@/stores'
 import { useImageSplit } from '@/composables/useImageSplit'
 import {
   getDiagnosisCopyFromLLMResult,
   getDiagnosisCopy,
-  DETAIL_PAGE_COPY,
   type DiagnosisCopy,
 } from '@/utils/diagnosisCopy'
 // path-current: HiTi init/release 现在由 router.beforeEach 守卫统一管理
@@ -45,8 +47,7 @@ const analysisCompleted = computed(() => {
  * 只在显式为 0 时才视为健康；其余情况（含缺失）一律视为不健康。
  */
 const isHealthyFace = computed(() => {
-  return true;
-  // return analysisResult.value?.llmAnalysis?.result?.categoryCode === 0
+  return analysisResult.value?.llmAnalysis?.result?.categoryCode === 0
 })
 
 const handleReturnReport = () => {
@@ -57,6 +58,22 @@ const swiperIndex = ref(0)
 
 const handleSlideChange = (index: number) => {
   swiperIndex.value = index
+}
+
+/**
+ * 镜像 DetailAnalysisFailed 的三段式状态机 stage。
+ *
+ * 不在本视图里"推进" stage —— 推进逻辑由 DetailAnalysisFailed 的 advance()
+ * 自己拥有（因为那是它的内部状态机责任），本视图只通过 @stage-change
+ * 镜像一份，让 DetailAnalysisTitle 可以 prop 接收并切标题文案。
+ *
+ * 这样 DetailAnalysisFailed 仍是 stage 状态的 single source of truth,
+ * 标题只是"读"它的镜像，不会和 swiper 推进逻辑耦合。
+ */
+const stage = ref<FailedStage>('static')
+
+const handleStageChange = (newStage: FailedStage) => {
+  stage.value = newStage
 }
 
 /** 根据后端 categoryCode 优先 / issues 兜底 获取的诊断文案（牙性优先） */
@@ -96,7 +113,7 @@ const aiImageUrl = computed(
  * 注：原生插件 `DualCamera.splitImage` 返回的 `leftUrl` 实际对应原图左半（坏），
  * `useImageSplit` 内部已交叉赋值；这里只取交叉后代表"好面容"的一侧。
  */
-const { leftUrl: goodImgUrl } = useImageSplit(
+const { rightUrl: goodImgUrl } = useImageSplit(
   () => aiImageUrl.value,
   0.5,
   { inset: 20 },
@@ -121,38 +138,24 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
   <div v-else class="detail-analysis-page">
     <!-- 页面内容 -->
     <div class="page-content">
-      <DetailAnalysisTitle :is-healthy-face="isHealthyFace" :swiper-index="swiperIndex"
-        :healthy-opening="healthyCopy.opening" />
+      <!--
+        DetailAnalysisTitle 接收 stage × swiperIndex 双维度信号：
+          - isHealthyFace=true → healthyOpening（与 stage 无关）
+          - isHealthyFace=false:
+              stage='static'              → DETAIL_PAGE_COPY.title.static
+              stage='preview'             → DETAIL_PAGE_COPY.title.preview
+              stage='swiper'+index=0      → DETAIL_PAGE_COPY.title.swiperGood
+              stage='swiper'+index=1      → DETAIL_PAGE_COPY.title.swiperBad
+        trouble 传 diagnosisCopy.title（"偏𬌗"/"反𬌗"等）,
+        DetailAnalysisTitle 内部用 .replace('{trouble}', trouble) 替换占位符。
+      -->
+      <DetailAnalysisTitle :is-healthy-face="isHealthyFace" :stage="stage" :swiper-index="swiperIndex"
+        :healthy-opening="healthyCopy.opening" :trouble="diagnosisCopy.title" />
 
       <div class="analysis-result">
-        <DetailAnalysisSuccess
-          v-if="isHealthyFace"
-          :copy="healthyCopy"
-          :img-url="healthyWholeImgUrl"
-        />
-        <div class="analysis-failed" v-else>
-          <AnalysisFailedSwiper :analysisResult="analysisResult" @slideChange="handleSlideChange" />
-          <div class="analysis-failed-content">
-            <div v-show="swiperIndex === 0">
-              <p class="failed-content-handle-img-tips">诊断完成，可以通过以下方式获取照片或结束体验！</p>
-              <ScanSubscription :good-img-url="goodImgUrl" />
-            </div>
-            <div v-show="swiperIndex === 1">
-              <div class="analysis-failed-tips analysis-failed-tips--primary">
-                <h3 class="tips-title">{{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}</h3>
-                <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
-                  {{ paragraph }}
-                </p>
-              </div>
-              <div class="analysis-failed-tips analysis-failed-tips--secondary" style="margin-top: 16px">
-                <img src="@/assets/images/analysis-success-tips.png" alt="analysis-success-tips-img" />
-                <p v-if="diagnosisCopy.careTips" class="tips-content">
-                  <strong>{{ DETAIL_PAGE_COPY.careTipsPrefix }}</strong>{{ diagnosisCopy.careTips }}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DetailAnalysisSuccess v-if="isHealthyFace" :copy="healthyCopy" :img-url="healthyWholeImgUrl" />
+        <DetailAnalysisFailed v-else :analysis-result="analysisResult" :diagnosis-copy="diagnosisCopy"
+          :good-img-url="goodImgUrl" @slide-change="handleSlideChange" @stage-change="handleStageChange" />
       </div>
     </div>
 
@@ -231,76 +234,8 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
        - 这样父级只承担"白底圆角容器"职责，不掺杂子组件的呼吸感 */
     border-radius: 78px 78px 0 0;
 
-    // .analysis-success 样式已迁移到 <DetailAnalysisSuccess />。
-
-    .analysis-failed {
-      /* flex 列容器 .analysis-result 内的剩余高度填充 —— 不能用 height: 100%，
-         因为父高度是经 flex-grow 解算出来的，flex 子项百分比高度不可靠。 */
-      flex: 1;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      background: transparent;
-
-      .analysis-failed-content {
-        margin-top: 36px;
-        display: flex;
-        justify-content: center;
-      }
-
-      .analysis-failed-tips {
-        font-family:
-          'Inter',
-          -apple-system,
-          BlinkMacSystemFont,
-          sans-serif;
-        font-size: 16px;
-        font-weight: 400;
-        color: #000;
-        text-align: center;
-        width: 100%;
-        background-color: #FFE361;
-        box-sizing: border-box;
-        padding: 32px 20px;
-        text-align: left;
-        position: relative;
-
-        .tips-title {
-          font-size: 24px;
-          font-weight: 700;
-          margin-bottom: 4px;
-        }
-
-        .tips-content {
-          font-size: 20px;
-          line-height: 24px;
-          margin-bottom: 12px;
-
-          &:last-child {
-            margin-bottom: 0;
-          }
-        }
-      }
-
-      .failed-content-handle-img-tips {
-        font-size: 30px;
-        line-height: 36px;
-        font-weight: 400;
-        margin-bottom: 24px;
-      }
-
-      .analysis-failed-tips--secondary {
-        background-color: #FFC28B;
-
-        img {
-          width: 80px;
-          position: absolute;
-          left: 50%;
-          transform: translateX(-50%);
-          top: -40px;
-        }
-      }
-    }
+    // .analysis-success / .analysis-failed 样式已分别迁移到
+    // <DetailAnalysisSuccess /> / <DetailAnalysisFailed />。
   }
 }
 

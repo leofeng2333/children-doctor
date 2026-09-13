@@ -379,20 +379,40 @@ export const INSTANT_FEEDBACK: Record<
 }
 
 /* -------------------------------------------------------------------------- */
-/* 页面级文案（仅保留 docx 已固定措辞的小标题前缀）                               */
+/* 页面级文案（集中维护，便于一处替换）                                          */
 /* -------------------------------------------------------------------------- */
 
 /**
  * docx 中每条分类的 careTips 小标题都使用相同措辞"日常护理小贴士："，
  * 集中维护避免各处硬编码导致措辞漂移。
  *
- * 注意：仅 docx 已覆盖的"措辞复用"才进入此处；其他页面级文案（loading、
- * swiper 引导句、完成提示等）docx 不涉及，仍保留在各自模板中硬编码，不
- * 额外常量化。
+ * title —— 详情页顶部标题的三段式文案（按 DetailAnalysisFailed 的 stage 状态机切）。
+ *   - static: 首屏（坏面容图）时的标题，{trouble} 在渲染时被 diagnosisCopy.title
+ *     替换（"偏𬌗"/"反𬌗"/"牙列拥挤"等）。占位符用花括号包裹而非 ${} 模板字符串,
+ *     是为了让"裸字符串"在 copy 里一眼可读,不需要找反引号和 ${}。
+ *   - preview: 看好面容图（中间过渡态）时的标题,引导用户关注并解决问题。
+ *   - swiperGood: 进入 swiper 且停在第 0 页（矫正后好面容）的标题。
+ *   - swiperBad: 进入 swiper 且停在第 1 页（当前坏面容）的标题。
+ *
+ * 改文案只需要改这一个对象,无需翻模板。注意 title 是 `as const`,
+ * 模板里用 .replace('{trouble}', ...) 替换 —— 修改后请保留 {trouble} 占位符
+ * 或同步去掉 DetailAnalysisTitle 里的 .replace 调用。
  */
 export const DETAIL_PAGE_COPY = {
   /** "日常护理小贴士：" 前缀（与 docx 中每条分类的小标题一致） */
   careTipsPrefix: '日常护理小贴士：',
+
+  /** 详情页顶部标题文案 —— 按 stage × swiperIndex 切换 */
+  title: {
+    /** stage === 'static'：首屏看坏面容图。{trouble} 会被 diagnosisCopy.title 替换 */
+    static: '根据预测，你可能存在{trouble}的情况哦！',
+    /** stage === 'preview'：看好面容图（中间过渡态） */
+    preview: '亲爱的宝贝，你能关注到并解决这个问题吗？',
+    /** stage === 'swiper' && swiperIndex === 0：矫正后好面容 */
+    swiperGood: '专业治疗改善颌后，16岁时你将长这样',
+    /** stage === 'swiper' && swiperIndex === 1：当前坏面容 */
+    swiperBad: '啊哦，颌面发育似乎不太妙！',
+  },
 } as const
 
 /* -------------------------------------------------------------------------- */
