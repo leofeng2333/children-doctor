@@ -53,16 +53,25 @@ const handleClick = () => {
   padding: 34px 60px;
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(255, 153, 0, 0.4);
-  transition: all 0.3s ease;
+  /* 触控反馈要快 —— 原来 transition: all 0.3s 在触屏点按 (<120ms) 时
+     按下动画根本跑不完就回弹,等于「没反馈」。改成按属性分写 0.12s,
+     既快到有瞬时感,松手也不会突兀。 */
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background-color 0.15s ease;
 
   & > span {
     font-weight: 700;
   }
 }
 
-.primary-btn:active {
-  transform: scale(0.98);
-  box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
+.primary-btn:active:not(.disabled) {
+  /* 同时下沉 + 变深 —— 单一 signal (只缩放) 在大按钮上太弱,
+     加上背景色变深 (#ff9900 → #e68a00) 才有「真的按下去了」的感觉。 */
+  transform: scale(0.95);
+  background-color: #e68a00;
+  box-shadow: 0 2px 6px rgba(255, 153, 0, 0.25);
 }
 
 .primary-btn.disabled {
