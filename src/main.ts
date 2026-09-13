@@ -4,7 +4,6 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
-import { vTap } from './directives/tap'
 import './expand'
 import { initHiti } from '@/utils/print-lifecycle'
 
@@ -21,10 +20,6 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-
-// 全局注册 v-tap 指令 —— 解决 Capacitor WebView 上 :active 不稳的问题,
-// 见 src/directives/tap.ts。
-app.directive('tap', vTap)
 
 app.mount('#app')
 

@@ -79,7 +79,7 @@ body {
 }
 
 /* ============================================================================
- * 默认按钮点按反馈 (tap feedback)
+ * 默认按钮点按反馈 (tap feedback) —— 纯 CSS 实现
  *
  * 为所有未自定义 :active 的可点击元素提供一个轻量的统一按压反馈,
  * 解决 body 上 :active tap-highlight 被 transparent 关掉后某些按钮
@@ -95,18 +95,19 @@ body {
  *   3. :not(:disabled) 让 disabled 按钮不闪;pointer-events: none 时
  *      :active 本来就不会触发,这里只是再明确一道。
  *   4. transition opacity —— 松手时平滑收回,不会出现"啪"地一下回弹。
- *   5. .is-pressed 和 :active 并列 —— :active 在 Capacitor WebView 上
- *      触发不稳,带 v-tap 指令 (src/directives/tap.ts) 的元素还会主动
- *      加 .is-pressed class,两条路径都给反馈。
+ *
+ * 已知限制:
+ *   - 纯 CSS 完全依赖 :active 伪类触发。Capacitor 的 iOS WKWebView /
+ *     老版本 Android WebView 上 :active 触发时机不稳,会出现「按下没反应」
+ *     或「按下立刻被吞」的情况。这是浏览器/WebView 自身的 API 行为,
+ *     纯 CSS 无法绕过。若需可靠反馈,只能回到 JS 监听 touch 事件的方案
+ *     (v-tap 指令 / @touchstart handler)。
  *
  * 用法:
  *   - <button> 默认就生效
  *   - 自定义可点击元素: 加 role="button" 或 class="tappable"
  *   - 完全不要反馈: <button data-no-tap-feedback>
- *   - 触发反馈更可靠 (重要按钮): 加 v-tap 指令,组件 scoped style 里
- *     写 .btn.is-pressed { ... } 即可接管 (会和 :active 并列触发)
  * ============================================================================ */
-:where(button, [role='button'], .tappable):not([data-no-tap-feedback]):not(:disabled).is-pressed,
 :where(button, [role='button'], .tappable):not([data-no-tap-feedback]):not(:disabled):active {
   opacity: 0.78;
 }
