@@ -95,12 +95,18 @@ body {
  *   3. :not(:disabled) 让 disabled 按钮不闪;pointer-events: none 时
  *      :active 本来就不会触发,这里只是再明确一道。
  *   4. transition opacity —— 松手时平滑收回,不会出现"啪"地一下回弹。
+ *   5. .is-pressed 和 :active 并列 —— :active 在 Capacitor WebView 上
+ *      触发不稳,带 v-tap 指令 (src/directives/tap.ts) 的元素还会主动
+ *      加 .is-pressed class,两条路径都给反馈。
  *
  * 用法:
  *   - <button> 默认就生效
  *   - 自定义可点击元素: 加 role="button" 或 class="tappable"
  *   - 完全不要反馈: <button data-no-tap-feedback>
+ *   - 触发反馈更可靠 (重要按钮): 加 v-tap 指令,组件 scoped style 里
+ *     写 .btn.is-pressed { ... } 即可接管 (会和 :active 并列触发)
  * ============================================================================ */
+:where(button, [role='button'], .tappable):not([data-no-tap-feedback]):not(:disabled).is-pressed,
 :where(button, [role='button'], .tappable):not([data-no-tap-feedback]):not(:disabled):active {
   opacity: 0.78;
 }

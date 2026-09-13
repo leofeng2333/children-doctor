@@ -23,6 +23,7 @@ const handleClick = () => {
 
 <template>
   <button
+    v-tap
     class="primary-btn"
     :class="{ disabled: disabled }"
     :disabled="disabled || loading"
@@ -66,9 +67,14 @@ const handleClick = () => {
   }
 }
 
+.primary-btn.is-pressed:not(.disabled),
 .primary-btn:active:not(.disabled) {
   /* 同时下沉 + 变深 —— 单一 signal (只缩放) 在大按钮上太弱,
-     加上背景色变深 (#ff9900 → #e68a00) 才有「真的按下去了」的感觉。 */
+     加上背景色变深 (#ff9900 → #e68a00) 才有「真的按下去了」的感觉。
+
+     .is-pressed 由 v-tap 指令 (src/directives/tap.ts) 在 touchstart /
+     mousedown 时主动加 —— 解决 Capacitor WebView 上 :active 触发不稳
+     导致「按下没反应」的问题。两条 selector 并列, :active 是兜底。 */
   transform: scale(0.95);
   background-color: #e68a00;
   box-shadow: 0 2px 6px rgba(255, 153, 0, 0.25);
