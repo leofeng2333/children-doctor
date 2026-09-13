@@ -51,7 +51,7 @@ onMounted(async () => {
         <PrimaryButton text="走进诊所" color="#fff" @click="goToForm" />
         <PrimaryButton class="print-test-btn" text="打印测试" color="#fff" @click="goToPrintTest" />
 
-        <div class="support-text">本AI诊断系统由杭州儿童口腔医院专业支持</div>
+        <!-- <div class="support-text">本AI诊断系统由杭州儿童口腔医院专业支持</div> -->
         <!-- Logo -->
         <LogoText class="logo" />
       </div>
