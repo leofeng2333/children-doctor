@@ -312,7 +312,7 @@ const goNext = async () => {
   position: relative;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -327,6 +327,7 @@ const goNext = async () => {
     color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 282px;
   height: 130px;
+  gap: 16px;
 
   &.selected {
     background: linear-gradient(135deg, #34d399 0%, #22c55e 100%);
@@ -380,12 +381,12 @@ const goNext = async () => {
 
 .option-icon {
   /* SVG 内含 256×256 base64 PNG 位图,35×35 + cover 会裁掉图标外圈;
-     改 contain 让对错标记完整显示。margin-top:8px 留给图标和下方文字
-     之间的呼吸距离。 */
+     改 contain 让对错标记完整显示。间距由 .option-button 的 gap 控制,
+     这里不需要再写 margin-top。 */
   width: 35px;
   height: 35px;
   object-fit: contain;
-  margin-top: 8px;
+  flex-shrink: 0;
 }
 
 .option-text {
