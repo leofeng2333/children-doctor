@@ -8,26 +8,31 @@
  *   - 紧随其后的 4 个非加粗 cell 视为 4 个选项 (A/B/C/D 顺序)
  *   - Word 高亮 (highlight val="yellow") 视为正确答案
  *
- * 新版文档不含配图，因此不再保留 image 字段。
+ * 配图来源: src/assets/images/儿童科普问答插图/
+ *   - NN-q.png: 第N个问题的总览图（题干大插图）
+ *   - NN-a-A/B/C/D.png: 第N个问题的选项A/B/C/D图片（选项小插图）
  */
 
 export interface QuizOption {
   label: string
   text: string
-  /** 选项配图, 相对站点根路径 (public/) */
+  /** 选项配图, 相对站点根路径 */
   image?: string
 }
 
 export interface QuizQuestion {
   question: string
   options: QuizOption[]
-  /** 正确答案 label (A/B/C/D) - 此页面仅作耗时用, 不参与判定 */
+  /** 正确答案 label (A/B/C/D) */
   answer: string
+  /** 题干大插图 */
+  image?: string
 }
 
 export const quizQuestions: QuizQuestion[] = [
   {
     "question": "乳牙一共有多少颗？",
+    "image": "@/assets/images/儿童科普问答插图/01-q.png",
     "options": [
       { "label": "A", "text": "18颗" },
       { "label": "B", "text": "20颗" },
@@ -38,6 +43,7 @@ export const quizQuestions: QuizQuestion[] = [
   },
   {
     "question": "人类通常拥有多少颗恒牙？",
+    "image": "@/assets/images/儿童科普问答插图/02-q.png",
     "options": [
       { "label": "A", "text": "20颗" },
       { "label": "B", "text": "24颗" },
@@ -48,6 +54,7 @@ export const quizQuestions: QuizQuestion[] = [
   },
   {
     "question": "每天至少要刷几次牙？",
+    "image": "@/assets/images/儿童科普问答插图/03-q.png",
     "options": [
       { "label": "A", "text": "0次" },
       { "label": "B", "text": "1次" },
@@ -59,25 +66,26 @@ export const quizQuestions: QuizQuestion[] = [
   {
     "question": "哪种牙膏成分对预防蛀牙最有效？",
     "options": [
-      { "label": "A", "text": "薄荷" },
-      { "label": "B", "text": "钙" },
-      { "label": "C", "text": "氟" },
-      { "label": "D", "text": "维生素" }
+      { "label": "A", "text": "薄荷", "image": "@/assets/images/儿童科普问答插图/04-a-A.png" },
+      { "label": "B", "text": "钙", "image": "@/assets/images/儿童科普问答插图/04-a-B.png" },
+      { "label": "C", "text": "氟", "image": "@/assets/images/儿童科普问答插图/04-a-C.png" },
+      { "label": "D", "text": "维生素", "image": "@/assets/images/儿童科普问答插图/04-a-D.png" }
     ],
     "answer": "C"
   },
   {
     "question": "哪种食物最容易导致蛀牙？",
     "options": [
-      { "label": "A", "text": "糖果" },
-      { "label": "B", "text": "苹果" },
-      { "label": "C", "text": "胡萝卜" },
-      { "label": "D", "text": "牛肉" }
+      { "label": "A", "text": "糖果", "image": "@/assets/images/儿童科普问答插图/05-a-A.png" },
+      { "label": "B", "text": "苹果", "image": "@/assets/images/儿童科普问答插图/05-a-B.png" },
+      { "label": "C", "text": "胡萝卜", "image": "@/assets/images/儿童科普问答插图/05-a-C.png" },
+      { "label": "D", "text": "牛肉", "image": "@/assets/images/儿童科普问答插图/05-a-D.png" }
     ],
     "answer": "A"
   },
   {
     "question": "为什么小朋友也要使用牙线？",
+    "image": "@/assets/images/儿童科普问答插图/06-q.png",
     "options": [
       { "label": "A", "text": "让牙齿更白" },
       { "label": "B", "text": "代替刷牙" },
@@ -89,55 +97,56 @@ export const quizQuestions: QuizQuestion[] = [
   {
     "question": "哪个习惯对牙齿不好？",
     "options": [
-      { "label": "A", "text": "饭后漱口" },
-      { "label": "B", "text": "用吸管喝饮料" },
-      { "label": "C", "text": "睡前喝奶不刷牙" },
-      { "label": "D", "text": "嚼冰块" }
+      { "label": "A", "text": "饭后漱口", "image": "@/assets/images/儿童科普问答插图/07-a-A.png" },
+      { "label": "B", "text": "用吸管喝饮料", "image": "@/assets/images/儿童科普问答插图/07-a-B.png" },
+      { "label": "C", "text": "睡前喝奶不刷牙", "image": "@/assets/images/儿童科普问答插图/07-a-C.png" },
+      { "label": "D", "text": "嚼冰块", "image": "@/assets/images/儿童科普问答插图/07-a-D.png" }
     ],
     "answer": "D"
   },
   {
     "question": "小朋友摔跤把牙齿摔断了，哪种做法是错误的？",
     "options": [
-      { "label": "A", "text": "捡回摔掉的牙" },
-      { "label": "B", "text": "立刻去医院" },
-      { "label": "C", "text": "纸巾包好断牙" },
-      { "label": "D", "text": "纱布按压止血" }
+      { "label": "A", "text": "捡回摔掉的牙", "image": "@/assets/images/儿童科普问答插图/08-a-A.png" },
+      { "label": "B", "text": "立刻去医院", "image": "@/assets/images/儿童科普问答插图/08-a-B.png" },
+      { "label": "C", "text": "纸巾包好断牙", "image": "@/assets/images/儿童科普问答插图/08-a-C.png" },
+      { "label": "D", "text": "纱布按压止血", "image": "@/assets/images/儿童科普问答插图/08-a-D.png" }
     ],
     "answer": "C"
   },
   {
     "question": "低碳生活中的 \"碳\" 主要指的是什么？",
     "options": [
-      { "label": "A", "text": "煤炭、木炭" },
-      { "label": "B", "text": "黑色炭粉" },
-      { "label": "C", "text": "碳水化合物" },
-      { "label": "D", "text": "二氧化碳" }
+      { "label": "A", "text": "煤炭、木炭", "image": "@/assets/images/儿童科普问答插图/09-a-A.png" },
+      { "label": "B", "text": "黑色炭粉", "image": "@/assets/images/儿童科普问答插图/09-a-B.png" },
+      { "label": "C", "text": "碳水化合物", "image": "@/assets/images/儿童科普问答插图/09-a-C.png" },
+      { "label": "D", "text": "二氧化碳", "image": "@/assets/images/儿童科普问答插图/09-a-D.png" }
     ],
     "answer": "D"
   },
   {
     "question": "下列哪种垃圾属于有害垃圾？",
     "options": [
-      { "label": "A", "text": "废电池" },
-      { "label": "B", "text": "香蕉皮" },
-      { "label": "C", "text": "玻璃瓶" },
-      { "label": "D", "text": "旧衣服" }
+      { "label": "A", "text": "废电池", "image": "@/assets/images/儿童科普问答插图/10-a-A.png" },
+      { "label": "B", "text": "香蕉皮", "image": "@/assets/images/儿童科普问答插图/10-a-B.png" },
+      { "label": "C", "text": "玻璃瓶", "image": "@/assets/images/儿童科普问答插图/10-a-C.png" },
+      { "label": "D", "text": "旧衣服", "image": "@/assets/images/儿童科普问答插图/10-a-D.png" }
     ],
     "answer": "A"
   },
   {
     "question": "下列哪种行为属于\"绿色低碳出行\"？",
     "options": [
-      { "label": "A", "text": "骑摩托车" },
-      { "label": "B", "text": "天天打车" },
-      { "label": "C", "text": "骑自行车" },
-      { "label": "D", "text": "开私家车" }
+      { "label": "A", "text": "骑摩托车", "image": "@/assets/images/儿童科普问答插图/11-a-A.png" },
+      { "label": "B", "text": "天天打车", "image": "@/assets/images/儿童科普问答插图/11-a-B.png" },
+      { "label": "C", "text": "骑自行车", "image": "@/assets/images/儿童科普问答插图/11-a-C.png" },
+      { "label": "D", "text": "开私家车", "image": "@/assets/images/儿童科普问答插图/11-a-D.png" }
     ],
     "answer": "C"
   },
   {
     "question": "森林被称为\"地球之肺\"，是因为它能大量吸收什么气体？",
+    "image": "@/assets/images/儿童科普问答插图/12-q.png",
     "options": [
       { "label": "A", "text": "氧气" },
       { "label": "B", "text": "二氧化碳" },
@@ -149,35 +158,36 @@ export const quizQuestions: QuizQuestion[] = [
   {
     "question": "哪种做法可以减少空气污染？",
     "options": [
-      { "label": "A", "text": "燃放烟花爆竹" },
-      { "label": "B", "text": "植树造林" },
-      { "label": "C", "text": "工厂烟囱排烟" },
-      { "label": "D", "text": "露天焚烧垃圾" }
+      { "label": "A", "text": "燃放烟花爆竹", "image": "@/assets/images/儿童科普问答插图/13-a-A.png" },
+      { "label": "B", "text": "植树造林", "image": "@/assets/images/儿童科普问答插图/13-a-B.png" },
+      { "label": "C", "text": "工厂烟囱排烟", "image": "@/assets/images/儿童科普问答插图/13-a-C.png" },
+      { "label": "D", "text": "露天焚烧垃圾", "image": "@/assets/images/儿童科普问答插图/13-a-D.png" }
     ],
     "answer": "B"
   },
   {
     "question": "不穿的旧衣服，如何处理比较绿色环保？",
     "options": [
-      { "label": "A", "text": "捐赠回收" },
-      { "label": "B", "text": "随手丢弃" },
-      { "label": "C", "text": "焚烧处理" },
-      { "label": "D", "text": "埋进土里" }
+      { "label": "A", "text": "捐赠回收", "image": "@/assets/images/儿童科普问答插图/14-a-A.png" },
+      { "label": "B", "text": "随手丢弃", "image": "@/assets/images/儿童科普问答插图/14-a-B.png" },
+      { "label": "C", "text": "焚烧处理", "image": "@/assets/images/儿童科普问答插图/14-a-C.png" },
+      { "label": "D", "text": "埋进土里", "image": "@/assets/images/儿童科普问答插图/14-a-D.png" }
     ],
     "answer": "A"
   },
   {
     "question": "哪种做法可以减少食物浪费？",
     "options": [
-      { "label": "A", "text": "点餐越多越好" },
-      { "label": "B", "text": "不爱吃直接丢掉" },
-      { "label": "C", "text": "按需点餐，吃不完打包" },
-      { "label": "D", "text": "随意倾倒剩饭剩菜" }
+      { "label": "A", "text": "点餐越多越好", "image": "@/assets/images/儿童科普问答插图/15-a-A.png" },
+      { "label": "B", "text": "不爱吃直接丢掉", "image": "@/assets/images/儿童科普问答插图/15-a-B.png" },
+      { "label": "C", "text": "按需点餐，吃不完打包", "image": "@/assets/images/儿童科普问答插图/15-a-C.png" },
+      { "label": "D", "text": "随意倾倒剩饭剩菜", "image": "@/assets/images/儿童科普问答插图/15-a-D.png" }
     ],
     "answer": "C"
   },
   {
     "question": "\"碳足迹\"是什么意思？",
+    "image": "@/assets/images/儿童科普问答插图/16-q.png",
     "options": [
       { "label": "A", "text": "煤炭燃烧留下的痕迹" },
       { "label": "B", "text": "走路留下的脚印" },
@@ -189,10 +199,10 @@ export const quizQuestions: QuizQuestion[] = [
   {
     "question": "生态环境遭到破坏的后果，不包括哪一项？",
     "options": [
-      { "label": "A", "text": "气候异常" },
-      { "label": "B", "text": "物种减少" },
-      { "label": "C", "text": "水质变差" },
-      { "label": "D", "text": "空气质量变好" }
+      { "label": "A", "text": "气候异常", "image": "@/assets/images/儿童科普问答插图/17-a-A.png" },
+      { "label": "B", "text": "物种减少", "image": "@/assets/images/儿童科普问答插图/17-a-B.png" },
+      { "label": "C", "text": "水质变差", "image": "@/assets/images/儿童科普问答插图/17-a-C.png" },
+      { "label": "D", "text": "空气质量变好", "image": "@/assets/images/儿童科普问答插图/17-a-D.png" }
     ],
     "answer": "D"
   }
