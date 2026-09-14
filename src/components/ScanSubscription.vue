@@ -56,7 +56,7 @@ const qrcodeUrl = ref('')
 const isBinding = ref(false)
 
 const printButtonLabel = computed(() => {
-  if (isPrinting.value) return '正在准备打印...'
+  if (isPrinting.value) return '打印中......'
   if (hasPrinted.value) return '已打印完成\n请在下方取走宝贝照片'
   return '打印带走宝贝照片'
 })
@@ -160,11 +160,11 @@ async function onPrint(goodImgUrl: string) {
   <div class="scan-subscription">
     <!-- 上排：打印 + 结束体验，两个按钮并排均分 -->
     <div class="scan-actions">
-      <PrimaryButton class="scan-btn scan-btn--print" :class="{ 'is-printed': hasPrinted }" type="button"
+      <PrimaryButton class="scan-btn scan-btn--print"
+        :class="{ 'is-printing': isPrinting, 'is-printed': hasPrinted }" type="button"
         :disabled="isPrinting || hasPrinted || !hasLlmAnalysisId" @click="onPrint(goodImgUrl)">
         <template v-if="hasPrinted">
-          <span class="scan-btn__line">已打印完成</span>
-          <span class="scan-btn__line">请在下方取走宝贝照片</span>
+          <span class="scan-btn__line">已完成，请取走照片</span>
         </template>
         <template v-else>{{ printButtonLabel }}</template>
       </PrimaryButton>
@@ -270,6 +270,19 @@ async function onPrint(goodImgUrl: string) {
   font-size: 22px;
   font-weight: 700;
   line-height: 1.2;
+}
+
+/* ===== 打印中态：白底 + 橙色描边 + 橙字 =====
+   选择器特意加了 .scan-subscription + .scan-btn + .scan-btn--print 三层父链,
+   把特异性顶到 (0,4,0)+data-v 至少 (0,4,1),压过 .primary-btn.disabled(0,3,1),
+   否则 PrimaryButton 的 [background:#bcbcbc;color:#fff] 会把白底橙字覆盖掉。
+   box-shadow: none / cursor: not-allowed 跟 disabled 视觉对齐。 */
+.scan-subscription .scan-btn.scan-btn--print.is-printing {
+  background: #fff;
+  border: 2px solid #ff9900;
+  color: #ff9900;
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 /* ===== 错误提示 ===== */
