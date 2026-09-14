@@ -4,6 +4,12 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '@/stores'
 import { HabitCode } from '@/utils/diagnosisCopy'
+// 选项按钮的对错图标 —— 引入为模块让 vite 在 build 时打包,
+// 而不是写死 '@/assets/svg/xxx.svg' 字符串(模板里 :src 用字符串会被
+// 浏览器按字面量请求,导致 404,跟 quizQuestions.ts 里图像别名解析
+// 是同一个坑)。
+import iconCorrect from '@/assets/svg/correct.svg'
+import iconWrong from '@/assets/svg/wrong.svg'
 
 const router = useRouter()
 const analysisStore = useAnalysisStore()
@@ -176,6 +182,7 @@ const goNext = async () => {
               :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
               aria-hidden="true"
             ></span>
+            <img :src="iconCorrect" class="option-icon" alt="" aria-hidden="true" />
             <span class="option-text">有</span>
           </button>
           <button
@@ -191,6 +198,7 @@ const goNext = async () => {
               :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
               aria-hidden="true"
             ></span>
+            <img :src="iconWrong" class="option-icon" alt="" aria-hidden="true" />
             <span class="option-text">没有</span>
           </button>
         </div>
@@ -371,9 +379,12 @@ const goNext = async () => {
 }
 
 .option-icon {
+  /* SVG 内含 256×256 base64 PNG 位图,35×35 + cover 会裁掉图标外圈;
+     改 contain 让对错标记完整显示。margin-top:8px 留给图标和下方文字
+     之间的呼吸距离。 */
   width: 35px;
   height: 35px;
-  object-fit: cover;
+  object-fit: contain;
   margin-top: 8px;
 }
 
