@@ -327,7 +327,7 @@ const goNext = async () => {
     color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 282px;
   height: 130px;
-  gap: 16px;
+  gap: 24px;
 
   &.selected {
     background: linear-gradient(135deg, #34d399 0%, #22c55e 100%);
