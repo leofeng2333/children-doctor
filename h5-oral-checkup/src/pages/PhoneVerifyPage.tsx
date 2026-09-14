@@ -3,6 +3,11 @@ import { useRef, useState } from 'react'
 import '@/styles/phone-verify.css'
 import { isValidPhone, normalizePhone } from '@/lib/phoneValidation'
 import { requestSmsApi, SMS_API, SMS_VERIFY_API, SMS_SUCCESS_CODES } from '@/lib/smsApi'
+import {
+  isLlmTaskSuccess,
+  LLM_TASK_BY_PHONE_API,
+  requestLlmTaskGetApi,
+} from '@/lib/llmTaskApi'
 import { useCountdown } from '@/lib/useCountdown'
 import { showToast } from '@/components/useToast'
 import { STORAGE_KEYS } from '@/lib/dataSource'
@@ -23,7 +28,10 @@ function hasAnalysisResult(node: unknown): boolean {
  *
  * 流程：
  *   1. 输入手机号 → 点获取验证码 → 调 SMS_API → 启动 60s 倒计时
- *   2. 输入验证码 → 调 SMS_VERIFY_API → 校验成功写 sessionStorage → 跳 /face-result
+ *   2. 输入验证码 → 调 SMS_VERIFY_API → 校验通过后
+ *   3. 调 GET /api/ai/llm-task/by-phone?phone=xxx 反查完整分析包
+ *   4. 解析响应 data.resultJson (string) → 解码后含 aiAnalysis + llmAnalysis.result
+ *   5. 把解码对象写入 sessionStorage.verifyData → 跳 /face-result
  */
 export default function PhoneVerifyPage() {
   const navigate = useNavigate()
@@ -127,25 +135,53 @@ export default function PhoneVerifyPage() {
         return
       }
 
-      // 校验返回数据中必须同时含 aiAnalysis 和 llmAnalysis，二者缺一不允许跳转
-      const payload = data as
-        | {
-            data?: { aiAnalysis?: unknown; llmAnalysis?: unknown }
-            aiAnalysis?: unknown
-            llmAnalysis?: unknown
-          }
-        | null
-      const aiNode = payload?.data?.aiAnalysis ?? payload?.aiAnalysis
-      const llmNode = payload?.data?.llmAnalysis ?? payload?.llmAnalysis
-      if (!hasAnalysisResult(aiNode) || !hasAnalysisResult(llmNode)) {
-        showToast('分析数据缺失，请重新拍照后再试', 'error')
+      // 验证码通过后,按 phone 反查最新完整分析包。by-phone 响应里真正的
+      // 分析数据在 data.resultJson 字符串字段里(后端把对象 stringify 后
+      // 塞到该字段),需要先 JSON.parse 解码,再校验 ai/llm 是否都含 .result。
+      const byPhoneResp = await requestLlmTaskGetApi(LLM_TASK_BY_PHONE_API, { phone: p })
+      if (!isLlmTaskSuccess(byPhoneResp.status, byPhoneResp.data)) {
+        showToast(
+          (byPhoneResp.data as { message?: string } | null)?.message ||
+            `数据查询失败 (HTTP ${byPhoneResp.status})`,
+          'error',
+        )
         return
       }
 
-      showToast((data as { message?: string })?.message || '校验成功', 'success')
+      const resultJsonStr = (
+        byPhoneResp.data as { data?: { resultJson?: unknown } } | null
+      )?.data?.resultJson
+      if (typeof resultJsonStr !== 'string' || !resultJsonStr) {
+        showToast('返回数据格式异常,请稍后重试', 'error')
+        return
+      }
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(resultJsonStr)
+      } catch (err) {
+        console.warn('[SMS-VERIFY] resultJson 解析失败', err)
+        showToast('返回数据格式异常,请稍后重试', 'error')
+        return
+      }
+
+      // 校验解码后的对象中必须同时含 aiAnalysis 和 llmAnalysis,
+      // 二者缺一不允许跳转(规则与原 SMS verify 校验一致)
+      const parsedObj = parsed as
+        | { aiAnalysis?: unknown; llmAnalysis?: unknown }
+        | null
+      if (!hasAnalysisResult(parsedObj?.aiAnalysis) || !hasAnalysisResult(parsedObj?.llmAnalysis)) {
+        showToast('分析数据缺失,请稍后再试', 'error')
+        return
+      }
+
+      showToast((byPhoneResp.data as { message?: string })?.message || '校验成功', 'success')
 
       try {
-        sessionStorage.setItem(STORAGE_KEYS.verifyData, JSON.stringify(data))
+        // 写入 verifyData 的是解码后的 verify-shape 对象本身(不是 by-phone
+        // 的外层包装)。face-result 的 pickAiResult/pickLlmResult 会找到顶层
+        // aiAnalysis/llmAnalysis 并取其 .result,与 SMS verify 自带数据等价。
+        sessionStorage.setItem(STORAGE_KEYS.verifyData, JSON.stringify(parsed))
       } catch (err) {
         console.warn('[SMS-VERIFY] sessionStorage 写入失败', err)
       }

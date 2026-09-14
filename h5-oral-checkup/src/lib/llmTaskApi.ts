@@ -1,9 +1,10 @@
 /**
  * LLM 任务接口定义 + 请求封装
  *
- * 两个接口：
- *   1. POST /api/ai/llm-task/bind-phone   — 绑定手机号（llmAnalysisId + phone）
- *   2. GET  /api/ai/llm-task              — 拉取任务结果（llmAnalysisId）
+ * 接口：
+ *   1. POST /api/ai/llm-task/bind-phone      — 绑定手机号（llmAnalysisId + phone）
+ *   2. GET  /api/ai/llm-task                 — 拉取任务结果（llmAnalysisId）
+ *   3. GET  /api/ai/llm-task/by-phone        — 按 phone 反查完整分析包(ai+llm)
  *
  * 业务成功判定：后端返回 code === 200（若后端用 0 改 LLM_TASK_SUCCESS_CODES 即可）。
  */
@@ -11,6 +12,7 @@
 export const LLM_TASK_BASE = 'https://aiqc.hzyk.com.cn/promotion'
 export const LLM_TASK_BIND_PHONE_API = `${LLM_TASK_BASE}/api/ai/llm-task/bind-phone`
 export const LLM_TASK_RESULT_API = `${LLM_TASK_BASE}/api/ai/llm-task`
+export const LLM_TASK_BY_PHONE_API = `${LLM_TASK_BASE}/api/ai/llm-task/by-phone`
 export const LLM_TASK_SUCCESS_CODES: ReadonlySet<number> = new Set([200, 0])
 
 export interface LlmTaskApiResponse<T = unknown> {
