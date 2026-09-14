@@ -109,6 +109,15 @@ onUnmounted(() => {
       </div>
       <div class="swiper-next button-icon tappable">
         <img src="@/assets/go-right.svg" alt="swiper-next" @click="swiperInstance?.slideNext()" />
+        <!--
+          「点一点」手势图:塞进 swiper-next 内部,绝对定位于 swiper-next
+          左侧 -110px(top:50% 垂直居中),跟按钮共用同一个定位上下文,
+          不再依赖 .analysis-success-swiper 的宽度 —— 无论外层容器宽
+          多少,手势图始终紧贴翻页按钮左侧(间距 10px),不会跑到别的位
+          置。pointer-events:none 不抢按钮的 click;z-index:11 > .swiper-next
+          (10) 保证渲染在按钮之上不被遮。
+        -->
+        <img class="click-black" src="@/assets/images/click-black.png" alt="click-black-img" />
       </div>
     </div>
   </div>
@@ -199,6 +208,21 @@ onUnmounted(() => {
     top: 50%;
     transform: translateY(-50%);
     z-index: 10;
+  }
+
+  /* 「点一点」手势图 —— 塞进 .swiper-next 内部,绝对定位 left:-110px 顶
+     在按钮左侧 10px(top:50% + translateY(-50%) 垂直居中)。跟按钮共用
+     同一个定位上下文,不依赖外层容器宽度,稳贴 swiper-next。
+     pointer-events:none 不抢按钮的 click;z-index:11 > .swiper-next(10)。 */
+  .swiper-next .click-black {
+    position: absolute;
+    left: -110px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 100px;
+    height: 100px;
+    pointer-events: none;
+    z-index: 11;
   }
 
   .button-icon {
