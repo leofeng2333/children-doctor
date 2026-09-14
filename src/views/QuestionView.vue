@@ -2,8 +2,31 @@
 import { saveQuestionAnswers } from '@/utils/service'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAnalysisStore } from '@/stores'
+import { HabitCode } from '@/utils/diagnosisCopy'
 
 const router = useRouter()
+const analysisStore = useAnalysisStore()
+
+/**
+ * 问题下标 → 坏习惯编码。
+ * 每个问卷问题对应一种（或多种）坏习惯，回答"有"（index=0）即触发对应坏习惯。
+ *
+ * Q0 吮指        → B 龅牙/开𬌗
+ * Q1 吮唇        → A 地包天
+ * Q2 吐舌/舔牙   → B 龅牙/开𬌗
+ * Q3 张口呼吸     → C 上颌前突/下颌后缩
+ * Q4 偏侧咀嚼    → D 大小脸/偏颌
+ * Q5 啃异物      → B 龅牙/开𬌗
+ */
+const QUESTION_HABIT_MAP: Record<number, HabitCode> = {
+  0: HabitCode.HABIT_PROTRUSION, // 吮指
+  1: HabitCode.HABIT_ANTIJOINT, // 吮唇
+  2: HabitCode.HABIT_PROTRUSION, // 吐舌/舔牙
+  3: HabitCode.HABIT_BREATH, // 张口呼吸
+  4: HabitCode.HABIT_ASYMMETRY, // 偏侧咀嚼
+  5: HabitCode.HABIT_PROTRUSION, // 啃异物
+}
 
 const currentQuestion = ref(1)
 
@@ -91,6 +114,16 @@ const nextQuestion = () => {
 }
 
 const goNext = async () => {
+  // 收集"有"该习惯的问题对应的编码，Set 去重后存入 store
+  const habitSet = new Set<HabitCode>()
+  answers.value.forEach((answerIdx, qIdx) => {
+    // answerIdx === 0 表示"有/是"，触发对应坏习惯
+    if (answerIdx === 0 && qIdx in QUESTION_HABIT_MAP) {
+      habitSet.add(QUESTION_HABIT_MAP[qIdx])
+    }
+  })
+  analysisStore.setBadHabits([...habitSet])
+
   const tempResponse = await saveQuestionAnswers({
     answers: questionTexts.map((text, idx) => {
       const answerIndex = answers.value[idx] ?? -1
@@ -143,7 +176,7 @@ const goNext = async () => {
               :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
               aria-hidden="true"
             ></span>
-            <span class="option-text">是，我是这样</span>
+            <span class="option-text">有</span>
           </button>
           <button
             class="option-button"
@@ -158,7 +191,7 @@ const goNext = async () => {
               :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
               aria-hidden="true"
             ></span>
-            <span class="option-text">不，这不是我</span>
+            <span class="option-text">没有</span>
           </button>
         </div>
       </div>

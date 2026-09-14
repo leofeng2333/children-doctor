@@ -2,19 +2,25 @@
 /**
  * 详情分析页顶部"标题/文案区"。
  *
- * 渲染入口 `/detail-analysis` 时页面顶部的差异化文案，由两个维度共同决定：
- *   - isHealthyFace: 健康面型直接展示 healthyOpening
- *   - 不健康面型：stage × swiperIndex 双维度信号切到 DETAIL_PAGE_COPY.title
- *
- * 文案集中维护 —— DETAIL_PAGE_COPY.title（src/utils/diagnosisCopy.ts）：
- *   static     —— "根据预测，你可能存在{trouble}的情况哦！"，{trouble} 由
- *                trouble prop（=diagnosisCopy.title, e.g. "偏𬌗"）替换。
- *   preview    —— "亲爱的宝贝，你能关注到并解决这个问题吗？"
- *   swiperGood —— "专业治疗改善颌后，16岁时你将长这样"
- *   swiperBad  —— "啊哦，颌面发育似乎不太妙！"
+ * 渲染入口 `/detail-analysis` 时页面顶部的差异化文案：
+ *   - isHealthyFace=true  → healthyOpening（与 stage/branch 无关）
+ *   - isHealthyFace=false → (branch) × (stage × swiperIndex) 三维映射
+ *       branch:
+ *         - 'default'(默认分支,D 项 categoryCode 1~7,识别出牙颌面问题)
+ *         - 'habit'  (坏习惯分支,H 项 categoryCode=0 + badHabits 非空,
+ *                      面型尚未畸形但问卷触发了坏习惯)
+ *       stage × swiperIndex（两个 branch 内部结构完全一致,仅文案不同）:
+ *         static    —— "根据预测，你可能存在{trouble}的情况哦！"
+ *                       {trouble} 由 trouble prop(=diagnosisCopy.title)替换
+ *         preview   —— "亲爱的宝贝，你能关注到并解决这个问题吗？"
+ *         swiperGood—— "专业治疗改善颌后，16岁时你将长这样"
+ *         swiperBad —— "啊哦，颌面发育似乎不太妙！"
  *
  * stage 由父级 DetailAnalysisView 通过 @stage-change 从 DetailAnalysisFailed
  * 镜像而来 —— 本组件只是消费者,不做状态机决策。
+ * branch 由父级 DetailAnalysisView 根据 categoryCode / badHabits 计算后传入。
+ *
+ * 文案集中维护 —— DETAIL_PAGE_COPY.title（src/utils/diagnosisCopy.ts）。
  *
  * 该组件只关心标题展示：
  *   - 装饰图（`text-section-decor`）
@@ -26,7 +32,24 @@
 import { computed } from 'vue'
 import { DETAIL_PAGE_COPY } from '@/utils/diagnosisCopy'
 
+/**
+ * 不健康分支下，按 (branch) × (stage × swiperIndex) 两维算出当前要展示的标题文案。
+ * 坏习惯分支与默认分支共用同一套 stage × swiperIndex 结构,只是文案侧重不同：
+ *   - default：D 项(categoryCode 1~7，识别出牙颌面问题)
+ *   - habit  ：H 项(categoryCode=0 + badHabits 非空,面型尚未畸形但已有诱因)
+ * 阶段切换时机不变(都由 DetailAnalysisFailed 三段式状态机驱动)。
+ *
+ * 父级 DetailAnalysisView 通过 @stage-change 从 DetailAnalysisFailed 镜像 stage,
+ * 通过 prop branch 告知当前是 default 还是 habit —— 本组件不做分支判断。
+ */
 type FailedStage = 'static' | 'preview' | 'swiper'
+/**
+ * 不健康分支下的两个 branch —— 数据驱动,加新 branch 只需:
+ *   1. 在 DETAIL_PAGE_COPY.title 里加一个同结构分支
+ *   2. 在下面 union 里加一个字面量
+ *   3. 在 DetailAnalysisView.vue 算出对应判断并把字面量传过来
+ */
+type TitleBranch = 'default' | 'habit'
 
 interface Props {
   /** 健康面型时显示 opening（已从 diagnosisCopy 里取好，组件不做诊断逻辑） */
@@ -45,14 +68,65 @@ interface Props {
    */
   swiperIndex?: number
   /**
-   * diagnosisCopy.title —— 用于替换 DETAIL_PAGE_COPY.title.static 里的
-   * {trouble} 占位符（"偏𬌗"/"反𬌗"/"牙列拥挤"等）。
-   * 仅 stage='static' 时被读取。
+   * diagnosisCopy.title —— 用于替换 DETAIL_PAGE_COPY.title.{branch}.static 里的
+   * {trouble} 占位符（默认分支=具体分类名"偏𬌗"/"反𬌗"等,
+   * 坏习惯分支=HABIT_COPY_MAP[first].title 如"不良口腔习惯——吮唇、下颌前伸"）。
+   * 仅 stage='static' 时被读取。其他 stage 不消费该 prop。
    */
   trouble?: string
+  /**
+   * 不健康分支下的文案子分支:
+   *   - 'default'(默认):D 项(categoryCode 1~7)的标准标题文案
+   *   - 'habit'        :H 项(categoryCode=0 + badHabits 非空)的坏习惯文案
+   * 由父级 DetailAnalysisView 根据 categoryCode / badHabits 计算后传入。
+   * isHealthyFace=true 时该 prop 不生效。
+   */
+  branch?: TitleBranch
 }
 
 const props = defineProps<Props>()
+
+/** 取 branch 对应的文案块 —— 未传时回落 default,与 props 默认行为对齐 */
+const branchCopy = computed(() => {
+  const b = props.branch ?? 'default'
+  return DETAIL_PAGE_COPY.title[b]
+})
+
+/**
+ * 占位符 {trouble} 替换器 —— 抽出来给每个 stage 共用。
+ *
+ * 行为：
+ *   - 当 text 含 '{trouble}' 时,用 split/join 把所有占位符替换成 props.trouble
+ *   - 当 text 不含 '{trouble}' 时,直接原样返回 —— 没占位符就别动文案,
+ *     避免在尾部 / 中部无意义地拼 props.trouble,污染原文
+ *
+ * 为什么不用 String.replace —— replace 对正则特殊字符（$& / $1 / ...）敏感,
+ * split/join 只做字面量切分,更稳。
+ *
+ * 为什么每个 stage 都走它 —— 在某业务场景下 preview / swiperGood / swiperBad
+ * 三段文案里也可能含 {trouble}(比如坏习惯分支的 preview 可写成
+ * "{trouble} 正在悄悄改变你的脸型"),不能只让 static 享受占位符机制。
+ * 既然 stage 文案都是人维护的,在每个 stage 都做"有无占位符"判断,
+ * 作者就可以放心地在任意一段使用占位符。
+ *
+ * props.trouble ?? '' —— trouble 为 undefined 时退化空串,
+ * 避免模板里渲染出 "undefined" 字样。
+ */
+const applyTrouble = (text: string): string => {
+  if (!text.includes('{trouble}')) return text
+  // split 出 N+1 段(N 个占位符都被切开,留 N+1 段纯文本)。
+  // reduce 把 props.trouble 插回每个切缝里,支持单 / 多占位符通用场景。
+  // props.trouble ?? '' —— undefined 退化为空串,防止模板里出现 "undefined"。
+  return text
+    .split('{trouble}')
+    .reduce(
+      (acc, segment, idx, arr) =>
+        idx < arr.length - 1
+          ? acc + segment + (props.trouble ?? '')
+          : acc + segment,
+      '',
+    )
+}
 
 /**
  * 不健康分支下，按 stage × swiperIndex 算出当前要展示的标题文案。
@@ -60,24 +134,23 @@ const props = defineProps<Props>()
  * computed 缓存结果 —— 4 个分支都是同步字符串替换,没有 IO,
  * 父级 stage/swiperIndex 任一变化才重算。
  *
- * 单一职责：只做"stage × swiperIndex → 文案"的映射,
+ * 单一职责：只做"(branch) × (stage × swiperIndex) → 文案"的映射,
  * stage 推进 / swiper 翻页 的逻辑都在其它组件里。
+ *
+ * 4 个分支全部过 applyTrouble —— 任何一段文案里若含 {trouble} 都自动替换,
+ * 不含则原文返回。
  */
 const failedTitle = computed(() => {
   if (props.stage === 'static') {
-    // {trouble} 占位符替换 —— 用 split/join 而不是 .replace,
-    // 是因为如果文案里出现多个 {trouble},两者效果一致;
-    // 且 .replace 对正则特殊字符敏感（虽然这里不会,但 split/join 更稳）。
-    const parts = DETAIL_PAGE_COPY.title.static.split('{trouble}')
-    return [parts[0], props.trouble ?? '', parts[1]].join('')
+    return applyTrouble(branchCopy.value.static)
   }
   if (props.stage === 'preview') {
-    return DETAIL_PAGE_COPY.title.preview
+    return applyTrouble(branchCopy.value.preview)
   }
   if (props.stage === 'swiper') {
     return props.swiperIndex === 0
-      ? DETAIL_PAGE_COPY.title.swiperGood
-      : DETAIL_PAGE_COPY.title.swiperBad
+      ? applyTrouble(branchCopy.value.swiperGood)
+      : applyTrouble(branchCopy.value.swiperBad)
   }
   // 兜底：理论上 isHealthyFace=false 时 stage 一定有值,
   // 但万一未来加了新 stage 且忘了改这里,渲染空字符串而不是报错。

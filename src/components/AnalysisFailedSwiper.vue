@@ -16,9 +16,25 @@ const emit = defineEmits(['slideChange'])
 
 interface Props {
   analysisResult: any
+  /**
+   * 不良口腔习惯对应的全部卡通图（来自 src/utils/badHabitImages）。
+   *
+   * 由 DetailAnalysisFailed 计算后传入:
+   *   - 有值（长度 >= 1）: 正常面型 + 问卷触发坏习惯的场景,
+   *     swiper 在矫正后好面容之后,依次展示这些坏习惯图参与轮播。
+   *   - 空数组 / 未传: 走原有逻辑,swiper 第 1 张显示
+   *     getToothIssueImage(categoryCode) 的牙颌面问题示意图。
+   *
+   * 与 swiper 现有的「矫正后好面容 / 牙颌面问题图」二选一关系 —— 不会同时出现,
+   * 由 DetailAnalysisFailed 在 categoryCode === 0 && badHabits.length > 0 时
+   * 决定走哪一支。
+   */
+  badHabitImages?: string[]
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  badHabitImages: () => [],
+})
 
 const imgSrc = computed(
   () => props.analysisResult?.aiAnalysis?.result?.predictions?.futureImageUrl ?? '',
@@ -52,11 +68,27 @@ const categoryCode = computed(() => {
 })
 
 /**
- * 不健康面型的示意图（swiper 第 1 张）：
+ * 不健康面型的示意图（swiper 在「坏习惯」场景下不使用,「牙齿问题」场景下的第 1 张）。
+ *
  * 按当前分类编码返回对应牙颌面问题示意图；
  * 不再依赖 useImageSplit 切出的左半坏脸。
  */
 const badIssueImageUrl = computed(() => getToothIssueImage(categoryCode.value))
+
+/**
+ * swiper 第 1 张及之后要展示的「坏习惯/问题图」列表。
+ *
+ *   - 坏习惯场景（badHabitImages.length > 0）: 返回传入的图数组,每张轮播一张。
+ *   - 牙齿问题场景（badHabitImages.length === 0）: 返回 [badIssueImageUrl],
+ *     保留原有「好面容 / 牙颌面问题图」二段式结构。
+ *
+ * 让模板只用一份 v-for,不再写两份 swiper-slide 块,坏习惯 / 牙齿问题
+ * 两套场景共用同一份 swiper 容器,减少 DOM 分叉。
+ */
+const tailImages = computed<string[]>(() => {
+  if (props.badHabitImages.length > 0) return props.badHabitImages
+  return badIssueImageUrl.value ? [badIssueImageUrl.value] : []
+})
 
 const swiperInstance = ref<any>(null)
 
@@ -85,11 +117,22 @@ onUnmounted(() => {
   <div class="swiper-container">
     <div class="swiper detail-swiper">
       <div class="swiper-wrapper">
+        <!--
+          slide 0 始终是矫正后好面容（goodImgUrl）;
+          slide 1~N 由 tailImages 决定：
+            - 坏习惯场景: 每张卡通图各占一张,用户可轮播查看
+            - 牙齿问题场景: 单张牙齿问题示意图
+          父级 DetailAnalysisFailed 通过 swiperIndex 控制：
+            - index === 0 → 「矫正后面容 + 引导订阅」
+            - index >= 1  → 「诊断详情」,正好对应 tailImages 中任意一张
+        -->
         <div class="swiper-slide">
           <img :src="goodImgUrl" alt="矫正后面容" srcset="" />
         </div>
-        <div class="swiper-slide">
-          <img :src="badIssueImageUrl" :alt="`牙颌面问题示意图-${categoryCode}`" srcset="" />
+        <div v-for="(img, idx) in tailImages" :key="`tail-${idx}`" class="swiper-slide">
+          <img :src="img"
+            :alt="badHabitImages.length > 0 ? `不良口腔习惯示意图-${idx + 1}` : `牙颌面问题示意图-${categoryCode}`"
+            srcset="" />
         </div>
       </div>
     </div>

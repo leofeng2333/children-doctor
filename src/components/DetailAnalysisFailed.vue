@@ -21,8 +21,10 @@
 import { computed, ref } from 'vue'
 import AnalysisFailedSwiper from './AnalysisFailedSwiper.vue'
 import ScanSubscription from './ScanSubscription.vue'
-import { DETAIL_PAGE_COPY, type DiagnosisCopy } from '@/utils/diagnosisCopy'
+import { DETAIL_PAGE_COPY, HABIT_COPY_MAP, type DiagnosisCopy } from '@/utils/diagnosisCopy'
 import { getToothIssueImage } from '@/utils/toothIssueImages'
+import { getBadHabitImages, pickRandomBadHabitImage } from '@/utils/badHabitImages'
+import type { HabitCode } from '@/utils/diagnosisCopy'
 
 interface Props {
   /** 后端返回的完整诊断结果 —— 透传给 AnalysisFailedSwiper */
@@ -35,10 +37,13 @@ interface Props {
    *  `ReturnType<typeof ref<string>>`(实际是 `Ref<string | undefined>`),
    *  未 split 完成前会是空串。与 ScanSubscription.goodImgUrl 保持同形。 */
   goodImgUrl?: string
+  /** 问卷回答中触发的不良习惯编码（来自 useAnalysisStore.badHabits） */
+  badHabits?: HabitCode[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   goodImgUrl: '',
+  badHabits: () => [],
 })
 
 const emit = defineEmits<{
@@ -132,9 +137,76 @@ const categoryCode = computed<number | null>(() => {
 })
 
 /**
- * "坏面容"示意图 URL —— 'static' 状态渲染,来源 getToothIssueImage(categoryCode)。
+ * "坏面容"示意图 URL —— 'static' 状态渲染。
+ *
+ * 数据来源分两种场景：
+ *   1. categoryCode > 0（存在牙颌面问题）  → getToothIssueImage(categoryCode)
+ *      走「修订_牙齿问题示意图（7分类）」目录里的示意图。
+ *   2. categoryCode === 0（正常面型）但问卷触发了坏习惯
+ *      → 从「不良口腔习惯卡通图」目录里随机挑一张展示
+ *      （一个习惯编码可能对应多张具体行为图,任选其一）。
+ *
+ * 同一个 `randomIndex` 不能稳定复现 —— 因为：
+ *   - 同一会话内 stage 只会从 'static' 推进一次到 'preview',
+ *     'static' 期间 Vue 不会重新计算（依赖未变）;
+ *   - 进入 'preview' 后这张图就被替换为矫正后好面容,
+ *     用户不会再次回到 'static' 看到同一张随机图;
+ *   - 即便用户重置重新进入,重新随机本身也是合理的（每次诊断轮换不同提示图）。
+ * 如果后续要做"同一坏习惯组合下图片稳定"的需求,可改为把随机索引放进
+ * props.badHabits 衍生出的稳定 hash,这里先保持简单。
  */
-const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
+const badImgUrl = computed(() => {
+  if (categoryCode.value === 0 && props.badHabits.length > 0) {
+    return pickRandomBadHabitImage(props.badHabits)
+  }
+  return getToothIssueImage(categoryCode.value)
+})
+
+/**
+ * 当前坏习惯对应的全部卡通图。
+ *
+ * 仅在「正常面型 + 有坏习惯」场景下有内容,用于 stage === 'swiper' 时
+ * 参与轮播（一张矫正后好面容 + N 张坏习惯图）。
+ *
+ * 非该场景返回空数组 —— AnalysisFailedSwiper 内部据此判断走哪套 slides。
+ */
+const habitImages = computed<string[]>(() => {
+  if (categoryCode.value === 0 && props.badHabits.length > 0) {
+    return getBadHabitImages(props.badHabits)
+  }
+  return []
+})
+
+/**
+ * 实际渲染的文案。
+ *
+ * 当 categoryCode === 0（正常面型）且问卷回答中记录了坏习惯时，
+ * 用坏习惯文案（HABIT_COPY_MAP）替代默认的正常面型文案，
+ * 告知用户存在哪些不良口腔习惯及干预建议。
+ *
+ * 多条坏习惯时，取第一条的 title/opening/bodyPrimary，
+ * 其余条目的 bodySecondary 段落合并追加到末尾。
+ */
+const effectiveCopy = computed<DiagnosisCopy>(() => {
+  // categoryCode === 0 → 正常面型，但问卷有坏习惯 → 展示坏习惯文案
+  if (categoryCode.value === 0 && props.badHabits.length > 0) {
+    // 解构出的 first 静态类型是 HabitCode | undefined,即使 length>0 也无法
+    // 被 TS 推导为非空 —— 用显式空检查把这条分支收缩掉,
+    // 后续 HABIT_COPY_MAP[first] 才能通过索引签名校验。
+    const [first, ...rest] = props.badHabits
+    if (!first) return props.diagnosisCopy
+    const firstCopy = HABIT_COPY_MAP[first]
+    if (!firstCopy) return props.diagnosisCopy
+    return {
+      ...firstCopy,
+      bodySecondary: [
+        ...firstCopy.bodySecondary,
+        ...rest.flatMap((h) => HABIT_COPY_MAP[h]?.bodySecondary ?? []),
+      ],
+    }
+  }
+  return props.diagnosisCopy
+})
 </script>
 
 <template>
@@ -153,7 +225,8 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
           <img class="failed-bad-img-container-click-img" src="@/assets/images/click-black.png" alt="click-black-img" />
           <p class="failed-bad-img-container-click-text">点一点</p>
         </div>
-        <img class="failed-bad-img clickable" :src="badImgUrl" :alt="`牙颌面问题示意图-${categoryCode}`" @click="advance" />
+        <img class="failed-bad-img clickable" :src="badImgUrl"
+          :alt="habitImages.length > 0 ? '不良口腔习惯示意图' : `牙颌面问题示意图-${categoryCode}`" @click="advance" />
       </div>
       <template v-else-if="stage === 'preview'">
         <!--
@@ -173,7 +246,8 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
           </div>
         </div>
       </template>
-      <AnalysisFailedSwiper v-else :analysisResult="analysisResult" @slideChange="onSwiperSlideChange" />
+      <AnalysisFailedSwiper v-show="stage === 'swiper'" :analysisResult="analysisResult" :badHabitImages="habitImages"
+        @slideChange="onSwiperSlideChange" />
     </div>
     <div class="analysis-failed-divider">
       <SectionDivider>
@@ -202,16 +276,28 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
       </div>
       <div v-show="stage !== 'swiper' || swiperIndex !== 0" class="analysis-failed-tips-container">
         <div class="analysis-failed-tips analysis-failed-tips--primary">
-          <h3 class="tips-title">
-            {{ diagnosisCopy.title }}：{{ diagnosisCopy.opening }}
-          </h3>
-          <p v-for="(paragraph, idx) in diagnosisCopy.bodyPrimary" :key="idx" class="tips-content">
+          <p v-for="(paragraph, idx) in effectiveCopy.bodyPrimary" :key="idx" class="tips-content">
             {{ paragraph }}
           </p>
         </div>
+        <!--
+          .analysis-failed-tips--secondary 容器托管「第二段正文 + 护理贴士」：
+            - D 项(categoryCode 1~7):
+                bodySecondary 是 [] → 只显示 careTips(「日常护理小贴士」+ 内容)
+            - H 项(categoryCode=0 + badHabits 非空):
+                careTips 是 '' → 只显示 bodySecondary(首条习惯自己的「小提醒」+
+                其余条目合并追加的「小提醒」)
+            bodySecondary 之前被错误地塞进 --primary 容器,H 项场景下
+            --secondary 容器只能渲染空字符串 careTips,造成 display:空。
+            这里按命名约定(--primary = 正文主段 / --secondary = 正文次段 + 贴士)
+            把 bodySecondary 放回 --secondary 容器。
+        -->
         <div class="analysis-failed-tips analysis-failed-tips--secondary" style="margin-top: 12px">
-          <p v-if="diagnosisCopy.careTips" class="tips-content">
-            <strong>{{ DETAIL_PAGE_COPY.careTipsPrefix }}</strong>{{ diagnosisCopy.careTips }}
+          <p v-for="(paragraph, idx) in effectiveCopy.bodySecondary" :key="'sec-' + idx" class="tips-content">
+            {{ paragraph }}
+          </p>
+          <p v-if="effectiveCopy.careTips" class="tips-content">
+            <strong>{{ DETAIL_PAGE_COPY.careTipsPrefix }}</strong>{{ effectiveCopy.careTips }}
           </p>
         </div>
       </div>
@@ -385,7 +471,7 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
      ScanSubscription / analysis-failed-tips 都是 width:100% 的块,
      用 flex + justify-content:center 让它们在外层 flex box 里水平居中。
 
-     高度契约 —— 这里要确保 min-height:180px 一定生效:
+     高度契约 —— 把盒子高度锁死在 180px,防止内容溢出撑高页面:
        - 默认 .analysis-failed-content 的 flex 是 `0 1 auto`，
          flex-shrink:1 在父 .analysis-failed(也是 flex column)空间紧张时
          会让本块被压缩。即便 CSS 规范里 min-height 应作为 flex 的地板,
@@ -395,14 +481,46 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
          不会被父级链上的 shrink 推下来。
        - align-self:stretch 是 column flex 的默认值(填满交叉轴 = 横向宽度),
          这里显式写出来,和 DetailAnalysisSuccess 的 .analysis-success-swiper
-         对齐写法,避免有人后续把父 align-items 改掉后这里跟着跑偏。 */
+         对齐写法,避免有人后续把父 align-items 改掉后这里跟着跑偏。
+
+     高度锁死 —— 同时设 min/max-height:180px,加 overflow-y:auto:
+       - 内容 < 180px：min-height 撑到 180px,盒内下方留白(与原设计一致)
+       - 内容 > 180px：max-height 截到 180px,溢出内容在盒内出滚动条,
+         而不是继续向下溢出撑高整个页面 / 触发出现在 .detail-analysis-page 上的
+         整页滚动条。
+       - overflow-x 保持默认 visible,不要被滚动条裁掉横向 padding。
+       - scrollbar-gutter:stable 给滚动条预留稳定槽位,避免出现/消失滚动条
+         时盒内左右内容轻微跳动(Chrome 94+ / Safari 16+ 才支持,但本项目
+         运行在 Capacitor H5 / iOS WebKit 上,版本均已满足)。 */
   .analysis-failed-content {
     margin-top: 36px;
     display: flex;
     justify-content: center;
     align-self: stretch;
     flex-shrink: 0;
-    min-height: 180px;
+    min-height: 350px;
+    max-height: 350px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+
+    // 滚动条定制 —— 默认 webkit 滚动条 16px 宽,会挤压左右内边距;
+    // 这里缩到 6px 半透明,视觉上不抢戏。
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    // Firefox 走标准 scrollbar-width / scrollbar-color
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
 
 
     .analysis-failed-subscription-container {
@@ -437,12 +555,6 @@ const badImgUrl = computed(() => getToothIssueImage(categoryCode.value))
     border-radius: 35px;
     text-align: left;
     position: relative;
-
-    .tips-title {
-      font-size: 24px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
 
     .tips-content {
       font-size: 20px;
