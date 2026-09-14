@@ -93,15 +93,25 @@ const goResult = () => {
           预测结果正在生成中，<br />等待期间来玩一组趣味问答吧！
         </p>
 
-        <!-- 题目 -->
+        <!-- 题干 -->
         <p class="question-text">{{ currentQuestion.question }}</p>
+
+        <!-- 题干大插图 —— 只在题目有 image 时渲染 -->
+        <img v-if="currentQuestion.image" :src="currentQuestion.image" class="question-image" alt=""
+          aria-hidden="true" />
 
         <!-- 选项区：2x2 圆角卡片 -->
         <div class="options-grid">
           <div v-for="opt in currentQuestion.options" :key="opt.label" class="option-cell">
-            <span class="option-label">{{ opt.label }}</span>
+            <!-- 选项小插图 —— 只在该选项有 image 时渲染,作为该选项的视觉锚点,
+                 显示在选项按钮正上方。尺寸小(64x64),保持按钮是主交互元素。 -->
+            <img v-if="opt.image" :src="opt.image" class="option-image" alt="" aria-hidden="true" />
             <button class="option-card" :class="optionState(opt.label)" :disabled="!!selectedOption"
               @click="selectOption(opt.label)">
+              <!-- 字母角标 —— 放进按钮内,作为左侧"图标位"固定位置,
+                   文字因此让出左侧空间保持视觉居中。
+                   color 继承按钮(默认黑/答对答错时白)。 -->
+              <span class="option-letter">{{ opt.label }}</span>
               <span class="option-text">{{ opt.text }}</span>
             </button>
             <span v-if="showHeart(opt.label)" class="float-heart" aria-hidden="true">❤</span>
@@ -213,6 +223,22 @@ const goResult = () => {
   margin: 42px 0 0 0;
 }
 
+/* 题干大插图 —— 题目文字正下方居中,宽度撑满但不超过 max-width。
+   max-width:360px 相比原 600px 缩到约 60%:原图跟选项区(282x2+64=628px)
+   几乎同宽,视觉上"图大字小"信息层级混乱;调到 360px 后图明显小于选项区,
+   题干主标题、选项区成为视觉主体,题目插图沦为辅助说明,
+   符合"先读题、再看图、最后选"的认知流程。 */
+.question-image {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  margin: 28px auto 0;
+  border-radius: 24px;
+  object-fit: contain;
+  background: transparent;
+}
+
 .desc {
   font-family:
     'Inter',
@@ -249,17 +275,23 @@ const goResult = () => {
   align-items: center;
 }
 
-.option-label {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 52px;
-  color: #000;
-  margin-bottom: 0;
+/* 选项小插图 —— 显示在选项按钮正上方,作为该选项的视觉锚点。
+   64x64:选项卡片 282x129,64x64 占比约 1/2 高,既显眼又不抢按钮主体。
+   圆角 16px:和卡片 73.5px 圆角形成"小圆角-大圆角"层级,统一在浅色卡通风格里。
+   object-fit:contain:卡通图本身是正方形带留白,用 contain 保证不被裁切。
+   margin:24px 0 8px:无 image 时 button 自然贴顶,无视觉异常;
+                     有 image 时,image 与 button 间留 8px 间距。
+   pointer-events:none:答错抖动时图片不要跟着抖(抖动是 .wrong 上的 transform,
+                     只影响按钮);也不阻挡 button 的点击。 */
+.option-image {
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin: 24px 0 8px;
+  border-radius: 16px;
+  object-fit: contain;
+  background: transparent;
+  pointer-events: none;
 }
 
 .option-card {
@@ -277,7 +309,11 @@ const goResult = () => {
     border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
     transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
+  /* padding-left 让出绝对定位的 .option-letter (56px + 24px 间距 = 80px),
+     padding-right 24px 让文字仍在按钮视觉中心稍偏左但不至于贴边。
+     padding 不能用 80/24 对称,否则文字在剩余区域里居中后会偏按钮中央右侧;
+     24px 右 padding 抵消部分偏移,使文字更接近按钮几何中心。 */
+  padding: 0 24px 0 80px;
   width: 282px;
   height: 129px;
   overflow: hidden;
@@ -309,6 +345,17 @@ const goResult = () => {
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
     transform: scale(1.02);
     animation: option-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+
+  /* 答对时:角标换成半透明深底,与白字形成强对比(浅白底+白字会糊)。
+     rgba(0,0,0,0.18) 跟绿色渐变叠加后呈深墨绿,白字清晰可读。 */
+  &.correct .option-letter {
+    background: transparent;
+  }
+
+  /* 答错时:同 correct 的处理思路,深底+白字。 */
+  &.wrong .option-letter {
+    background: transparent;
   }
 }
 
@@ -421,6 +468,7 @@ const goResult = () => {
 }
 
 .option-text {
+  flex: 1;
   font-family:
     'Inter',
     -apple-system,
@@ -430,7 +478,47 @@ const goResult = () => {
   font-weight: 700;
   line-height: 52px;
   color: inherit;
+  text-align: center;
+  /* 极长选项(如"按需点餐，吃不完打包"9 字)在 178px 文字区可能溢出;
+     溢出截断 ellipsis,避免把按钮撑变形破坏布局。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: color 0.35s ease;
+}
+
+/* 字母角标 —— 放在按钮内左上角的圆形 badge。
+   绝对定位脱离文档流,不参与 flex 布局,不影响 .option-text 的居中计算。
+   位置:left:16px(贴按钮左内边缘)+ transform translateY(-50%) 垂直居中,
+        按钮高 129 - 角标 56 = 73 / 2 ≈ 36.5px 上下间距,与圆角 73.5px 形成呼应。
+   尺寸:56x56,圆角 50% 满圆;字号 32px 与 .option-text 一致,保证视觉重量一致。
+   背景:rgba(255,255,255,0.45) 半透明白,在黄色卡片上形成"磨砂玻璃"效果,
+        在绿色/红色渐变(答对/答错)上仍然透出浅色 base,搭配白字仍有对比。
+   color:inherit 让字母颜色跟随按钮 .option-card 的 color:
+        默认态按钮 color=#000,字母黑字;答对/答错时按钮 color=#fff,字母白字,
+        不需要为每种状态各写一份色值。 */
+.option-letter {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .bottom-section {
