@@ -19,8 +19,12 @@ const goBack = () => {
 <template>
   <div class="quiz-intro-page">
     <div class="quiz-intro-content">
-      <h1 class="title">智慧问答</h1>
-      <p class="desc">即将进入答题环节</p>
+      <h1 class="title">趣味问答</h1>
+
+      <!-- 描述 -->
+      <p class="desc">
+        预测结果正在生成中，<br />等待期间来玩一组趣味问答吧！
+      </p>
     </div>
 
     <div class="bottom-section">
@@ -78,11 +82,11 @@ const goBack = () => {
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 400;
-  line-height: 52px;
+  line-height: 45px;
   color: #000;
-  margin: 30px 0 0 0;
+  margin: 24px 0 0 0;
 }
 
 .bottom-section {

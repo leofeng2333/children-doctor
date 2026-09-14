@@ -13,10 +13,37 @@
  *   - NN-a-A/B/C/D.png: 第N个问题的选项A/B/C/D图片（选项小插图）
  */
 
+/**
+ * 图片资源别名解析 —— 把 '@/assets/.../xx.png' 字面量转成 vite 处理后的 URL。
+ *
+ * 为什么需要：data 里 image 字段写的是 alias 路径(纯字符串),在模板里
+ *   <img :src="opt.image" />
+ * 这种动态绑定场景下,vite 不会像编译时 <img src="..."> 那样解析别名,
+ * 浏览器按字面量请求 '@/assets/...' 会 404。
+ *
+ * 解决：用 import.meta.glob('eager') 把目录下所有 png 在 build 时一次性
+ * 收集成 {绝对路径: vite URL} 映射,然后把 data 里的字符串别名转为 vite URL。
+ *
+ * 这种方式优于每个图片都手写 import —— 17+ 个 import 会污染文件头部,
+ * glob 一次性收集,代码可读性更好。
+ */
+const rawImages = import.meta.glob(
+  '@/assets/images/儿童科普问答插图/*.png',
+  { eager: true, query: '?url', import: 'default' },
+) as Record<string, string>
+
+const resolveImg = (aliasPath: string): string => {
+  // aliasPath: '@/assets/images/儿童科普问答插图/01-q.png'
+  // glob key: '/src/assets/images/儿童科普问答插图/01-q.png'
+  // —— '@/' 在 vite 里就是 /src 的别名,所以把 '@' 替换成 '/src' 就能命中 map
+  const abs = aliasPath.startsWith('@/') ? aliasPath.replace(/^@\//, '/src/') : aliasPath
+  return rawImages[abs] ?? aliasPath
+}
+
 export interface QuizOption {
   label: string
   text: string
-  /** 选项配图, 相对站点根路径 */
+  /** 选项配图, vite 解析后的 URL(或别名原值,仅在图片未匹配时) */
   image?: string
 }
 
@@ -25,11 +52,15 @@ export interface QuizQuestion {
   options: QuizOption[]
   /** 正确答案 label (A/B/C/D) */
   answer: string
-  /** 题干大插图 */
+  /** 题干大插图, vite 解析后的 URL */
   image?: string
 }
 
-export const quizQuestions: QuizQuestion[] = [
+/**
+ * 字面量数组 —— 不导出。资源路径以 '@/' 别名形式存放,便于人类阅读和编辑器跳转。
+ * 真正 export 出去的是下面经过 resolveImg 预解析的版本。
+ */
+const rawQuestions: QuizQuestion[] = [
   {
     "question": "乳牙一共有多少颗？",
     "image": "@/assets/images/儿童科普问答插图/01-q.png",
@@ -207,3 +238,21 @@ export const quizQuestions: QuizQuestion[] = [
     "answer": "D"
   }
 ]
+
+/**
+ * 导出前预解析 —— 把 data 里的 '@/assets/...' 别名转成 vite URL,
+ * 模板里 :src="opt.image" 即可直接渲染,无须再过 resolveImg。
+ *
+ * 为什么放在 export 时统一处理而不是每个调用方自己 resolve:
+ *   - 调用方(目前只有 QuizView.vue)不必关心资源解析细节
+ *   - data 文件是资源的"单一真实源",解析逻辑放在这里不会分散到各组件
+ *   - 后续如果新增题目只管在原数组里加条目,无须改任何工具代码
+ */
+export const quizQuestions: QuizQuestion[] = rawQuestions.map((q) => ({
+  ...q,
+  image: q.image ? resolveImg(q.image) : q.image,
+  options: q.options.map((o) => ({
+    ...o,
+    image: o.image ? resolveImg(o.image) : o.image,
+  })),
+}))
