@@ -244,19 +244,15 @@ const healthyWholeImgUrl = computed(() => goodImgUrl.value)
         DetailAnalysisTitle 内部用 split('{trouble}') 切文案 + 拼接替换占位符。
         同一份文案里没有 {trouble} 时 split 退化为单段,等价于原文 —— 不强制使用占位符。
       -->
-      <DetailAnalysisTitle
-        :is-healthy-face="isHealthyFace"
-        :stage="stage"
-        :swiper-index="swiperIndex"
-        :branch="isHabitBranch ? 'habit' : 'default'"
-        :healthy-opening="healthyCopy.opening"
-        :trouble="diagnosisCopy.title"
-      />
+      <DetailAnalysisTitle :is-healthy-face="isHealthyFace" :stage="stage" :swiper-index="swiperIndex"
+        :branch="isHabitBranch ? 'habit' : 'default'" :healthy-opening="healthyCopy.opening"
+        :trouble="diagnosisCopy.title" />
 
       <div class="analysis-result">
         <DetailAnalysisSuccess v-if="isHealthyFace" :copy="healthyCopy" :img-url="healthyWholeImgUrl" />
         <DetailAnalysisFailed v-else :analysis-result="analysisResult" :diagnosis-copy="diagnosisCopy"
-          :good-img-url="goodImgUrl" :bad-habits="badHabits" @slide-change="handleSlideChange" @stage-change="handleStageChange" />
+          :good-img-url="goodImgUrl" :bad-habits="badHabits" @slide-change="handleSlideChange"
+          @stage-change="handleStageChange" />
       </div>
     </div>
 

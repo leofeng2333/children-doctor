@@ -195,11 +195,11 @@ const handleConfirm = async () => {
           :disabled="isCapturing" @click="handleCaptureClick">
           <span v-if="isCapturing">拍摄中...</span>
           <span v-else-if="isCounting">取消 <span class="countdown-num">{{ countdown }}</span></span>
-          <span v-else>咔嚓！</span>
+          <span v-else>开始拍摄，进入倒计时</span>
         </PrimaryButton>
       </template>
       <div v-else class="review-actions">
-        <PrimaryButton class="action-btn confirm-btn" @click="handleConfirm">下一步</PrimaryButton>
+        <PrimaryButton class="action-btn confirm-btn" @click="handleConfirm">确认照片，下一步</PrimaryButton>
         <PrimaryButton class="action-btn retry-btn" @click="handleRetry">重新拍摄</PrimaryButton>
       </div>
     </div>

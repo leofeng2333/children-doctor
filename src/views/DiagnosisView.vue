@@ -135,7 +135,7 @@ onUnmounted(() => {
 
     <!-- 底部按钮 -->
     <div class="bottom-section">
-      <PrimaryButton text="开始问诊" class="start-button" @click="goNext"> </PrimaryButton>
+      <PrimaryButton text="开始分析" class="start-button" @click="goNext"> </PrimaryButton>
       <LogoText class="logo" />
     </div>
   </div>
