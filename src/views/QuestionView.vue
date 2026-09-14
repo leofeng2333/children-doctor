@@ -106,11 +106,21 @@ const onPick = async (event: MouseEvent, index: number) => {
   pickedIndex.value = index
   triggerRipple(event, index)
   answers.value[currentQuestion.value - 1] = index
-  // 短暂停留，让"选中-高亮-切题"看得见
+  // 短暂停留，让选中高亮 + ripple 都看得见
   await new Promise<void>((r) => setTimeout(r, 220))
-  pickedIndex.value = null
-  isAdvancing.value = false
-  nextQuestion()
+  const isLast = currentQuestion.value >= questionTexts.length
+  if (!isLast) {
+    // 中间题:清空选中后切下一题(动画顺势衔接)
+    pickedIndex.value = null
+    isAdvancing.value = false
+    nextQuestion()
+  } else {
+    // 最后一题:不切题、不清空,pickedIndex 保持让按钮显示绿色选中态,
+    // 给用户一个"我刚才选的就是这个"的视觉确认,再点底部"下一步"提交。
+    // isAdvancing 也立刻释放,允许用户改主意重选另一个选项——再点
+    // 会覆盖 answers[currentQuestion.value - 1] 并更新 pickedIndex。
+    isAdvancing.value = false
+  }
 }
 
 const nextQuestion = () => {
@@ -207,7 +217,14 @@ const goNext = async () => {
 
     <!-- 底部导航 -->
     <div class="bottom-nav">
-      <PrimaryButton v-show="currentQuestion === questionTexts.length" text="下一步" @click="goNext" />
+      <!-- 最后一题:点选项后保留选中态(pickedIndex !== null),"下一步"
+           才解锁;未选时按钮置灰,挡掉空提交 -->
+      <PrimaryButton
+        v-show="currentQuestion === questionTexts.length"
+        :disabled="pickedIndex === null"
+        text="下一步"
+        @click="goNext"
+      />
       <LogoText class="logo" />
     </div>
   </div>
