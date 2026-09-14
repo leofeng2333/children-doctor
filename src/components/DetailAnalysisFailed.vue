@@ -498,8 +498,8 @@ const effectiveCopy = computed<DiagnosisCopy>(() => {
     justify-content: center;
     align-self: stretch;
     flex-shrink: 0;
-    min-height: 350px;
-    max-height: 350px;
+    min-height: 340px;
+    max-height: 340px;
     overflow-y: auto;
     scrollbar-gutter: stable;
 
