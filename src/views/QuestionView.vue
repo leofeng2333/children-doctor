@@ -179,35 +179,21 @@ const goNext = async () => {
 
         <!-- 选项按钮 -->
         <div class="options">
-          <button
-            class="option-button"
-            :class="{
-              selected: pickedIndex === 0,
-              'ripple-active': rippleIndex === 0,
-            }"
-            @click="onPick($event, 0)"
-          >
-            <span
-              class="ripple"
-              :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
-              aria-hidden="true"
-            ></span>
+          <button class="option-button" :class="{
+            selected: pickedIndex === 0,
+            'ripple-active': rippleIndex === 0,
+          }" @click="onPick($event, 0)">
+            <span class="ripple" :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
+              aria-hidden="true"></span>
             <img :src="iconCorrect" class="option-icon" alt="" aria-hidden="true" />
             <span class="option-text">有</span>
           </button>
-          <button
-            class="option-button"
-            :class="{
-              selected: pickedIndex === 1,
-              'ripple-active': rippleIndex === 1,
-            }"
-            @click="onPick($event, 1)"
-          >
-            <span
-              class="ripple"
-              :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
-              aria-hidden="true"
-            ></span>
+          <button class="option-button" :class="{
+            selected: pickedIndex === 1,
+            'ripple-active': rippleIndex === 1,
+          }" @click="onPick($event, 1)">
+            <span class="ripple" :style="{ '--rx': ripplePos.x + '%', '--ry': ripplePos.y + '%' }"
+              aria-hidden="true"></span>
             <img :src="iconWrong" class="option-icon" alt="" aria-hidden="true" />
             <span class="option-text">没有</span>
           </button>
@@ -219,12 +205,8 @@ const goNext = async () => {
     <div class="bottom-nav">
       <!-- 最后一题:点选项后保留选中态(pickedIndex !== null),"下一步"
            才解锁;未选时按钮置灰,挡掉空提交 -->
-      <PrimaryButton
-        v-show="currentQuestion === questionTexts.length"
-        :disabled="pickedIndex === null"
-        text="下一步"
-        @click="goNext"
-      />
+      <PrimaryButton v-show="currentQuestion === questionTexts.length" :disabled="pickedIndex === null"
+        :color="'#fff'" text="已完成，开始生成照片！" @click="goNext" />
       <LogoText class="logo" />
     </div>
   </div>
@@ -372,11 +354,9 @@ const goNext = async () => {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(
-    circle at var(--rx, 50%) var(--ry, 50%),
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0) 60%
-  );
+  background: radial-gradient(circle at var(--rx, 50%) var(--ry, 50%),
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0) 60%);
   opacity: 0;
   transform: scale(0);
 }
@@ -390,6 +370,7 @@ const goNext = async () => {
     opacity: 1;
     transform: scale(0);
   }
+
   100% {
     opacity: 0;
     transform: scale(1.4);
